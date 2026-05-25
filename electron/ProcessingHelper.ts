@@ -1,49 +1,59 @@
 // ProcessingHelper.ts
 
-import { AppState } from "./main"
-import { LLMHelper } from "./LLMHelper"
-import { CredentialsManager } from "./services/CredentialsManager"
-import { app } from "electron"
+import { AppState } from "./main";
+import { LLMHelper } from "./LLMHelper";
+import { CredentialsManager } from "./services/CredentialsManager";
+import { app } from "electron";
 // import dotenv from "dotenv" // Removed static import
 
 if (!app.isPackaged) {
-  require("dotenv").config()
+  require("dotenv").config();
 }
 
-const isDev = process.env.NODE_ENV === "development"
-const isDevTest = process.env.IS_DEV_TEST === "true"
-const MOCK_API_WAIT_TIME = Number(process.env.MOCK_API_WAIT_TIME) || 500
+const isDev = process.env.NODE_ENV === "development";
+const isDevTest = process.env.IS_DEV_TEST === "true";
+const MOCK_API_WAIT_TIME = Number(process.env.MOCK_API_WAIT_TIME) || 500;
 
 export class ProcessingHelper {
-  private appState: AppState
-  private llmHelper: LLMHelper
-  private currentProcessingAbortController: AbortController | null = null
-  private currentExtraProcessingAbortController: AbortController | null = null
+  private appState: AppState;
+  private llmHelper: LLMHelper;
+  private currentProcessingAbortController: AbortController | null = null;
+  private currentExtraProcessingAbortController: AbortController | null = null;
 
   constructor(appState: AppState) {
-    this.appState = appState
+    this.appState = appState;
 
     // Check if user wants to use Ollama
-    const useOllama = process.env.USE_OLLAMA === "true"
-    const ollamaModel = process.env.OLLAMA_MODEL // Don't set default here, let LLMHelper auto-detect
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
+    const useOllama = process.env.USE_OLLAMA === "true";
+    const ollamaModel = process.env.OLLAMA_MODEL; // Don't set default here, let LLMHelper auto-detect
+    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
 
     if (useOllama) {
       // console.log("[ProcessingHelper] Initializing with Ollama")
-      this.llmHelper = new LLMHelper(undefined, true, ollamaModel, ollamaUrl)
+      this.llmHelper = new LLMHelper(undefined, true, ollamaModel, ollamaUrl);
     } else {
       // Try environment first (for development)
-      let apiKey = process.env.GEMINI_API_KEY
-      let groqApiKey = process.env.GROQ_API_KEY
-      let openaiApiKey = process.env.OPENAI_API_KEY
-      let claudeApiKey = process.env.CLAUDE_API_KEY
+      let apiKey = process.env.GEMINI_API_KEY;
+      let groqApiKey = process.env.GROQ_API_KEY;
+      let openaiApiKey = process.env.OPENAI_API_KEY;
+      let claudeApiKey = process.env.CLAUDE_API_KEY;
 
       // Allow initializing without key (will be loaded in loadStoredCredentials or via Settings)
       if (!apiKey) {
-        console.warn("[ProcessingHelper] GEMINI_API_KEY not found in env. Will try CredentialsManager after ready.")
+        console.warn(
+          "[ProcessingHelper] GEMINI_API_KEY not found in env. Will try CredentialsManager after ready.",
+        );
       }
 
-      this.llmHelper = new LLMHelper(apiKey, false, undefined, undefined, groqApiKey, openaiApiKey, claudeApiKey)
+      this.llmHelper = new LLMHelper(
+        apiKey,
+        false,
+        undefined,
+        undefined,
+        groqApiKey,
+        openaiApiKey,
+        claudeApiKey,
+      );
     }
   }
 
@@ -60,29 +70,50 @@ export class ProcessingHelper {
     const claudeKey = credManager.getClaudeApiKey();
 
     if (geminiKey) {
-      console.log("[ProcessingHelper] Loading stored Gemini API Key from CredentialsManager");
+      console.log(
+        "[ProcessingHelper] Loading stored Gemini API Key from CredentialsManager",
+      );
       this.llmHelper.setApiKey(geminiKey);
     }
 
     if (groqKey) {
-      console.log("[ProcessingHelper] Loading stored Groq API Key from CredentialsManager");
+      console.log(
+        "[ProcessingHelper] Loading stored Groq API Key from CredentialsManager",
+      );
       this.llmHelper.setGroqApiKey(groqKey);
     }
 
     if (openaiKey) {
-      console.log("[ProcessingHelper] Loading stored OpenAI API Key from CredentialsManager");
+      console.log(
+        "[ProcessingHelper] Loading stored OpenAI API Key from CredentialsManager",
+      );
       this.llmHelper.setOpenaiApiKey(openaiKey);
     }
 
     if (claudeKey) {
-      console.log("[ProcessingHelper] Loading stored Claude API Key from CredentialsManager");
+      console.log(
+        "[ProcessingHelper] Loading stored Claude API Key from CredentialsManager",
+      );
       this.llmHelper.setClaudeApiKey(claudeKey);
     }
 
-    const nativelyKey = credManager.getNativelyApiKey();
-    if (nativelyKey) {
-      console.log("[ProcessingHelper] Loading stored Natively API Key from CredentialsManager");
-      this.llmHelper.setNativelyKey(nativelyKey);
+    const deepseekKey = credManager.getDeepseekApiKey();
+    if (deepseekKey) {
+      console.log(
+        "[ProcessingHelper] Loading stored DeepSeek API Key from CredentialsManager",
+      );
+      this.llmHelper.initDeepseek(
+        deepseekKey,
+        credManager.getDeepseekPreferredModel(),
+      );
+    }
+
+    const momorKey = credManager.getmomorApiKey();
+    if (momorKey) {
+      console.log(
+        "[ProcessingHelper] Loading stored Momor API Key from CredentialsManager",
+      );
+      this.llmHelper.setmomorKey(momorKey);
     }
 
     // CRITICAL: Re-initialize IntelligenceManager now that keys are loaded
@@ -93,12 +124,21 @@ export class ProcessingHelper {
     // This fixes "RAG unavailable" in production where process.env is empty
     const ragManager = this.appState.getRAGManager();
     if (ragManager) {
-      console.log("[ProcessingHelper] Initializing RAGManager embeddings with available keys");
+      console.log(
+        "[ProcessingHelper] Initializing RAGManager embeddings with available keys",
+      );
       ragManager.initializeEmbeddings({
-          openaiKey: openaiKey || undefined,
-          geminiKey: geminiKey || undefined,
-          // ollamaUrl is not fetched in CredentialsManager yet by default, but we pass these keys
-          providerDataScopes: (() => { try { const { SettingsManager } = require('./services/SettingsManager'); return SettingsManager.getInstance().get('providerDataScopes'); } catch { return undefined; } })()
+        openaiKey: openaiKey || undefined,
+        geminiKey: geminiKey || undefined,
+        // ollamaUrl is not fetched in CredentialsManager yet by default, but we pass these keys
+        providerDataScopes: (() => {
+          try {
+            const { SettingsManager } = require("./services/SettingsManager");
+            return SettingsManager.getInstance().get("providerDataScopes");
+          } catch {
+            return undefined;
+          }
+        })(),
       });
 
       // CRITICAL: Retry pending embeddings now that we have a key
@@ -114,151 +154,188 @@ export class ProcessingHelper {
     }
 
     // Initialize self-improving model version manager (background, non-blocking)
-    this.llmHelper.initModelVersionManager().catch(err => {
-      console.warn('[ProcessingHelper] ModelVersionManager initialization failed (non-critical):', err.message);
+    this.llmHelper.initModelVersionManager().catch((err) => {
+      console.warn(
+        "[ProcessingHelper] ModelVersionManager initialization failed (non-critical):",
+        err.message,
+      );
     });
 
     // NEW: Load Default Model Config
     const defaultModel = credManager.getDefaultModel();
     if (defaultModel) {
-      console.log(`[ProcessingHelper] Loading stored Default Model: ${defaultModel}`);
+      console.log(
+        `[ProcessingHelper] Loading stored Default Model: ${defaultModel}`,
+      );
       const customProviders = credManager.getCustomProviders();
       const curlProviders = credManager.getCurlProviders();
-      const allProviders = [...(customProviders || []), ...(curlProviders || [])];
+      const allProviders = [
+        ...(customProviders || []),
+        ...(curlProviders || []),
+      ];
       this.llmHelper.setModel(defaultModel, allProviders);
     }
 
     // Load Languages
     const sttLanguage = credManager.getSttLanguage();
     const aiResponseLanguage = credManager.getAiResponseLanguage();
-    
+
     if (sttLanguage) {
       this.llmHelper.setSttLanguage(sttLanguage);
     }
-    
+
     if (aiResponseLanguage) {
       this.llmHelper.setAiResponseLanguage(aiResponseLanguage);
     }
   }
 
   public async processScreenshots(): Promise<void> {
-    const mainWindow = this.appState.getMainWindow()
-    if (!mainWindow) return
+    const mainWindow = this.appState.getMainWindow();
+    if (!mainWindow) return;
 
-    const view = this.appState.getView()
+    const view = this.appState.getView();
 
     if (view === "queue") {
-      const screenshotQueue = this.appState.getScreenshotHelper().getScreenshotQueue()
+      const screenshotQueue = this.appState
+        .getScreenshotHelper()
+        .getScreenshotQueue();
       if (screenshotQueue.length === 0) {
-        mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.NO_SCREENSHOTS)
-        return
+        mainWindow.webContents.send(
+          this.appState.PROCESSING_EVENTS.NO_SCREENSHOTS,
+        );
+        return;
       }
-
-
 
       const allPaths = this.appState.getScreenshotHelper().getScreenshotQueue();
 
-      mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.INITIAL_START)
-      this.appState.setView("solutions")
-      this.currentProcessingAbortController = new AbortController()
+      mainWindow.webContents.send(
+        this.appState.PROCESSING_EVENTS.INITIAL_START,
+      );
+      this.appState.setView("solutions");
+      this.currentProcessingAbortController = new AbortController();
       try {
         // Generate the structured 4-phase rolling interview script
-        const rollingScript = await this.llmHelper.generateRollingScript(allPaths);
+        const rollingScript =
+          await this.llmHelper.generateRollingScript(allPaths);
 
         const problemInfo = {
           problem_statement: rollingScript.problem_identifier_script,
-          input_format: { description: "Generated from screenshot", parameters: [] as any[] },
-          output_format: { description: "Generated from screenshot", type: "string", subtype: "structured" },
-          complexity: { time: rollingScript.time_complexity, space: rollingScript.space_complexity },
+          input_format: {
+            description: "Generated from screenshot",
+            parameters: [] as any[],
+          },
+          output_format: {
+            description: "Generated from screenshot",
+            type: "string",
+            subtype: "structured",
+          },
+          complexity: {
+            time: rollingScript.time_complexity,
+            space: rollingScript.space_complexity,
+          },
           test_cases: [] as any[],
           validation_type: "structured",
-          difficulty: "custom"
+          difficulty: "custom",
         };
-        mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.PROBLEM_EXTRACTED, problemInfo);
+        mainWindow.webContents.send(
+          this.appState.PROCESSING_EVENTS.PROBLEM_EXTRACTED,
+          problemInfo,
+        );
         this.appState.setProblemInfo(problemInfo);
 
         // Send the full structured solution so Solutions.tsx renders the 4 phases
-        mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.SOLUTION_SUCCESS, {
-          solution: {
-            problem_identifier_script: rollingScript.problem_identifier_script,
-            brainstorm_script: rollingScript.brainstorm_script,
-            code: rollingScript.code,
-            dry_run_script: rollingScript.dry_run_script,
-            time_complexity: rollingScript.time_complexity,
-            space_complexity: rollingScript.space_complexity,
-          }
-        });
+        mainWindow.webContents.send(
+          this.appState.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+          {
+            solution: {
+              problem_identifier_script:
+                rollingScript.problem_identifier_script,
+              brainstorm_script: rollingScript.brainstorm_script,
+              code: rollingScript.code,
+              dry_run_script: rollingScript.dry_run_script,
+              time_complexity: rollingScript.time_complexity,
+              space_complexity: rollingScript.space_complexity,
+            },
+          },
+        );
       } catch (error: any) {
-        console.error("[ProcessingHelper] Rolling script generation failed:", error);
-        mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR, error.message)
+        console.error(
+          "[ProcessingHelper] Rolling script generation failed:",
+          error,
+        );
+        mainWindow.webContents.send(
+          this.appState.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+          error.message,
+        );
       } finally {
-        this.currentProcessingAbortController = null
+        this.currentProcessingAbortController = null;
       }
       return;
-
     } else {
       // Debug mode
-      const extraScreenshotQueue = this.appState.getScreenshotHelper().getExtraScreenshotQueue()
+      const extraScreenshotQueue = this.appState
+        .getScreenshotHelper()
+        .getExtraScreenshotQueue();
       if (extraScreenshotQueue.length === 0) {
         // console.log("No extra screenshots to process")
-        mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.NO_SCREENSHOTS)
-        return
+        mainWindow.webContents.send(
+          this.appState.PROCESSING_EVENTS.NO_SCREENSHOTS,
+        );
+        return;
       }
 
-      mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.DEBUG_START)
-      this.currentExtraProcessingAbortController = new AbortController()
+      mainWindow.webContents.send(this.appState.PROCESSING_EVENTS.DEBUG_START);
+      this.currentExtraProcessingAbortController = new AbortController();
 
       try {
         // Get problem info and current solution
-        const problemInfo = this.appState.getProblemInfo()
+        const problemInfo = this.appState.getProblemInfo();
         if (!problemInfo) {
-          throw new Error("No problem info available")
+          throw new Error("No problem info available");
         }
 
         // Get current solution from state
-        const currentSolution = await this.llmHelper.generateSolution(problemInfo)
-        const currentCode = currentSolution.solution.code
+        const currentSolution =
+          await this.llmHelper.generateSolution(problemInfo);
+        const currentCode = currentSolution.solution.code;
 
         // Debug the solution using vision model
         const debugResult = await this.llmHelper.debugSolutionWithImages(
           problemInfo,
           currentCode,
-          extraScreenshotQueue
-        )
+          extraScreenshotQueue,
+        );
 
-        this.appState.setHasDebugged(true)
+        this.appState.setHasDebugged(true);
         mainWindow.webContents.send(
           this.appState.PROCESSING_EVENTS.DEBUG_SUCCESS,
-          debugResult
-        )
-
+          debugResult,
+        );
       } catch (error: any) {
         // console.error("Debug processing error:", error)
         mainWindow.webContents.send(
           this.appState.PROCESSING_EVENTS.DEBUG_ERROR,
-          error.message
-        )
+          error.message,
+        );
       } finally {
-        this.currentExtraProcessingAbortController = null
+        this.currentExtraProcessingAbortController = null;
       }
     }
   }
 
   public cancelOngoingRequests(): void {
     if (this.currentProcessingAbortController) {
-      this.currentProcessingAbortController.abort()
-      this.currentProcessingAbortController = null
+      this.currentProcessingAbortController.abort();
+      this.currentProcessingAbortController = null;
     }
 
     if (this.currentExtraProcessingAbortController) {
-      this.currentExtraProcessingAbortController.abort()
-      this.currentExtraProcessingAbortController = null
+      this.currentExtraProcessingAbortController.abort();
+      this.currentExtraProcessingAbortController = null;
     }
 
-    this.appState.setHasDebugged(false)
+    this.appState.setHasDebugged(false);
   }
-
-
 
   public getLLMHelper() {
     return this.llmHelper;

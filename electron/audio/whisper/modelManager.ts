@@ -6,30 +6,32 @@ import type { WhisperModelId, WhisperModelInfo } from './types';
 // We import the type only here; the actual require() happens at runtime.
 
 const MODEL_CATALOG: WhisperModelInfo[] = [
-  // ── Moonshine — streaming-native ASR. ~100× lower latency than Whisper Large v3.
-  //     Encoder caching + decoder state reuse. English-only. Best choice for live use.
-  { id: 'onnx-community/moonshine-tiny-ONNX', name: 'Moonshine Tiny',  sizeMb: 26,   speed: 'very-fast', accuracy: 'good',      multilingual: false, status: 'missing', streaming: true },
-  { id: 'onnx-community/moonshine-base-ONNX', name: 'Moonshine Base',  sizeMb: 60,   speed: 'very-fast', accuracy: 'very-high', multilingual: false, status: 'missing', streaming: true },
+  // ── Standard Whisper (Xenova format — compatible with current runtime)
+  { id: 'Xenova/whisper-tiny.en',    name: 'Tiny English',          sizeMb: 39,   speed: 'very-fast', accuracy: 'decent',    multilingual: false, status: 'missing' },
+  { id: 'Xenova/whisper-tiny',       name: 'Tiny Multilingual',     sizeMb: 74,   speed: 'very-fast', accuracy: 'decent',    multilingual: true,  status: 'missing' },
+  { id: 'Xenova/whisper-base.en',    name: 'Base English',          sizeMb: 142,  speed: 'fast',      accuracy: 'good',      multilingual: false, status: 'missing' },
+  { id: 'Xenova/whisper-base',       name: 'Base Multilingual',     sizeMb: 145,  speed: 'fast',      accuracy: 'good',      multilingual: true,  status: 'missing' },
+  { id: 'Xenova/whisper-small.en',   name: 'Small English',         sizeMb: 244,  speed: 'medium',    accuracy: 'high',      multilingual: false, status: 'missing' },
+  { id: 'Xenova/whisper-small',      name: 'Small Multilingual',    sizeMb: 466,  speed: 'medium',    accuracy: 'high',      multilingual: true,  status: 'missing' },
+  { id: 'Xenova/whisper-medium.en',  name: 'Medium English',        sizeMb: 1500, speed: 'slow',      accuracy: 'very-high', multilingual: false, status: 'missing' },
+  { id: 'Xenova/whisper-medium',     name: 'Medium Multilingual',   sizeMb: 1530, speed: 'slow',      accuracy: 'very-high', multilingual: true,  status: 'missing' },
 
-  // ── Distil-Whisper — same architecture as Whisper, distilled to 1/2 layers,
-  //     ~6× faster CPU/GPU at near-equivalent WER. English-only.
+  // ── Distil-Whisper — English-only, ~6× faster than Whisper at near-equivalent WER.
   { id: 'distil-whisper/distil-small.en',    name: 'Distil Small EN',  sizeMb: 164,  speed: 'very-fast', accuracy: 'high',      multilingual: false, status: 'missing', distilled: true },
   { id: 'distil-whisper/distil-medium.en',   name: 'Distil Medium EN', sizeMb: 383,  speed: 'fast',      accuracy: 'very-high', multilingual: false, status: 'missing', distilled: true },
   { id: 'distil-whisper/distil-large-v3',    name: 'Distil Large v3',  sizeMb: 731,  speed: 'medium',    accuracy: 'very-high', multilingual: false, status: 'missing', distilled: true },
   { id: 'distil-whisper/distil-large-v2',    name: 'Distil Large v2',  sizeMb: 731,  speed: 'medium',    accuracy: 'very-high', multilingual: false, status: 'missing', distilled: true },
 
-  // ── Whisper Large v3 Turbo — 6× faster than Large v3, multilingual.
-  { id: 'onnx-community/whisper-large-v3-turbo-ONNX', name: 'Whisper Large v3 Turbo', sizeMb: 1031, speed: 'medium', accuracy: 'very-high', multilingual: true, status: 'missing' },
+  // ── onnx-community Whisper models — static KV-cache patched in decoder_forward
+  { id: 'onnx-community/whisper-small-ONNX',         name: 'Whisper Small v3',      sizeMb: 244,  speed: 'fast',      accuracy: 'high',      multilingual: true,  status: 'missing' },
+  { id: 'onnx-community/whisper-large-v3-turbo-ONNX',name: 'Whisper Large v3 Turbo',sizeMb: 1031, speed: 'medium',    accuracy: 'very-high', multilingual: true,  status: 'missing' },
+  { id: 'onnx-community/whisper-large-v3-ONNX',      name: 'Whisper Large v3',      sizeMb: 3100, speed: 'slow',      accuracy: 'very-high', multilingual: true,  status: 'missing' },
+  { id: 'onnx-community/whisper-large-v2-ONNX',      name: 'Whisper Large v2',      sizeMb: 3100, speed: 'slow',      accuracy: 'very-high', multilingual: true,  status: 'missing' },
 
-  // ── Standard Whisper
-  { id: 'Xenova/whisper-tiny.en',    name: 'Tiny English',    sizeMb: 39,   speed: 'very-fast', accuracy: 'decent',   multilingual: false, status: 'missing' },
-  { id: 'Xenova/whisper-tiny',       name: 'Tiny Multilingual', sizeMb: 74, speed: 'very-fast', accuracy: 'decent',   multilingual: true,  status: 'missing' },
-  { id: 'Xenova/whisper-base.en',    name: 'Base English',    sizeMb: 142,  speed: 'fast',      accuracy: 'good',     multilingual: false, status: 'missing' },
-  { id: 'Xenova/whisper-base',       name: 'Base Multilingual', sizeMb: 145, speed: 'fast',     accuracy: 'good',     multilingual: true,  status: 'missing' },
-  { id: 'Xenova/whisper-small.en',   name: 'Small English',   sizeMb: 244,  speed: 'medium',    accuracy: 'high',     multilingual: false, status: 'missing' },
-  { id: 'Xenova/whisper-small',      name: 'Small Multilingual', sizeMb: 466, speed: 'medium',  accuracy: 'high',     multilingual: true,  status: 'missing' },
-  { id: 'Xenova/whisper-medium.en',  name: 'Medium English',  sizeMb: 1500, speed: 'slow',      accuracy: 'very-high', multilingual: false, status: 'missing', requiresAppleSilicon: true },
-  { id: 'Xenova/whisper-medium',     name: 'Medium Multilingual', sizeMb: 1530, speed: 'slow',  accuracy: 'very-high', multilingual: true,  status: 'missing', requiresAppleSilicon: true },
+  // ── Moonshine — different architecture (encoder caching + decoder state),
+  //    needs a separate inference path; keep staticKV so UI shows the reason.
+  { id: 'onnx-community/moonshine-tiny-ONNX',        name: 'Moonshine Tiny',        sizeMb: 26,   speed: 'very-fast', accuracy: 'good',      multilingual: false, status: 'missing', streaming: true, staticKV: true },
+  { id: 'onnx-community/moonshine-base-ONNX',        name: 'Moonshine Base',        sizeMb: 60,   speed: 'very-fast', accuracy: 'very-high', multilingual: false, status: 'missing', streaming: true, staticKV: true },
 ];
 
 /**

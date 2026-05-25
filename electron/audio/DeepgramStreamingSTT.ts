@@ -9,6 +9,7 @@
 
 import { EventEmitter } from 'events';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
+import { extractErrorMessage, isSttAuthError } from '../utils/extractErrorMessage';
 
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -31,6 +32,7 @@ export class DeepgramStreamingSTT extends EventEmitter {
     private keepAliveInterval: NodeJS.Timeout | null = null;
     private buffer: Buffer[] = [];
     private isConnecting = false;
+    private lastErrorWasAuth = false;
 
     constructor(apiKey: string) {
         super();
@@ -80,6 +82,7 @@ export class DeepgramStreamingSTT extends EventEmitter {
         this.isActive = true;
         this.shouldReconnect = true;
         this.reconnectAttempts = 0;
+        this.lastErrorWasAuth = false;
         this.connect();
     }
 
@@ -137,7 +140,11 @@ export class DeepgramStreamingSTT extends EventEmitter {
         if (this.isConnecting) return;
         this.isConnecting = true;
 
-        console.log(`[DeepgramStreaming] Connecting (rate=${this.sampleRate}, ch=${this.numChannels}, lang=${this.languageCode})...`);
+        const isMultilingual = this.languageCode === 'multi';
+        const model = 'nova-3';
+        const endpointingMs = isMultilingual ? 100 : 300;
+
+        console.log(`[DeepgramStreaming] Connecting (model=${model}, rate=${this.sampleRate}, ch=${this.numChannels}, lang=${this.languageCode}, endpointing=${endpointingMs})...`);
 
         try {
             const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
@@ -145,14 +152,14 @@ export class DeepgramStreamingSTT extends EventEmitter {
             const deepgram = createClient(this.apiKey);
 
             this.live = deepgram.listen.live({
-                model: 'nova-3',
+                model,
                 language: this.languageCode,
                 smart_format: true,
                 interim_results: true,
                 encoding: 'linear16',
                 sample_rate: this.sampleRate,
                 channels: this.numChannels,
-                endpointing: 300,
+                endpointing: endpointingMs,
                 utterance_end_ms: 1000,
                 vad_events: true,
             });
@@ -203,8 +210,25 @@ export class DeepgramStreamingSTT extends EventEmitter {
             });
 
             this.live.on(LiveTranscriptionEvents.Error, (err: any) => {
-                console.error('[DeepgramStreaming] Error:', err);
-                this.emit('error', err instanceof Error ? err : new Error(String(err)));
+                const message = extractErrorMessage(err);
+                console.error('[DeepgramStreaming] Error:', message, err);
+                const authError = isSttAuthError(message);
+                if (authError) {
+                    this.lastErrorWasAuth = true;
+                }
+                this.emit('error', new Error(message));
+
+                if (authError) {
+                    console.error('[DeepgramStreaming] Auth error — stopping reconnect loop');
+                    this.shouldReconnect = false;
+                    this.clearTimers();
+                    try {
+                        this.live?.requestClose();
+                    } catch {
+                        // ignore shutdown errors
+                    }
+                    this.isActive = false;
+                }
             });
 
             this.live.on(LiveTranscriptionEvents.Close, (event: any) => {
@@ -215,6 +239,19 @@ export class DeepgramStreamingSTT extends EventEmitter {
                 this.isOpen = false;
                 this.isConnecting = false;
                 this.clearTimers();
+
+                const closeReason = extractErrorMessage(event);
+                const authClose =
+                    this.lastErrorWasAuth ||
+                    isSttAuthError(closeReason) ||
+                    isSttAuthError(String(reason));
+
+                if (authClose) {
+                    console.error('[DeepgramStreaming] Auth close — stopping reconnect loop');
+                    this.shouldReconnect = false;
+                    this.isActive = false;
+                    return;
+                }
 
                 if (this.shouldReconnect && code !== 1000) {
                     this.scheduleReconnect();
@@ -237,6 +274,7 @@ export class DeepgramStreamingSTT extends EventEmitter {
 
         if (this.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
             console.error(`[DeepgramStreaming] Max reconnect attempts reached — giving up`);
+            this.shouldReconnect = false;
             this.emit('error', new Error('DeepgramStreamingSTT: max reconnect attempts exceeded'));
             return;
         }

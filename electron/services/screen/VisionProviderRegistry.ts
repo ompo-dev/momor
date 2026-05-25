@@ -12,13 +12,14 @@
 // intentionally lazy-import LLMHelper so tests can replace this registry
 // without booting the whole LLM stack.
 
-import fs from 'node:fs/promises';
+import fs from "node:fs/promises";
 import type {
   VisionProviderConfig,
   VisionInvocationParams,
   VisionMode,
-} from './VisionProviderFallbackChain';
-import { CredentialsManager } from '../CredentialsManager';
+} from "./VisionProviderFallbackChain";
+import type { ProviderHint } from "./ImageOptimizer";
+import { CredentialsManager } from "../CredentialsManager";
 
 export interface VisionProviderBuildInputs {
   mode: VisionMode;
@@ -28,18 +29,20 @@ export interface VisionProviderBuildInputs {
 
 /**
  * Produce the ordered list of vision providers for the given mode. Order is:
- *   vision_first / vision_only: Natively → OpenAI → Gemini Flash → Claude →
+ *   vision_first / vision_only: momor → OpenAI → Gemini Flash → Claude →
  *                                Gemini Pro → Groq Scout → Ollama → Codex → Custom
  *   private_vision: Ollama → Codex → local Custom only
  */
-export function buildVisionProviders(inputs: VisionProviderBuildInputs): VisionProviderConfig[] {
+export function buildVisionProviders(
+  inputs: VisionProviderBuildInputs,
+): VisionProviderConfig[] {
   const credentials = CredentialsManager.getInstance();
   const providers: VisionProviderConfig[] = [];
 
-  const cloudAllowed = inputs.mode !== 'private_vision';
+  const cloudAllowed = inputs.mode !== "private_vision";
 
   if (cloudAllowed) {
-    providers.push(natively(credentials, inputs));
+    providers.push(momor(credentials, inputs));
     providers.push(openai(credentials, inputs));
     providers.push(geminiFlash(credentials, inputs));
     providers.push(claude(credentials, inputs));
@@ -52,136 +55,298 @@ export function buildVisionProviders(inputs: VisionProviderBuildInputs): VisionP
   providers.push(codex(credentials, inputs));
   providers.push(custom(credentials, inputs));
 
-  return providers.filter(p => p !== null) as VisionProviderConfig[];
+  const chain = providers.filter((p) => p !== null) as VisionProviderConfig[];
+  const preferred = buildConfiguredVisionProvider(credentials, inputs);
+  if (!preferred) return chain;
+
+  const withoutPreferred = chain.filter((p) => p.id !== preferred.id);
+  return [preferred, ...withoutPreferred];
+}
+
+function buildConfiguredVisionProvider(
+  creds: CredentialsManager,
+  inputs: VisionProviderBuildInputs,
+): VisionProviderConfig | null {
+  const modelId = creds.getVisionDefaultModel();
+  if (!modelId) return null;
+
+  if (modelId.startsWith("ollama-")) {
+    const ollamaModel = modelId.replace(/^ollama-/, "");
+    const baseUrl = (creds.getAllCredentials() as any)?.ollamaBaseUrl as
+      | string
+      | undefined;
+    if (!baseUrl || !isOllamaVisionModel(ollamaModel)) return null;
+    return {
+      id: "configured_ollama",
+      displayName: `Ollama (${ollamaModel})`,
+      modelId: ollamaModel,
+      isLocal: true,
+      isConfigured: true,
+      supportsVision: true,
+      scopeAllowsScreenshots: true,
+      hint: "ollama",
+      invoke: async (p) => callOllamaVision(baseUrl, ollamaModel, p),
+    };
+  }
+
+  if (inputs.mode === "private_vision" && !modelId.startsWith("ollama-")) {
+    return null;
+  }
+
+  const isConfigured = isConfiguredVisionModel(creds, modelId);
+  if (!isConfigured) return null;
+
+  return {
+    id: "configured_vision",
+    displayName: `Configured (${modelId})`,
+    modelId,
+    isLocal:
+      modelId.startsWith("codex-cli") ||
+      isLocalOnlyCustomProvider(
+        findCustomProviderById(creds, modelId) || undefined,
+      ),
+    isConfigured: true,
+    supportsVision: true,
+    scopeAllowsScreenshots: inputs.scopeAllowsScreenshots,
+    hint: inferVisionHint(modelId),
+    invoke: async (p) => callConfiguredVision(modelId, p),
+  };
+}
+
+function findCustomProviderById(
+  creds: CredentialsManager,
+  modelId: string,
+): any | null {
+  const providers = [
+    ...(creds.getCurlProviders() || []),
+    ...(creds.getCustomProviders() || []),
+  ];
+  return providers.find((p) => p.id === modelId) || null;
+}
+
+function isConfiguredVisionModel(
+  creds: CredentialsManager,
+  modelId: string,
+): boolean {
+  if (modelId === "momor") return !!creds.getmomorApiKey();
+  if (modelId.startsWith("gemini-")) return !!creds.getGeminiApiKey();
+  if (modelId.startsWith("gpt-") || modelId.startsWith("o1-")) {
+    return !!creds.getOpenaiApiKey();
+  }
+  if (modelId.startsWith("claude-")) return !!creds.getClaudeApiKey();
+  if (
+    modelId.startsWith("llama-") ||
+    modelId.startsWith("mixtral-") ||
+    modelId.startsWith("gemma-") ||
+    modelId.startsWith("meta-llama/") ||
+    modelId.startsWith("qwen")
+  ) {
+    return !!creds.getGroqApiKey();
+  }
+  if (modelId.startsWith("deepseek")) return !!creds.getDeepseekApiKey();
+  if (modelId.startsWith("codex-cli")) {
+    return !!(creds.getAllCredentials() as any)?.codexCliPath;
+  }
+  return !!findCustomProviderById(creds, modelId);
+}
+
+function inferVisionHint(modelId: string): ProviderHint {
+  if (modelId === "momor") return "momor";
+  if (modelId.startsWith("gemini-")) return "gemini";
+  if (modelId.startsWith("claude-")) return "claude";
+  if (modelId.startsWith("gpt-") || modelId.startsWith("o1-")) return "openai";
+  if (
+    modelId.startsWith("llama-") ||
+    modelId.startsWith("mixtral-") ||
+    modelId.startsWith("gemma-") ||
+    modelId.startsWith("meta-llama/") ||
+    modelId.startsWith("qwen")
+  ) {
+    return "groq";
+  }
+  if (modelId.startsWith("codex-cli")) return "codex";
+  return "custom";
+}
+
+async function callConfiguredVision(
+  modelId: string,
+  params: VisionInvocationParams,
+): Promise<string> {
+  const helper = await getActiveLLMHelper();
+  if (!helper) throw new Error("LLMHelper not initialized");
+  if (typeof helper.runVisionWithModel !== "function") {
+    throw new Error("runVisionWithModel is unavailable");
+  }
+  return helper.runVisionWithModel(
+    modelId,
+    params.userPrompt,
+    params.systemPrompt,
+    params.optimized.path,
+  );
 }
 
 // ─── Provider builders ────────────────────────────────────────────────────
 
-function natively(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
-  const apiKey = creds.getNativelyApiKey();
+function momor(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
+  const apiKey = creds.getmomorApiKey();
   return {
-    id: 'natively',
-    displayName: 'Natively API',
-    modelId: 'natively',
+    id: "momor",
+    displayName: "momor API",
+    modelId: "momor",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'natively',
-    invoke: async (p) => callLLMHelperVision('natively', p),
+    hint: "momor",
+    invoke: async (p) => callLLMHelperVision("momor", p),
   };
 }
 
-function openai(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function openai(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   const apiKey = creds.getOpenaiApiKey();
   return {
-    id: 'openai',
-    displayName: 'OpenAI',
-    modelId: 'gpt-4o',
+    id: "openai",
+    displayName: "OpenAI",
+    modelId: "gpt-4o",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'openai',
-    invoke: async (p) => callLLMHelperVision('openai', p),
+    hint: "openai",
+    invoke: async (p) => callLLMHelperVision("openai", p),
   };
 }
 
-function geminiFlash(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function geminiFlash(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   const apiKey = creds.getGeminiApiKey();
   return {
-    id: 'gemini_flash',
-    displayName: 'Gemini Flash',
-    modelId: 'gemini-3.1-flash-lite-preview',
+    id: "gemini_flash",
+    displayName: "Gemini Flash",
+    modelId: "gemini-3.1-flash-lite-preview",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'gemini',
-    invoke: async (p) => callLLMHelperVision('gemini_flash', p),
+    hint: "gemini",
+    invoke: async (p) => callLLMHelperVision("gemini_flash", p),
   };
 }
 
-function claude(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function claude(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   const apiKey = creds.getClaudeApiKey();
   return {
-    id: 'claude',
-    displayName: 'Claude',
-    modelId: 'claude-sonnet-4-6',
+    id: "claude",
+    displayName: "Claude",
+    modelId: "claude-sonnet-4-6",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'claude',
-    invoke: async (p) => callLLMHelperVision('claude', p),
+    hint: "claude",
+    invoke: async (p) => callLLMHelperVision("claude", p),
   };
 }
 
-function geminiPro(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function geminiPro(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   const apiKey = creds.getGeminiApiKey();
   return {
-    id: 'gemini_pro',
-    displayName: 'Gemini Pro',
-    modelId: 'gemini-3.1-pro-preview',
+    id: "gemini_pro",
+    displayName: "Gemini Pro",
+    modelId: "gemini-3.1-pro-preview",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'gemini',
-    invoke: async (p) => callLLMHelperVision('gemini_pro', p),
+    hint: "gemini",
+    invoke: async (p) => callLLMHelperVision("gemini_pro", p),
   };
 }
 
-function groqScout(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function groqScout(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   const apiKey = creds.getGroqApiKey();
   return {
-    id: 'groq_scout',
-    displayName: 'Groq Llama-4 Scout',
-    modelId: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    id: "groq_scout",
+    displayName: "Groq Llama-4 Scout",
+    modelId: "meta-llama/llama-4-scout-17b-16e-instruct",
     isLocal: false,
     isConfigured: !!apiKey,
     supportsVision: !!apiKey,
     scopeAllowsScreenshots: true,
-    hint: 'groq',
-    invoke: async (p) => callLLMHelperVision('groq_scout', p),
+    hint: "groq",
+    invoke: async (p) => callLLMHelperVision("groq_scout", p),
   };
 }
 
-function ollama(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
-  const baseUrl = (creds.getAllCredentials() as any)?.ollamaBaseUrl as string | undefined;
-  const ollamaModel = (creds.getAllCredentials() as any)?.ollamaModel as string | undefined;
+function ollama(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
+  const baseUrl = (creds.getAllCredentials() as any)?.ollamaBaseUrl as
+    | string
+    | undefined;
+  const ollamaModel = (creds.getAllCredentials() as any)?.ollamaModel as
+    | string
+    | undefined;
   const isVisionModel = ollamaModel ? isOllamaVisionModel(ollamaModel) : false;
   return {
-    id: 'ollama',
-    displayName: 'Ollama (local)',
+    id: "ollama",
+    displayName: "Ollama (local)",
     modelId: ollamaModel,
     isLocal: true,
     isConfigured: !!baseUrl && !!ollamaModel,
     supportsVision: isVisionModel,
     scopeAllowsScreenshots: true,
-    hint: 'ollama',
+    hint: "ollama",
     invoke: async (p) => callOllamaVision(baseUrl!, ollamaModel!, p),
   };
 }
 
-function codex(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
-  const cliPath = (creds.getAllCredentials() as any)?.codexCliPath as string | undefined;
+function codex(
+  creds: CredentialsManager,
+  _inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
+  const cliPath = (creds.getAllCredentials() as any)?.codexCliPath as
+    | string
+    | undefined;
   // Codex CLI vision capability is not yet verified across builds — we configure
   // the provider as available but the vision flag is conservative. See ROADMAP.
   return {
-    id: 'codex_cli',
-    displayName: 'Codex CLI',
+    id: "codex_cli",
+    displayName: "Codex CLI",
     modelId: (creds.getAllCredentials() as any)?.codexCliModel,
     isLocal: true,
     isConfigured: !!cliPath,
     supportsVision: false, // unverified; flip to true when CLI vision is confirmed end-to-end
     scopeAllowsScreenshots: true,
-    hint: 'codex',
-    invoke: async () => { throw new Error('Codex CLI vision unverified — capability disabled'); },
+    hint: "codex",
+    invoke: async () => {
+      throw new Error("Codex CLI vision unverified — capability disabled");
+    },
   };
 }
 
-function custom(creds: CredentialsManager, inputs: VisionProviderBuildInputs): VisionProviderConfig {
+function custom(
+  creds: CredentialsManager,
+  inputs: VisionProviderBuildInputs,
+): VisionProviderConfig {
   // The active custom provider lives on the live LLMHelper instance (set via
   // switchToCustom in main.ts). CredentialsManager stores all configured custom
   // providers; we only show the active one as a vision target so the chain
@@ -200,24 +365,24 @@ function custom(creds: CredentialsManager, inputs: VisionProviderBuildInputs): V
   const localOnly = isLocalOnlyCustomProvider(active);
 
   return {
-    id: 'custom',
-    displayName: active?.name || 'Custom Provider',
+    id: "custom",
+    displayName: active?.name || "Custom Provider",
     modelId: (active as any)?.model,
     isLocal: localOnly,
     isConfigured: !!active,
     supportsVision: multimodal,
     scopeAllowsScreenshots: inputs.scopeAllowsScreenshots,
-    hint: 'custom',
-    invoke: async (p) => callLLMHelperVision('custom', p),
+    hint: "custom",
+    invoke: async (p) => callLLMHelperVision("custom", p),
   };
 }
 
 function readActiveCustomProviderSync(): any | null {
   try {
     const g = global as any;
-    if (typeof g.__nativelyGetLLMHelper === 'function') {
-      const helper = g.__nativelyGetLLMHelper();
-      if (helper && typeof helper.getActiveCustomProvider === 'function') {
+    if (typeof g.__momorGetLLMHelper === "function") {
+      const helper = g.__momorGetLLMHelper();
+      if (helper && typeof helper.getActiveCustomProvider === "function") {
         return helper.getActiveCustomProvider() || null;
       }
     }
@@ -237,7 +402,13 @@ function isLocalOnlyCustomProvider(provider: any | undefined | null): boolean {
     const urlMatch = curl.match(/https?:\/\/([^\s'"`]+)/i);
     if (!urlMatch) return false;
     const host = new URL(urlMatch[0]).hostname.toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host.endsWith('.local');
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host === "::1" ||
+      host.endsWith(".local")
+    );
   } catch {
     return false;
   }
@@ -245,7 +416,8 @@ function isLocalOnlyCustomProvider(provider: any | undefined | null): boolean {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const OLLAMA_VISION_MODELS_RE = /(llava|bakllava|moondream|llama3\.2-vision|llama-3\.2-vision|gemma3|minicpm-v|qwen2\.5-vl|qwen2-vl|pixtral)/i;
+const OLLAMA_VISION_MODELS_RE =
+  /(llava|bakllava|moondream|llama3\.2-vision|llama-3\.2-vision|gemma3|minicpm-v|qwen2\.5-vl|qwen2-vl|pixtral)/i;
 export function isOllamaVisionModel(modelId: string): boolean {
   return OLLAMA_VISION_MODELS_RE.test(modelId);
 }
@@ -255,10 +427,18 @@ export function isOllamaVisionModel(modelId: string): boolean {
  * We funnel everything through LLMHelper.streamChat so the auth, retries, and
  * per-provider payload shape are handled in one place.
  */
-async function callLLMHelperVision(providerId: string, params: VisionInvocationParams): Promise<string> {
+async function callLLMHelperVision(
+  providerId: string,
+  params: VisionInvocationParams,
+): Promise<string> {
   const helper = await getActiveLLMHelper();
-  if (!helper) throw new Error('LLMHelper not initialized');
-  return helper.runVisionRequest(providerId, params.userPrompt, params.systemPrompt, params.optimized.path);
+  if (!helper) throw new Error("LLMHelper not initialized");
+  return helper.runVisionRequest(
+    providerId,
+    params.userPrompt,
+    params.systemPrompt,
+    params.optimized.path,
+  );
 }
 
 /**
@@ -266,22 +446,26 @@ async function callLLMHelperVision(providerId: string, params: VisionInvocationP
  * endpoint at `${baseUrl}/v1/` with an image_url data URL — supported by every
  * vision-capable Ollama model we care about (llava family, qwen2.5-vl, etc.).
  */
-async function callOllamaVision(baseUrl: string, model: string, params: VisionInvocationParams): Promise<string> {
+async function callOllamaVision(
+  baseUrl: string,
+  model: string,
+  params: VisionInvocationParams,
+): Promise<string> {
   const { optimized, systemPrompt, userPrompt, signal } = params;
   const data = await fs.readFile(optimized.path);
-  const dataUrl = `data:${optimized.mimeType};base64,${data.toString('base64')}`;
-  const trimmedBase = baseUrl.replace(/\/+$/, '');
+  const dataUrl = `data:${optimized.mimeType};base64,${data.toString("base64")}`;
+  const trimmedBase = baseUrl.replace(/\/+$/, "");
   const url = `${trimmedBase}/v1/chat/completions`;
 
   const body = {
     model,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: "system", content: systemPrompt },
       {
-        role: 'user',
+        role: "user",
         content: [
-          { type: 'text', text: userPrompt },
-          { type: 'image_url', image_url: { url: dataUrl } },
+          { type: "text", text: userPrompt },
+          { type: "image_url", image_url: { url: dataUrl } },
         ],
       },
     ],
@@ -289,25 +473,27 @@ async function callOllamaVision(baseUrl: string, model: string, params: VisionIn
   };
 
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal,
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    const text = await res.text().catch(() => "");
     // Surface a classifiable error so VisionProviderFallbackChain can bucket it.
     throw new Error(`Ollama ${res.status}: ${text.substring(0, 200)}`);
   }
 
   const json: any = await res.json();
   const content = json?.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content;
+  if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((part: any) => (typeof part === 'string' ? part : part?.text || '')).join('');
+    return content
+      .map((part: any) => (typeof part === "string" ? part : part?.text || ""))
+      .join("");
   }
-  throw new Error('Ollama returned empty content');
+  throw new Error("Ollama returned empty content");
 }
 
 /**
@@ -317,9 +503,9 @@ async function callOllamaVision(baseUrl: string, model: string, params: VisionIn
  */
 async function getActiveLLMHelper(): Promise<any | null> {
   const g = global as any;
-  if (typeof g.__nativelyGetLLMHelper === 'function') {
+  if (typeof g.__momorGetLLMHelper === "function") {
     try {
-      return g.__nativelyGetLLMHelper();
+      return g.__momorGetLLMHelper();
     } catch {
       return null;
     }

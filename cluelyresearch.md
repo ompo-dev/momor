@@ -16,30 +16,30 @@ The app has three big surfaces:
 
 Live Insights during the call.
 Pre-call briefs before the call.
-Post-call notes/coaching/analytics after the call.
-2. Core app architecture
+Post-call notes/coaching/analytics after the call. 2. Core app architecture
 
 The working pipeline is probably this:
 
 Audio capture
-+ screen context
-+ calendar / meeting metadata
-+ active mode prompt
-+ user files / company KB / CRM context
-        ↓
-Realtime transcript + OCR/screen state
-        ↓
-Intent / trigger detector
-        ↓
-Dynamic Action card
-        ↓
-User clicks / Tab / Cmd Enter / Cmd Shift Enter
-        ↓
-Context builder
-        ↓
-LLM response
-        ↓
-Overlay answer + meeting notes + follow-up actions
+
+- screen context
+- calendar / meeting metadata
+- active mode prompt
+- user files / company KB / CRM context
+  ↓
+  Realtime transcript + OCR/screen state
+  ↓
+  Intent / trigger detector
+  ↓
+  Dynamic Action card
+  ↓
+  User clicks / Tab / Cmd Enter / Cmd Shift Enter
+  ↓
+  Context builder
+  ↓
+  LLM response
+  ↓
+  Overlay answer + meeting notes + follow-up actions
 
 Official docs confirm the key pieces: Cluely has real-time transcription, no-bot meeting notes, keyword detection, question/objection/technical-term detection, prompt-based answers, knowledge base retrieval, and enterprise models.
 
@@ -50,15 +50,15 @@ Cluely “Modes” are basically active prompt configurations.
 A mode is not a separate trained AI model. It is closer to:
 
 {
-  "mode_name": "Sales Discovery",
-  "system_prompt": "...",
-  "knowledge_base_scope": ["sales scripts", "pricing", "objection docs"],
-  "default_actions": ["what_should_i_say", "follow_up_questions"],
-  "custom_live_actions": ["handle_pricing_objection", "compare_competitor"],
-  "post_call_template": "sales_call_notes",
-  "coaching_rubric": "MEDDICC / BANT / custom scorecard",
-  "crm_context": true,
-  "allowed_team_roles": ["sales_rep", "account_manager"]
+"mode_name": "Sales Discovery",
+"system_prompt": "...",
+"knowledge_base_scope": ["sales scripts", "pricing", "objection docs"],
+"default_actions": ["what_should_i_say", "follow_up_questions"],
+"custom_live_actions": ["handle_pricing_objection", "compare_competitor"],
+"post_call_template": "sales_call_notes",
+"coaching_rubric": "MEDDICC / BANT / custom scorecard",
+"crm_context": true,
+"allowed_team_roles": ["sales_rep", "account_manager"]
 }
 
 Official docs call the mode dropdown “Customize Cluely” prompts, and say users can switch the active mode inside Live Insights or from the desktop app.
@@ -69,25 +69,27 @@ For enterprise, modes become much more powerful: admins create prompts, assign p
 
 4. Pro vs Enterprise modes
 
-This is important for Natively.
+This is important for momor.
 
 Cluely Pro seems to have:
 
 Custom prompt
-+ personal files
-+ default actions
-+ basic meeting notes
+
+- personal files
+- default actions
+- basic meeting notes
 
 Cluely Enterprise adds:
 
 Team prompts
-+ role-based prompt assignment
-+ company knowledge base
-+ CRM/ATS integrations
-+ custom live actions
-+ custom notes templates
-+ missed-opportunity coaching
-+ admin analytics
+
+- role-based prompt assignment
+- company knowledge base
+- CRM/ATS integrations
+- custom live actions
+- custom notes templates
+- missed-opportunity coaching
+- admin analytics
 
 Their own enterprise comparison says Pro has only default live actions like “What should I say next?” and “Suggest follow up questions,” while Enterprise adds custom live action buttons from prompts to links.
 
@@ -120,7 +122,7 @@ Cluely also has Cmd/Ctrl + Enter for Ask AI and Cmd/Ctrl + Shift + Enter / Get A
 
 Reddit users report that, at least in some versions, users still needed to prompt it manually; one commenter says “No auto-capture. Must prompt it if you want an answer.” A third-party review also says no automatic answer was generated in their test and they had to type or click.
 
-So for Natively: do not build “auto answer” as fully autonomous first. Build “auto-detected action cards” first. That is safer, faster, and closer to what Cluely seems to do.
+So for momor: do not build “auto answer” as fully autonomous first. Build “auto-detected action cards” first. That is safer, faster, and closer to what Cluely seems to do.
 
 6. The mode-by-mode map
 
@@ -158,17 +160,17 @@ Short answer
 Clarifying question
 Mini recap
 
-Natively implementation:
+momor implementation:
 
 {
-  "mode": "general_meeting",
-  "actions": [
-    "suggest_reply",
-    "suggest_followups",
-    "recap_last_2_minutes",
-    "fact_check_claim",
-    "identify_person_or_company"
-  ]
+"mode": "general_meeting",
+"actions": [
+"suggest_reply",
+"suggest_followups",
+"recap_last_2_minutes",
+"fact_check_claim",
+"identify_person_or_company"
+]
 }
 B. Sales Mode
 
@@ -208,18 +210,19 @@ Reddit sales users are doing exactly this manually: uploading rebuttal docs, bui
 How Sales Mode likely works:
 
 Prospect says: "This feels expensive."
-        ↓
+↓
 Intent detector: pricing_objection
-        ↓
+↓
 Retrieve pricing docs + case studies + discount policy
-        ↓
+↓
 Generate:
+
 - what concern this signals
 - short reply
 - proof point
 - follow-up question
 
-Best Sales Mode actions for Natively:
+Best Sales Mode actions for momor:
 
 Handle objection
 Ask discovery question
@@ -264,18 +267,19 @@ Knowledge base docs are central here. Cluely supports files, live links, and dat
 Likely Support Mode flow:
 
 Customer: "Audio capture is not working on Windows."
-        ↓
+↓
 Detect: support_troubleshooting
-        ↓
+↓
 Retrieve: Windows audio troubleshooting SOP
-        ↓
+↓
 Answer:
+
 1. Check mic permission
 2. Verify input/output device
 3. Restart app/audio service
 4. Escalate if still failing
 
-Natively actions:
+momor actions:
 
 Troubleshoot issue
 Find policy
@@ -317,6 +321,7 @@ Candidate asks compensation/equity
 Likely Recruiting Mode output:
 
 Candidate signal:
+
 - Strong backend fit
 - Weak product communication
 - Ask deeper about ownership
@@ -324,7 +329,7 @@ Candidate signal:
 Suggested reply:
 "That’s a fair question. The role is open because..."
 
-Natively actions:
+momor actions:
 
 Evaluate candidate answer
 Ask follow-up interview question
@@ -370,7 +375,7 @@ Runtime/complexity follow-up
 
 The alleged public Cluely system prompt contains specific handling for behavioral/PM questions, technical problems, math, multiple choice, UI navigation, screen problem solving, and transcript errors. Treat this as unverified but useful signal, because it is a public gist, not official Cluely docs.
 
-For Natively, Interview Mode should be split into submodes:
+For momor, Interview Mode should be split into submodes:
 
 Recruiter Screen
 Behavioral / STAR
@@ -551,7 +556,7 @@ Notes to self
 
 The mobile page explicitly lists many of these casual/professional use cases. Pricing also says people use it for meetings, homework, sales calls, or curiosity.
 
-For Natively, do not present all these as separate modes. Group them into mode families:
+For momor, do not present all these as separate modes. Group them into mode families:
 
 1. Meeting Assistant
 2. Sales Copilot
@@ -561,7 +566,7 @@ For Natively, do not present all these as separate modes. Group them into mode f
 6. Technical/Coding Copilot
 7. Study/Lecture Copilot
 8. Consulting/Client Copilot
-8. Intent detection taxonomy
+9. Intent detection taxonomy
 
 Based on docs, alleged prompt leaks, and user behavior, Cluely likely detects these intent families.
 
@@ -610,7 +615,7 @@ Microsoft’s docs say WDA_EXCLUDEFROMCAPTURE makes a window appear only on the 
 
 Cluely’s own docs admit limitations: as of September 2025, it was not invisible for Windows 10, Windows 11 Home, or pre-2020 Apple devices in Microsoft Teams, Zoom full-screen share, or Google Meet full-screen share.
 
-For Natively: make invisibility a compatibility matrix, not a promise.
+For momor: make invisibility a compatibility matrix, not a promise.
 
 10. Audio capture / transcription
 
@@ -618,14 +623,15 @@ Cluely requires microphone and screen/system audio permissions. Its troubleshoot
 
 The docs also mention Cluely uses system audio settings, microphone permissions, screen/system audio recording permissions, Windows Audio service restarts, and network/WebSocket access to Cluely transcription endpoints.
 
-For Natively, the important architecture is:
+For momor, the important architecture is:
 
 Mic audio
-+ system loopback audio
-+ VAD
-+ streaming STT
-+ speaker labeling
-+ rolling transcript buffer
+
+- system loopback audio
+- VAD
+- streaming STT
+- speaker labeling
+- rolling transcript buffer
 
 Cluely appears to use cloud transcription infrastructure, because its docs mention domains like service.transcribe.cluely.com and WebSocket/network troubleshooting.
 
@@ -637,13 +643,14 @@ Docs say Get Answer / Cmd Shift Enter can help with coding problems or Excel she
 
 Open-source clones confirm the common implementation pattern: screenshot capture + OCR/screen analysis + audio transcription + LLM answer + floating overlay. Cheap-cluely uses Tesseract/screen OCR, Whisper, Gemini, and a translucent always-on-top overlay; Cass captures screenshots/audio and streams them to Gemini; Pluely describes system audio capture and voice input.
 
-For Natively, screen context should be split into:
+For momor, screen context should be split into:
 
 fast OCR text
-+ screenshot image model call
-+ active app/window title
-+ cursor/focus context
-+ change detection
+
+- screenshot image model call
+- active app/window title
+- cursor/focus context
+- change detection
 
 Do not image-model every frame. Use OCR/change detection first, then vision model only when needed.
 
@@ -660,17 +667,16 @@ Cluely says its RAG is used for live insights, Cmd Enter, scoped missed-opportun
 This means modes should not just have prompts. Modes need retrieval scopes:
 
 {
-  "sales_discovery": {
-    "retrieval_scopes": ["pricing", "competitors", "case_studies", "sales_scripts"]
-  },
-  "support": {
-    "retrieval_scopes": ["docs", "known_issues", "refund_policy", "setup_guides"]
-  },
-  "recruiting": {
-    "retrieval_scopes": ["role_requirements", "candidate_scorecards", "company_pitch"]
-  }
+"sales_discovery": {
+"retrieval_scopes": ["pricing", "competitors", "case_studies", "sales_scripts"]
+},
+"support": {
+"retrieval_scopes": ["docs", "known_issues", "refund_policy", "setup_guides"]
+},
+"recruiting": {
+"retrieval_scopes": ["role_requirements", "candidate_scorecards", "company_pitch"]
 }
-13. CRM / ATS integrations
+} 13. CRM / ATS integrations
 
 Cluely integrates CRM and ATS systems through Merge.dev. Docs say it can match call participants with contacts, pull activity history, and push meeting notes into the CRM or ATS.
 
@@ -687,7 +693,7 @@ pull candidate/job history → evaluate candidate and push interview notes
 Support Mode:
 pull customer/ticket history → suggest resolution and escalation
 
-For Natively, this is a huge upsell layer. Personal users need files/prompts. Teams need CRM/ATS + KB + admin controls.
+For momor, this is a huge upsell layer. Personal users need files/prompts. Teams need CRM/ATS + KB + admin controls.
 
 14. Pre-call briefs
 
@@ -695,7 +701,7 @@ Cluely pre-call briefs use Google Calendar to identify upcoming meeting particip
 
 Briefs include meeting details, participant names/roles/backgrounds, previous meeting history, relevant docs/topics, suggested talking points/questions, and company/role background.
 
-For Natively:
+For momor:
 
 5 minutes before meeting:
 calendar event → participants → CRM/LinkedIn/company search → past notes → mode suggestion
@@ -715,9 +721,10 @@ Cluely meeting notes include detailed notes, AI-drafted next steps, full transcr
 
 Enterprise docs also say meeting notes can include mode-specific email templates and generated follow-up emails. Changelog says Cluely Modes include customized email templates for meeting notes.
 
-For Natively, each mode needs a post-call template:
+For momor, each mode needs a post-call template:
 
 Sales:
+
 - pain
 - budget
 - authority
@@ -727,6 +734,7 @@ Sales:
 - follow-up email
 
 Recruiting:
+
 - candidate summary
 - strengths
 - concerns
@@ -734,6 +742,7 @@ Recruiting:
 - next step
 
 Support:
+
 - issue
 - root cause
 - attempted fixes
@@ -741,10 +750,12 @@ Support:
 - escalation
 
 Internal:
+
 - decisions
 - action items
 - blockers
 - owners
+
 16. Coaching / missed opportunities
 
 Cluely’s Coaching feature monitors how reps respond to prospect queries during calls, compares against customizable sales scorecards, and summarizes missed opportunities after calls.
@@ -753,9 +764,10 @@ The docs describe real-time monitoring, custom criteria, instant feedback, post-
 
 This is another layer beyond “answer mode.”
 
-Natively equivalent:
+momor equivalent:
 
 During call:
+
 - classify moments
 - detect missed discovery questions
 - detect unanswered objections
@@ -763,6 +775,7 @@ During call:
 - detect overtalking / poor listening
 
 After call:
+
 - missed opportunities
 - coaching score
 - next training suggestions
@@ -773,7 +786,7 @@ For sales, this is enterprise gold.
 
 Cluely pilot reporting includes detailed Ask AI interaction analysis, categorization by use case, call-specific context, time-based usage trends, ROI and business impact metrics, objection handling success, knowledge base ROI, technical health, adoption, app version rates, and integration success.
 
-For Natively, track:
+For momor, track:
 
 Mode used
 Meeting type
@@ -792,7 +805,7 @@ Follow-up email created
 This is how you debug modes scientifically instead of guessing.
 
 18. Public weaknesses / complaints
-Latency
+    Latency
 
 A Medium reviewer reported 5-10 second response delays in some cases, which felt too slow for live calls.
 
@@ -818,7 +831,7 @@ Invisibility is not universal
 
 Official docs list specific OS/device/platform cases where invisibility does not work reliably.
 
-19. What to copy for Natively
+19. What to copy for momor
 
 The core Cluely playbook is:
 
@@ -831,44 +844,43 @@ The core Cluely playbook is:
 7. Keep answer short and usable.
 8. Turn the call into notes/follow-ups/coaching.
 
-The minimum strong Natively mode schema should be:
+The minimum strong momor mode schema should be:
 
 {
-  "id": "sales_discovery",
-  "name": "Sales Discovery",
-  "description": "Helps with discovery, objections, pricing, and follow-ups.",
-  "system_prompt": "...",
-  "answer_style": {
-    "max_words": 80,
-    "tone": "confident, natural, not robotic",
-    "format": "headline + bullets"
-  },
-  "context_sources": {
-    "transcript": true,
-    "screen": true,
-    "user_profile": true,
-    "reference_files": true,
-    "crm": false
-  },
-  "retrieval_scopes": ["pricing", "competitors", "case_studies"],
-  "dynamic_actions": [
-    {
-      "id": "pricing_objection",
-      "trigger": ["too expensive", "budget", "price", "cost"],
-      "priority": 0.9,
-      "prompt": "Handle this pricing objection using proof and one follow-up question."
-    },
-    {
-      "id": "competitor_objection",
-      "trigger": ["competitor names"],
-      "priority": 0.85,
-      "prompt": "Compare against the competitor without sounding defensive."
-    }
-  ],
-  "post_call_template": "sales_notes",
-  "coaching_rubric": "custom_sales_scorecard"
+"id": "sales_discovery",
+"name": "Sales Discovery",
+"description": "Helps with discovery, objections, pricing, and follow-ups.",
+"system_prompt": "...",
+"answer_style": {
+"max_words": 80,
+"tone": "confident, natural, not robotic",
+"format": "headline + bullets"
+},
+"context_sources": {
+"transcript": true,
+"screen": true,
+"user_profile": true,
+"reference_files": true,
+"crm": false
+},
+"retrieval_scopes": ["pricing", "competitors", "case_studies"],
+"dynamic_actions": [
+{
+"id": "pricing_objection",
+"trigger": ["too expensive", "budget", "price", "cost"],
+"priority": 0.9,
+"prompt": "Handle this pricing objection using proof and one follow-up question."
+},
+{
+"id": "competitor_objection",
+"trigger": ["competitor names"],
+"priority": 0.85,
+"prompt": "Compare against the competitor without sounding defensive."
 }
-20. Best Natively implementation roadmap
+],
+"post_call_template": "sales_notes",
+"coaching_rubric": "custom_sales_scorecard"
+} 20. Best momor implementation roadmap
 Phase 1: Make modes real
 
 Build:
@@ -941,15 +953,16 @@ Cluely is not “one chatbot over a meeting.”
 It is:
 
 Realtime meeting OS
-+ active mode prompt
-+ screen/audio context
-+ action detector
-+ RAG
-+ overlay
-+ notes
-+ follow-ups
-+ coaching
-+ admin analytics
+
+- active mode prompt
+- screen/audio context
+- action detector
+- RAG
+- overlay
+- notes
+- follow-ups
+- coaching
+- admin analytics
 
 The most important product insight:
 
@@ -963,4 +976,4 @@ The third:
 
 The hard moat is latency + context orchestration + UX reliability, not the model.
 
-For Natively, the fastest way to beat them is not “copy Cluely modes.” It is to make modes testable objects with measurable trigger accuracy, latency, retrieval quality, and answer usefulness.
+For momor, the fastest way to beat them is not “copy Cluely modes.” It is to make modes testable objects with measurable trigger accuracy, latency, retrieval quality, and answer usefulness.

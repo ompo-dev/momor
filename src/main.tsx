@@ -1,31 +1,48 @@
-import React from "react"
-import ReactDOM from "react-dom/client"
-import App from "./App"
-import "./index.css"
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "./i18n/index";
+import App from "./App";
+import "./index.css";
+import { installTauriElectronShim } from "./desktop/tauriElectronShim";
 
-const THEME_CACHE_KEY = 'natively_resolved_theme';
+installTauriElectronShim();
+
+const THEME_CACHE_KEY = "momor_resolved_theme";
+const fallbackPlatform = (): string => {
+  if (typeof process !== "undefined" && typeof process.platform === "string") {
+    return process.platform;
+  }
+  const p = navigator.platform.toLowerCase();
+  if (p.includes("mac")) return "darwin";
+  if (p.includes("win")) return "win32";
+  if (p.includes("linux")) return "linux";
+  return "";
+};
 
 // Set platform attribute synchronously — before React renders — so CSS selectors
 // like html[data-platform="win32"] work immediately without a flash on first paint.
 document.documentElement.setAttribute(
-  'data-platform',
-  window.electronAPI?.platform ?? process?.platform ?? ''
+  "data-platform",
+  window.electronAPI?.platform ?? fallbackPlatform(),
 );
 
 // Step 1: Apply cached theme synchronously — before React renders.
 // This ensures useResolvedTheme()'s initial useState read sees the correct value.
-const cachedTheme = localStorage.getItem(THEME_CACHE_KEY) as 'light' | 'dark' | null;
-document.documentElement.setAttribute('data-theme', cachedTheme ?? 'dark');
+const cachedTheme = localStorage.getItem(THEME_CACHE_KEY) as
+  | "light"
+  | "dark"
+  | null;
+document.documentElement.setAttribute("data-theme", cachedTheme ?? "dark");
 
 // Step 2: Confirm/correct from main process (authoritative) and keep cache in sync.
 if (window.electronAPI?.getThemeMode) {
   window.electronAPI.getThemeMode().then(({ resolved }) => {
-    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.setAttribute("data-theme", resolved);
     localStorage.setItem(THEME_CACHE_KEY, resolved);
   });
 
   window.electronAPI?.onThemeChanged?.(({ resolved }) => {
-    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.setAttribute("data-theme", resolved);
     localStorage.setItem(THEME_CACHE_KEY, resolved);
   });
 }
@@ -33,5 +50,5 @@ if (window.electronAPI?.getThemeMode) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
-)
+  </React.StrictMode>,
+);

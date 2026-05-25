@@ -1,7 +1,7 @@
 /**
  * LocalWhisperSTT — local Whisper / Distil-Whisper / Moonshine STT provider.
  *
- * Dual-channel architecture: Natively captures Mic and System Audio as two
+ * Dual-channel architecture: Momor captures Mic and System Audio as two
  * completely separate native streams. createSTTProvider() instantiates this
  * class TWICE — once per channel. No diarization model is needed; speaker
  * attribution is free from the hardware.
@@ -162,7 +162,9 @@ export class LocalWhisperSTT extends EventEmitter {
         if (modelId.toLowerCase().includes('moonshine')) {
             return { intervalMs: 750, minAudioMs: 400, skipAgreement: true };
         }
-        return { intervalMs: 1500, minAudioMs: 800, skipAgreement: false };
+        // whisper-tiny CPU: ~500-1000ms inference → 1000ms tick gives room while
+        // halving the first-partial latency vs the old 1500ms baseline.
+        return { intervalMs: 1000, minAudioMs: 600, skipAgreement: false };
     }
 
     setSampleRate(rate: number): void { this.inputSampleRate = rate; }
@@ -558,7 +560,11 @@ export class LocalWhisperSTT extends EventEmitter {
             this.flushPending();
         } else {
             console.log(`[LocalWhisperSTT] Cold-starting worker for ${this.modelId}`);
-            const workerPath = path.join(__dirname, 'whisper', 'whisperWorker.js');
+            // When bundled into main.js, __dirname = dist-electron/electron/.
+            // When run as standalone, __dirname = dist-electron/electron/audio/.
+            const directPath = path.join(__dirname, 'whisper', 'whisperWorker.js');
+            const mainRelativePath = path.join(__dirname, 'audio', 'whisper', 'whisperWorker.js');
+            const workerPath = require('fs').existsSync(directPath) ? directPath : mainRelativePath;
             this.worker = new Worker(workerPath);
             this.attachWorkerListeners();
             this.worker.postMessage(buildWorkerInitMessage(this.modelId));

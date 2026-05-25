@@ -38,13 +38,16 @@ export function categorizeSttError(rawError: string): SttErrorCategory {
     // 1. Authentication errors — immediately fatal
     if (
         rawError.startsWith('401 ')
+        || /\b401\b/.test(rawError)
         || lower.includes('auth_timeout')
         || lower.includes('invalid_key')
+        || lower.includes('invalid credentials')
         || lower.includes('invalid api')
         || lower.includes('authentication')
         || lower.includes('invalid_key_format')
         || lower.includes('auth_error')
         || lower.includes('unauthorized')
+        || lower.includes('unexpected server response: 401')
     ) {
         return {
             title: 'Authentication Failed',
@@ -140,7 +143,7 @@ export function categorizeSttError(rawError: string): SttErrorCategory {
         };
     }
 
-    // 9. Session conflict (NativelyPro specific)
+    // 9. Session conflict (MomorPro specific)
     if (lower.includes('concurrent_session_blocked')) {
         return {
             title: 'Session Conflict',

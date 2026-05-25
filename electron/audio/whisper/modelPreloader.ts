@@ -52,8 +52,12 @@ class ModelPreloader {
 
         console.log(`[ModelPreloader] Warming worker for ${modelId}...`);
 
-        // __dirname at runtime = dist-electron/electron/audio/whisper/
-        const workerPath = path.join(__dirname, 'whisperWorker.js');
+        // When bundled into main.js, __dirname = dist-electron/electron/.
+        // When run as standalone, __dirname = dist-electron/electron/audio/whisper/.
+        // Try direct path first (standalone), fall back to main.js-relative path.
+        const directPath = path.join(__dirname, 'whisperWorker.js');
+        const mainRelativePath = path.join(__dirname, 'audio', 'whisper', 'whisperWorker.js');
+        const workerPath = require('fs').existsSync(directPath) ? directPath : mainRelativePath;
         const w = new Worker(workerPath);
         this.loadingWorker = w;
 

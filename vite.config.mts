@@ -26,7 +26,15 @@ export default defineConfig({
             output: {
                 manualChunks: {
                     vendor: ['react', 'react-dom', 'framer-motion'],
-                    ui: ['lucide-react', '@radix-ui/react-dialog', '@radix-ui/react-toast']
+                    ui: [
+                        'lucide-react',
+                        '@radix-ui/react-dialog',
+                        '@radix-ui/react-toast',
+                        '@radix-ui/react-slot',
+                        'class-variance-authority',
+                        'tailwind-merge',
+                        'sonner',
+                    ]
                 }
             }
         }

@@ -6,6 +6,7 @@
 **Tests:** `npm test` → 453/453 pass (45.4 s)
 
 Companion docs:
+
 - [`SCREENSHOT_ANALYSIS_CALL_GRAPH.md`](./SCREENSHOT_ANALYSIS_CALL_GRAPH.md)
 - [`SCREENSHOT_ANALYSIS_CURRENT_BEHAVIOR.md`](./SCREENSHOT_ANALYSIS_CURRENT_BEHAVIOR.md)
 - [`SCREENSHOT_ANALYSIS_SECURITY_AUDIT.md`](./SCREENSHOT_ANALYSIS_SECURITY_AUDIT.md)
@@ -17,16 +18,16 @@ Companion docs:
 
 ## Summary
 
-| Dimension | Status |
-|---|---|
-| Current actual pipeline | option 5 — **partial / multiple paths** |
-| Traditional OCR | **yes** — Tesseract.js, called from one IPC handler |
-| Vision OCR (LLM-as-OCR) | **no** — only forwards raw image to the answer model |
-| Direct image-to-answer | **yes** — every multimodal provider receives the raw PNG |
-| Structured screen context | **partial** — single OCR string wrapped in an XML envelope; no code-block / table / window-title extraction |
-| UI maturity | **early** — chip + attachment preview exist; no "Use current screen" button; dynamic chip lies about its capability |
-| Security maturity | **broken** — `validateImagePath` rejects every legitimate macOS userData path on the renderer-supplied path; custom cURL provider has no scope gate; no symlink resolution |
-| Test maturity | **thin** — heavy on source-grep and stubbed integration tests; zero end-to-end coverage of the screen pipeline |
+| Dimension                 | Status                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current actual pipeline   | option 5 — **partial / multiple paths**                                                                                                                                    |
+| Traditional OCR           | **yes** — Tesseract.js, called from one IPC handler                                                                                                                        |
+| Vision OCR (LLM-as-OCR)   | **no** — only forwards raw image to the answer model                                                                                                                       |
+| Direct image-to-answer    | **yes** — every multimodal provider receives the raw PNG                                                                                                                   |
+| Structured screen context | **partial** — single OCR string wrapped in an XML envelope; no code-block / table / window-title extraction                                                                |
+| UI maturity               | **early** — chip + attachment preview exist; no "Use current screen" button; dynamic chip lies about its capability                                                        |
+| Security maturity         | **broken** — `validateImagePath` rejects every legitimate macOS userData path on the renderer-supplied path; custom cURL provider has no scope gate; no symlink resolution |
+| Test maturity             | **thin** — heavy on source-grep and stubbed integration tests; zero end-to-end coverage of the screen pipeline                                                             |
 
 ---
 
@@ -56,15 +57,15 @@ Companion docs:
    `PromptAssembler.test.mjs:147-163` confirms the assembled block has the
    right trust tag.
 6. **Vision providers exist.** Gemini, OpenAI, Claude, Groq Llama-4-Scout,
-   Natively, Codex CLI, Ollama vision families, and custom cURL all have
+   momor, Codex CLI, Ollama vision families, and custom cURL all have
    working multimodal builders (`LLMHelper.ts:1698, 1786, 1907, 2160, 480,
-   413, 1830`).
+413, 1830`).
 7. **Privacy gates are wired.** `assertProviderDataScopes` runs before every
    named-provider call (`LLMHelper.ts:119-122`). Local-only mode short-circuits
    to Ollama (`ProviderRouter.ts:280-286`).
 8. **Permission UX is partial but exists.** Screen Recording denied surfaces
    a banner with an "Open Settings" deep link
-   (`NativelyInterface.tsx:3111-3143`).
+   (`momorInterface.tsx:3111-3143`).
 
 ---
 
@@ -89,7 +90,7 @@ Companion docs:
    assertProviderDataScopes integration.
 8. **No symlink resolution.** STATUS: **FIXED** (2026-05-15) — `validateImagePath`
    now uses `fs.realpathSync` for symlink escape detection.
-9. **No image size cap for cloud providers other than Natively.** Still pending —
+9. **No image size cap for cloud providers other than momor.** Still pending —
    Sharp resize needs to be applied for all providers.
 
 ---
@@ -144,14 +145,18 @@ sign off — this section is the spec.
 on macOS.
 
 Files to edit:
+
 - `electron/utils/curlUtils.ts:253-302` — replace the entire `validateImagePath`
   body with a single positive check:
   ```ts
   export function validateImagePath(imagePath, userDataPath) {
-    if (!imagePath || typeof imagePath !== 'string')
-      return { isValid: false, reason: 'Image path must be a non-empty string' };
-    if (imagePath.includes('\0'))
-      return { isValid: false, reason: 'NUL byte in path' };
+    if (!imagePath || typeof imagePath !== "string")
+      return {
+        isValid: false,
+        reason: "Image path must be a non-empty string",
+      };
+    if (imagePath.includes("\0"))
+      return { isValid: false, reason: "NUL byte in path" };
     const resolved = path.resolve(imagePath);
     const allowedRoot = path.resolve(userDataPath) + path.sep;
     let realResolved = resolved;
@@ -161,7 +166,7 @@ Files to edit:
       // File doesn't exist yet — that's fine, the read will fail anyway.
     }
     if (!realResolved.startsWith(allowedRoot))
-      return { isValid: false, reason: 'Path must be inside userData' };
+      return { isValid: false, reason: "Path must be inside userData" };
     return { isValid: true };
   }
   ```
@@ -172,6 +177,7 @@ Files to edit:
   (use `tmp/` real-filesystem fixture).
 
 Tests to add:
+
 - `validateImagePath('/Users/u/Library/Application Support/X/screenshots/abc.png', '/Users/u/Library/Application Support/X')` → `isValid: true`.
 - `validateImagePath('/Users/u/Library/Application Support/X/../../../.ssh/id_rsa', ...)` → `isValid: false`.
 - Symlink fixture pointing out of userData → rejected.
@@ -179,8 +185,9 @@ Tests to add:
 ### Step 2 — Wire "Answer from screen" to actually capture (P0; ~half a day)
 
 Files to edit:
-- `src/components/NativelyInterface.tsx:3184-3187` — when the chip type is
-  `screen_coding_problem` (or any future screen-* type), call
+
+- `src/components/momorInterface.tsx:3184-3187` — when the chip type is
+  `screen_coding_problem` (or any future screen-\* type), call
   `window.electronAPI.takeScreenshot()` first, then pass that path into
   `generateWhatToSay`.
 - `electron/services/__tests__/DynamicActionPromptInstructionWiring.test.mjs:17` —
@@ -189,6 +196,7 @@ Files to edit:
   non-screen wiring unchanged.
 
 Tests to add:
+
 - Renderer integration test (jsdom or vitest-react) that mocks
   `window.electronAPI` and verifies a `screen_coding_problem`-typed action
   invokes `takeScreenshot` before `generateWhatToSay`.
@@ -196,7 +204,8 @@ Tests to add:
 ### Step 3 — Add a top-level "Use current screen" button (P0; ~1 day)
 
 Files to add / edit:
-- `src/components/NativelyInterface.tsx` — new pill in the action row that
+
+- `src/components/momorInterface.tsx` — new pill in the action row that
   triggers `takeScreenshot` → wait for path → `generateWhatToSay(undefined, [path])`.
   Update the screen-context chip to show "Looking at screen…" during the
   in-flight period.
@@ -206,6 +215,7 @@ Files to add / edit:
 ### Step 4 — Structured screen context (P1; ~2 days)
 
 Files to extend:
+
 - `electron/services/screen/ScreenContextService.ts` — after `runOCR`, parse:
   - active window title via `desktopCapturer.getSources({ types: ['window'] })`
     filtered to the focused window (post-capture);
@@ -223,19 +233,21 @@ Files to extend:
 ### Step 5 — Provider transparency (P1; ~1 day)
 
 Files to edit:
+
 - `electron/LLMHelper.ts:480-543` (`callOllama`) — when caller passes an
   `imagePath` but the active Ollama model is not in the vision family
   (`modelCapabilities.ts:75-78`), throw a typed `VisionUnsupportedError`
   rather than silently dropping the image.
 - `electron/LLMHelper.ts:2160-2190` — same for `generateWithGroqMultimodal`
   if the user-selected Groq model is not Scout.
-- `src/components/NativelyInterface.tsx` — render the
+- `src/components/momorInterface.tsx` — render the
   `VisionUnsupportedError` as a non-blocking banner: "Active model doesn't
   see images. Switch to Gemini / GPT-4o / Claude?"
 
 ### Step 6 — Real E2E (P1; ~2 days)
 
 Files to add:
+
 - `tests/e2e/screen-pipeline.spec.ts` — Playwright spec that:
   1. Launches Electron.
   2. Simulates `⌘+H`.
@@ -247,14 +259,16 @@ Files to add:
      text, then screenshot the running app itself).
 
 Files to edit:
+
 - `playwright.config.ts` — drop the auto-skip for this spec; gate on a
   `PLAYWRIGHT_SKIP_OCR=true` env var instead so CI can opt out, not opt in.
 
 ### Step 7 — Provider payload snapshots (P2; ~half a day each)
 
 Files to add:
+
 - `electron/llm/__tests__/ProviderImagePayload.test.mjs` — for each of
-  Gemini / OpenAI / Claude / Groq / Ollama / Natively / custom cURL, build
+  Gemini / OpenAI / Claude / Groq / Ollama / momor / custom cURL, build
   a mock fetch / SDK and assert the body shape produced when given a
   fixture image. Snapshots are fine, but lock in the wire format.
 
@@ -263,7 +277,7 @@ Files to add:
 - Wire `assertOutboundScopes('custom', ...)` into `chatWithCurl`.
 - Add `escapePromptInjection` to `buildScreenContextBlock`.
 - Apply Sharp resize universally before sending to any cloud provider, not
-  just Natively.
+  just momor.
 - Clean stale screenshot files from `userData/screenshots/` on startup
   (older than 7 days).
 
@@ -271,24 +285,24 @@ Files to add:
 
 ## Final verdict
 
-1. **Is Natively currently doing OCR?**
+1. **Is momor currently doing OCR?**
    **Yes** — real Tesseract.js, with a perceptual-hash cache. But the
    pipeline is only invoked from one IPC handler (`generate-what-to-say`),
    and on macOS the path is silently blocked by the `validateImagePath` bug
    whenever the renderer supplies `imagePaths` — which is the only way the
    UI ever calls it.
 
-2. **Is Natively currently using vision LLMs for OCR?**
-   **No.** Vision LLMs receive the raw image *alongside* the Tesseract OCR
+2. **Is momor currently using vision LLMs for OCR?**
+   **No.** Vision LLMs receive the raw image _alongside_ the Tesseract OCR
    text (for "What should I say") or alone (for Code Hint / Brainstorm).
    No code path treats a vision LLM as the OCR engine.
 
-3. **Is Natively sending screenshots directly to LLMs?**
+3. **Is momor sending screenshots directly to LLMs?**
    **Yes.** When the multimodal path runs, the raw PNG bytes go to Gemini /
-   OpenAI / Claude / Groq Scout / Ollama / cURL (resized for Natively
+   OpenAI / Claude / Groq Scout / Ollama / cURL (resized for momor
    only). The OCR text rides alongside in the prompt, not as a substitute.
 
-4. **Is Natively screen analysis Cluely-level?**
+4. **Is momor screen analysis Cluely-level?**
    **No.** Three gaps disqualify it:
    - The marquee "Answer from screen" chip is theatrical — it does not
      capture the screen.
@@ -302,10 +316,10 @@ Files to add:
    1. Fix `validateImagePath` so the existing pipeline works on macOS.
    2. Make the dynamic-action chip take a screenshot before answering.
    3. Surface a top-level "Use current screen" button.
-   With those three changes the existing Tesseract + multimodal stack
-   becomes a Cluely-equivalent surface. Everything past Step 3 deepens the
-   feature (structured context, provider transparency, E2E confidence) but
-   is not required for parity.
+      With those three changes the existing Tesseract + multimodal stack
+      becomes a Cluely-equivalent surface. Everything past Step 3 deepens the
+      feature (structured context, provider transparency, E2E confidence) but
+      is not required for parity.
 
 ---
 
@@ -325,8 +339,8 @@ node --test \
 
 node -e "
 const { validateImagePath } = require('./dist-electron/electron/utils/curlUtils.js');
-const userData = '/Users/evin/Library/Application Support/Natively';
-console.log(validateImagePath('/Users/evin/Library/Application Support/Natively/screenshots/abc.png', userData));
+const userData = '/Users/evin/Library/Application Support/momor';
+console.log(validateImagePath('/Users/evin/Library/Application Support/momor/screenshots/abc.png', userData));
 "
 # { isValid: false, reason: 'Paths outside app directory are not allowed' }
 ```

@@ -3,11 +3,11 @@
 This file answers the brief's reality-check questionnaire honestly. It is paired with
 two test files that **actually exercise the OCR pipeline** — not just call signatures.
 
-| Test file | What it proves |
-|-----------|----------------|
-| `electron/services/__tests__/OcrRealFixtures.test.mjs` | `OcrProviderManager.recognize()` invokes the live `tesseract.js` engine against PNG fixtures and the recovered text contains the rendered words. |
-| `electron/services/__tests__/ScreenUnderstandingMode.test.mjs` | Routing for `auto / vision_only / ocr_only / private` actually has the side-effects the privacy contract promises. Uses stubs because the goal is to verify *routing*, not OCR. |
-| `tests/fixtures/screen/generateOcrFixtures.mjs` | Renders 4 real PNG fixtures (simple text, code, error log, table) via `sharp`. Run during the OCR test on every machine — no binaries committed. |
+| Test file                                                      | What it proves                                                                                                                                                                  |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `electron/services/__tests__/OcrRealFixtures.test.mjs`         | `OcrProviderManager.recognize()` invokes the live `tesseract.js` engine against PNG fixtures and the recovered text contains the rendered words.                                |
+| `electron/services/__tests__/ScreenUnderstandingMode.test.mjs` | Routing for `auto / vision_only / ocr_only / private` actually has the side-effects the privacy contract promises. Uses stubs because the goal is to verify _routing_, not OCR. |
+| `tests/fixtures/screen/generateOcrFixtures.mjs`                | Renders 4 real PNG fixtures (simple text, code, error log, table) via `sharp`. Run during the OCR test on every machine — no binaries committed.                                |
 
 ## Questionnaire
 
@@ -23,12 +23,12 @@ for constrained CI, but it is **not** skipped by default.
 
 **Yes.** On a 2024 MBP M-series the four fixtures recover the following words:
 
-| Fixture | Words asserted | p50 latency |
-|---------|----------------|-------------|
-| `ocr_simple_text.png` | `Hello`, `Natively`, `Screen`, `understanding`, `works` | ~255 ms |
-| `ocr_code_problem.png` | `two_sum` (loose), `return` | ~290 ms |
-| `ocr_error_log.png` | `TypeError`, `undefined` | ~260 ms |
-| `ocr_table.png` | `Plan`, `Price` | ~180 ms |
+| Fixture                | Words asserted                                       | p50 latency |
+| ---------------------- | ---------------------------------------------------- | ----------- |
+| `ocr_simple_text.png`  | `Hello`, `momor`, `Screen`, `understanding`, `works` | ~255 ms     |
+| `ocr_code_problem.png` | `two_sum` (loose), `return`                          | ~290 ms     |
+| `ocr_error_log.png`    | `TypeError`, `undefined`                             | ~260 ms     |
+| `ocr_table.png`        | `Plan`, `Price`                                      | ~180 ms     |
 
 Confidence values returned by Tesseract land in the 0.7–0.9 band on these
 synthetic fixtures. Real screenshots from a Retina display are larger and slower
@@ -47,13 +47,13 @@ next big test to add (Phase 8 of the brief).
 **Yes** for `userData/screenshots/*.png` and `userData/extra_screenshots/*.png`,
 proved by `electron/services/__tests__/ImagePathValidation.test.mjs`. The real
 gap is the same as (3): no end-to-end test that captures then validates against
-a *live* capture.
+a _live_ capture.
 
 ### 5. Does PromptAssembler receive OCR text?
 
 Yes — `electron/services/__tests__/PromptAssembler.test.mjs` covers OCR text
 appearing as a sentinel block in the assembled prompt. The new test
-`ScreenUnderstandingMode.test.mjs` proves OCR is actually *populated* into the
+`ScreenUnderstandingMode.test.mjs` proves OCR is actually _populated_ into the
 `visibleText` field that the assembler reads.
 
 ### 6. Does the final WhatToAnswer path receive imagePaths + screenContext?
@@ -68,7 +68,7 @@ this change-set. Documented under "Known gaps".
 
 ### 7. Does UI show OCR success/failure?
 
-Partial. `NativelyInterface.tsx` has loading states for "Capturing screen /
+Partial. `momorInterface.tsx` has loading states for "Capturing screen /
 Reading screen" but it does not yet read the `provenance` / `ocrRan` /
 `visionRequested` fields from `ScreenUnderstandingResult`. The provenance
 plumbing now exists in the service result type — the UI consumer is pending
@@ -85,7 +85,7 @@ classified as `unavailable` / `failed` with provenance set accordingly.
 
 ### 9. Which tests are source-grep / stub-only?
 
-Source-grep / stub-only (these prove *plumbing*, not OCR engine quality):
+Source-grep / stub-only (these prove _plumbing_, not OCR engine quality):
 
 - `electron/services/__tests__/ScreenUnderstandingService.test.mjs`
 - `electron/services/__tests__/ScreenUnderstandingMode.test.mjs`
@@ -104,23 +104,23 @@ Source-grep / stub-only (these prove *plumbing*, not OCR engine quality):
 
 1. **`IntelligenceEngine` and the IPC `generate-what-to-say` / `generate-code-hint`
    handlers still call `ScreenContextService` directly, not `ScreenUnderstandingService`.**
-   The new `screenUnderstandingMode` setting therefore *exists at the service
-   level* but does not influence the live answer pipeline yet. Phase 6 of the
+   The new `screenUnderstandingMode` setting therefore _exists at the service
+   level_ but does not influence the live answer pipeline yet. Phase 6 of the
    brief — pending.
 2. **`VisionScreenAnalyzer.callVisionProvider` calls `LLMHelper.streamChat`, but
    `LLMHelper.streamChat` does not accept an `imagePaths` option** the way the
    analyzer expects. The vision-path is wired at the routing layer but the
    actual provider call would throw if invoked. Until it's reconciled, SUS
    should only mark `visionRequested: true` and let the answer pipeline use
-   `LLMHelper.chatWithGemini` (which *does* support `imagePaths`) for the actual
+   `LLMHelper.chatWithGemini` (which _does_ support `imagePaths`) for the actual
    vision invocation.
 3. **No UI consumer of `provenance`.** The new `ScreenUnderstandingResult.provenance`
    field is populated by SUS but no React component reads it. Phase 4 of the
    brief — pending.
 4. **No real Electron Playwright test for the screen-understanding flow.**
    `npm run test:e2e:screen-understanding` runs a Node script
-   (`natively-api/tests/screen-understanding-live.e2e.mjs`) that hits the live
-   Natively API, not the Electron app. Phase 8 — pending.
+   (`momor-api/tests/screen-understanding-live.e2e.mjs`) that hits the live
+   momor API, not the Electron app. Phase 8 — pending.
 5. **Apple Vision OCR adapter is a stub (`isAvailable: false`).** The fallback
    chain currently always lands on Tesseract on macOS. Native bridge — pending.
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "momor desktop capability set",
+  "windows": ["launcher", "overlay", "settings", "model-selector", "cropper"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "dialog:default",
+    "fs:default",
+    "global-shortcut:default",
+    "opener:default",
+    "updater:default"
+  ]
+}

@@ -8,12 +8,13 @@ import { SessionTracker, TranscriptSegment, SuggestionTrigger, ContextItem } fro
 import {
     AnswerLLM, AssistLLM, BrainstormLLM, ClarifyLLM, CodeHintLLM, FollowUpLLM, RecapLLM,
     FollowUpQuestionsLLM, WhatToAnswerLLM,
-    prepareTranscriptForWhatToAnswer, buildTemporalContext,
+    prepareTranscriptForWhatToAnswer, resolveTranscriptForWhatToAnswer, buildTemporalContext,
     AssistantResponse as LLMAssistantResponse, classifyIntent, planNextAssistantAction, PlannerDecision
 } from './llm';
 import { DynamicActionEngine } from './services/dynamic-actions/DynamicActionEngine';
 import { DynamicAction } from './services/dynamic-actions/DynamicAction';
 import { ScreenContext } from './services/screen/ScreenContextService';
+import { UserSessionContextService } from './services/UserSessionContextService';
 
 // Mode types
 export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' | 'recap' | 'clarify' | 'manual' | 'follow_up_questions' | 'code_hint' | 'brainstorm';
@@ -174,6 +175,11 @@ export class IntelligenceEngine extends EventEmitter {
         this.initializeLLMs();
     }
 
+    /** Prepends synced About you / session / AI profile context to any LLM context string. */
+    private withUserSessionContext(context?: string | null): string {
+        return UserSessionContextService.getInstance().mergeIfNeeded(context ?? undefined);
+    }
+
     // ============================================
     // Transcript Handling (delegates to SessionTracker)
     // ============================================
@@ -266,8 +272,14 @@ export class IntelligenceEngine extends EventEmitter {
             }
         }
 
-        // Check for follow-up intent if user is speaking
-        if (result && !skipRefinementCheck && result.role === 'user' && this.session.getLastAssistantMessage()) {
+        // In active listening, user speech stays in context but must not auto-trigger replies.
+        if (
+            result &&
+            !skipRefinementCheck &&
+            result.role === 'user' &&
+            !this.session.isActiveListeningMode() &&
+            this.session.getLastAssistantMessage()
+        ) {
             const { isRefinement, intent } = detectRefinementIntent(segment.text.trim());
             if (isRefinement) {
                 this.runFollowUp(intent, segment.text.trim());
@@ -470,7 +482,7 @@ export class IntelligenceEngine extends EventEmitter {
                 return null;
             }
 
-            const context = this.session.getFormattedContext(60);
+            const context = this.withUserSessionContext(this.session.getFormattedContext(60));
             if (!context) {
                 this.setMode('idle');
                 return null;
@@ -539,7 +551,7 @@ export class IntelligenceEngine extends EventEmitter {
                     this.setMode('idle');
                     return "Please configure your API Keys in Settings to use this feature.";
                 }
-                const context = this.session.getFormattedContext(180);
+                const context = this.withUserSessionContext(this.session.getFormattedContext(180));
                 const answer = await this.answerLLM.generate(question || '', context);
                 if (isSpeculative) {
                     this.speculativeText = null;
@@ -558,7 +570,7 @@ export class IntelligenceEngine extends EventEmitter {
 
             const contextItems = this.session.getContext(180);
 
-            // Inject latest interim transcript if available
+            // Inject latest interim transcript segments if available
             const lastInterim = this.session.getLastInterimInterviewer();
             if (lastInterim && lastInterim.text.trim().length > 0) {
                 const lastItem = contextItems[contextItems.length - 1];
@@ -567,11 +579,28 @@ export class IntelligenceEngine extends EventEmitter {
                     (lastItem.text === lastInterim.text || Math.abs(lastItem.timestamp - lastInterim.timestamp) < 1000);
 
                 if (!isDuplicate) {
-                    console.log(`[IntelligenceEngine] Injecting interim transcript`, { length: lastInterim.text.length });
+                    console.log(`[IntelligenceEngine] Injecting interim interviewer transcript`, { length: lastInterim.text.length });
                     contextItems.push({
                         role: 'interviewer',
                         text: lastInterim.text,
                         timestamp: lastInterim.timestamp
+                    });
+                }
+            }
+
+            const lastInterimUser = this.session.getLastInterimUser();
+            if (lastInterimUser && lastInterimUser.text.trim().length > 0) {
+                const lastItem = contextItems[contextItems.length - 1];
+                const isDuplicate = lastItem &&
+                    lastItem.role === 'user' &&
+                    (lastItem.text === lastInterimUser.text || Math.abs(lastItem.timestamp - lastInterimUser.timestamp) < 1000);
+
+                if (!isDuplicate) {
+                    console.log(`[IntelligenceEngine] Injecting interim user transcript`, { length: lastInterimUser.text.length });
+                    contextItems.push({
+                        role: 'user',
+                        text: lastInterimUser.text,
+                        timestamp: lastInterimUser.timestamp
                     });
                 }
             }
@@ -582,7 +611,12 @@ export class IntelligenceEngine extends EventEmitter {
                 timestamp: item.timestamp
             }));
 
-            const preparedTranscript = prepareTranscriptForWhatToAnswer(transcriptTurns, 12);
+            const rawFormatted = this.session.getFormattedContext(180);
+            const preparedTranscript = prepareTranscriptForWhatToAnswer(transcriptTurns, 16);
+            const transcriptForLLM = resolveTranscriptForWhatToAnswer(
+                rawFormatted,
+                preparedTranscript,
+            );
 
             const temporalContext = buildTemporalContext(
                 contextItems,
@@ -590,18 +624,30 @@ export class IntelligenceEngine extends EventEmitter {
                 180
             );
 
-            const lastInterviewerTurn = this.session.getLastInterviewerTurn();
+            const lastConversationalTurn =
+                this.session.getLastConversationalTurn() ??
+                this.session.getLastInterviewerTurn();
             const intentResult = await classifyIntent(
-                lastInterviewerTurn,
-                preparedTranscript,
+                lastConversationalTurn,
+                transcriptForLLM,
                 this.session.getAssistantResponseHistory().length
             );
+
+            let promptInstruction = options?.promptInstruction;
+            const lastContextItem = contextItems[contextItems.length - 1];
+            if (lastContextItem?.role === 'user' && !promptInstruction) {
+                promptInstruction = `<response_focus>
+The latest transcript line is from the candidate (ME). Respond to their request directly using earlier transcript lines — include exact numbers, names, or phrases they spoke aloud.
+</response_focus>`;
+            }
 
             const screenContext = options?.screenContext;
             console.log('[IntelligenceEngine] Temporal RAG', {
                 previousResponses: temporalContext.previousResponses.length,
                 tone: temporalContext.toneSignals[0]?.type || 'neutral',
                 intent: intentResult.intent,
+                transcriptChars: transcriptForLLM.length,
+                lastTurnRole: lastContextItem?.role,
                 imageCount: imagePaths?.length || 0,
                 screenOcrAvailable: Boolean(screenContext?.ocrText),
                 screenOcrTextLength: screenContext?.ocrText?.length || 0,
@@ -609,9 +655,7 @@ export class IntelligenceEngine extends EventEmitter {
 
             const generationId = ++this.currentGenerationId;
             let fullAnswer = "";
-            // RC-03 fix: hold a reference to the generator so we can call .return()
-            // to properly terminate the network request when a new generation starts.
-            const stream = this.whatToAnswerLLM.generateStream(preparedTranscript, temporalContext, intentResult, imagePaths, screenContext, options?.promptInstruction);
+            const stream = this.whatToAnswerLLM.generateStream(transcriptForLLM, temporalContext, intentResult, imagePaths, screenContext, promptInstruction);
             let streamAborted = false;
 
             for await (const token of stream) {
@@ -624,6 +668,9 @@ export class IntelligenceEngine extends EventEmitter {
                     break;
                 }
                 fullAnswer += token;
+                if (!isSpeculative) {
+                    this.emit('suggested_answer_token', token, question || 'inferred', confidence);
+                }
             }
 
             if (streamAborted) {
@@ -660,7 +707,6 @@ export class IntelligenceEngine extends EventEmitter {
                 return fullAnswer;
             }
 
-            this.emit('suggested_answer_token', fullAnswer, question || 'inferred', confidence);
             this.session.addAssistantMessage(fullAnswer);
 
             this.session.pushUsage({
@@ -704,7 +750,7 @@ export class IntelligenceEngine extends EventEmitter {
                 return null;
             }
 
-            const context = this.session.getFormattedContext(60);
+            const context = this.withUserSessionContext(this.session.getFormattedContext(60));
             const refinementRequest = userRequest || intent;
 
             const generationId = ++this.currentGenerationId;
@@ -776,7 +822,7 @@ export class IntelligenceEngine extends EventEmitter {
                 return null;
             }
 
-            const context = this.session.getFormattedContext(120);
+            const context = this.withUserSessionContext(this.session.getFormattedContext(120));
             if (!context) {
                 console.warn('[IntelligenceEngine] No context available for recap');
                 this.setMode('idle');
@@ -843,8 +889,10 @@ export class IntelligenceEngine extends EventEmitter {
             }
 
             const rawContext = this.session.getFormattedContext(180);
-            // If no transcript yet, use a generic prompt — the LLM will ask a scoping question
-            const context = rawContext || '[No transcript available yet. The candidate just joined the interview. Generate an opening clarifying question to understand the scope and constraints of the upcoming problem.]';
+            const context = this.withUserSessionContext(
+                rawContext ||
+                    '[No transcript available yet. The candidate just joined the interview. Generate an opening clarifying question to understand the scope and constraints of the upcoming problem.]',
+            );
 
             const generationId = ++this.currentGenerationId;
             let fullClarification = "";
@@ -906,7 +954,7 @@ export class IntelligenceEngine extends EventEmitter {
                 return null;
             }
 
-            const context = this.session.getFormattedContext(120);
+            const context = this.withUserSessionContext(this.session.getFormattedContext(120));
             if (!context) {
                 console.warn('[IntelligenceEngine] No context available for follow-up questions');
                 this.setMode('idle');
@@ -969,7 +1017,7 @@ export class IntelligenceEngine extends EventEmitter {
                 return null;
             }
 
-            const context = this.session.getFormattedContext(120);
+            const context = this.withUserSessionContext(this.session.getFormattedContext(120));
             const answer = await this.answerLLM.generate(question, context);
 
             if (answer) {
@@ -1024,9 +1072,10 @@ export class IntelligenceEngine extends EventEmitter {
                 : sessionQuestion.source;
 
             // Pull transcript as fallback context when no question is pinned
-            const transcriptContext = questionContext === null
+            const rawTranscript = questionContext === null
                 ? this.session.getFormattedContext(180)
-                : null;
+                : undefined;
+            const transcriptContext = this.withUserSessionContext(rawTranscript);
 
             console.log(`[IntelligenceEngine] Code hint — question source: ${questionContext ? (questionSource ?? 'passed') : 'none'}, transcript lines: ${transcriptContext ? transcriptContext.split('\n').length : 0}, images: ${imagePaths?.length ?? 0}`);
 
@@ -1103,7 +1152,8 @@ export class IntelligenceEngine extends EventEmitter {
             const resolvedProblem = problemStatement?.trim() ||
                 this.session.getDetectedCodingQuestion().question?.trim();
 
-            if (!context.trim() && !resolvedProblem && (!imagePaths || imagePaths.length === 0)) {
+            if (!context.trim() && !resolvedProblem && (!imagePaths || imagePaths.length === 0) &&
+                !UserSessionContextService.getInstance().hasContext()) {
                 this.setMode('idle');
                 const msg = "There's nothing to brainstorm right now. Make sure your question is visible or spoken aloud, then try again.";
                 this.session.addAssistantMessage(msg);
@@ -1114,6 +1164,7 @@ export class IntelligenceEngine extends EventEmitter {
             if (resolvedProblem) {
                 context = `<problem_statement>\n${resolvedProblem}\n</problem_statement>\n\n${context}`;
             }
+            context = this.withUserSessionContext(context);
             const generationId = ++this.currentGenerationId;
             let fullResult = "";
             const stream = this.brainstormLLM.generateStream(context, imagePaths);

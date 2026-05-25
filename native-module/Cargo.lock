@@ -1055,6 +1055,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "momor-audio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "cidre",
+ "core-foundation 0.10.1",
+ "core-graphics",
+ "cpal",
+ "machine-uid",
+ "napi",
+ "napi-derive",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "once_cell",
+ "rand",
+ "reqwest",
+ "ringbuf",
+ "rubato",
+ "serde_json",
+ "sha2",
+ "tracing",
+ "wasapi",
+ "webrtc-vad",
+ "windows 0.52.0",
+]
+
+[[package]]
 name = "napi"
 version = "3.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1126,35 +1155,6 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
-]
-
-[[package]]
-name = "natively-audio"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "cidre",
- "core-foundation 0.10.1",
- "core-graphics",
- "cpal",
- "machine-uid",
- "napi",
- "napi-derive",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "once_cell",
- "rand",
- "reqwest",
- "ringbuf",
- "rubato",
- "serde_json",
- "sha2",
- "tracing",
- "wasapi",
- "webrtc-vad",
- "windows 0.52.0",
 ]
 
 [[package]]

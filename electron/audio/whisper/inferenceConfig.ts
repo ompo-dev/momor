@@ -37,7 +37,7 @@ export interface InferenceConfig {
  * Moonshine uses separate decoder + with_past, etc.).
  */
 const WHISPER_SAFE_DTYPE: Record<string, string> = {
-    encoder_model: 'fp32',
+    encoder_model: 'q8',
     decoder_model: 'q8',
     decoder_model_merged: 'q8',
     decoder_with_past_model: 'q8',
@@ -80,10 +80,10 @@ export function resolveInferenceConfig(): InferenceConfig {
     }
 
     if (platform === 'win32') {
-        // Windows — DirectML over NVIDIA / AMD / Intel GPUs. Per-module dtype
-        // gives best accuracy/speed tradeoff for the larger Whisper/Distil
-        // checkpoints; DirectML handles mixed precision via session options.
-        return { executionProviders: ['dml', 'cpu'], dtype: WHISPER_SAFE_DTYPE };
+        // Windows — CPU-only. DirectML requires compiling ONNX graphs to DX12
+        // shaders on first run (2-5 min, 800%+ CPU), which blocks real-time STT.
+        // CPU with q8 decoder loads in ~15s and is fast enough for 2s audio chunks.
+        return { executionProviders: ['cpu'], dtype: WHISPER_SAFE_DTYPE };
     }
 
     // Intel Mac, Linux, unknown — CPU. Per-module gives a real speedup on

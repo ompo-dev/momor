@@ -13,7 +13,9 @@ export interface SpeechSegment {
 
 const WINDOW_SIZE = 480;       // 30ms at 16kHz
 const RMS_THRESHOLD = 0.008;
-const HANGOVER_FRAMES = 10;    // ~300ms — must be shorter than Rust SilenceSuppressor hangover (500ms)
+// 15 frames = ~450ms — aligned with Rust SilenceSuppressor hangover (500ms) to
+// avoid premature segment closure when Rust is still emitting trailing audio.
+const HANGOVER_FRAMES = 15;
 const MIN_SPEECH_FRAMES = 4;   // ~120ms minimum to avoid transcribing tiny noise bursts
 const MAX_SPEECH_MS = 15000;
 

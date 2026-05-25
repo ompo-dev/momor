@@ -1,11 +1,11 @@
-import dns from 'dns';
+import dns from "dns";
 
 /**
  * IPv4-only DNS resolver for STT WebSocket connections.
  *
  * Why this exists: on macOS, Node's default `getaddrinfo(AF_UNSPEC)` lookup on
  * dual-stack hosts can return a hard `ENOTFOUND` for IPv4-only CNAME chains
- * (e.g. api.natively.software → *.up.railway.app → 66.33.22.108) when the
+ * (e.g. api.momor.software → *.up.railway.app → 66.33.22.108) when the
  * machine has a link-local IPv6 address (fe80::…) but no real v6 path.
  * curl/libcurl handles this gracefully by falling back to v4; libuv on Darwin
  * sometimes does not. Symptom: `nslookup` and `curl` resolve fine from the
@@ -14,17 +14,21 @@ import dns from 'dns';
  * transcripts never start.
  *
  * Forcing family=4 mirrors curl's effective behavior: skip IPv6 entirely.
- * Streaming STT endpoints (Natively, ElevenLabs, Soniox, OpenAI Realtime) are
+ * Streaming STT endpoints (momor, ElevenLabs, Soniox, OpenAI Realtime) are
  * effectively IPv4-only at the edge today, so we lose nothing by pinning the
  * resolver here. If a vendor later moves to IPv6-only or v6-preferred, swap
  * to family=0 (AF_UNSPEC) with a custom v6→v4 fallback.
  */
-export const ipv4OnlyLookup = (hostname: string, options: any, callback?: any): void => {
-    if (typeof options === 'function') {
-        callback = options;
-        options = {};
-    }
-    dns.lookup(hostname, { ...options, family: 4 }, callback);
+export const ipv4OnlyLookup = (
+  hostname: string,
+  options: any,
+  callback?: any,
+): void => {
+  if (typeof options === "function") {
+    callback = options;
+    options = {};
+  }
+  dns.lookup(hostname, { ...options, family: 4 }, callback);
 };
 
 /**
@@ -37,11 +41,13 @@ export const ipv4OnlyLookup = (hostname: string, options: any, callback?: any): 
  *                                    a stuck handshake hangs on the kernel TCP
  *                                    keepalive timer, which can be minutes)
  */
-export function streamingStttWsOptions(extra?: Record<string, unknown>): Record<string, unknown> {
-    return {
-        lookup: ipv4OnlyLookup,
-        family: 4,
-        handshakeTimeout: 15_000,
-        ...(extra || {}),
-    };
+export function streamingStttWsOptions(
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    lookup: ipv4OnlyLookup,
+    family: 4,
+    handshakeTimeout: 15_000,
+    ...(extra || {}),
+  };
 }

@@ -1,8 +1,8 @@
-# Natively vs Cluely Deep Codebase Audit
+# momor vs Cluely Deep Codebase Audit
 
 ## 1. Executive Summary
 
-Natively is not a toy. It already has real pieces of a Cluely-style desktop AI meeting assistant:
+momor is not a toy. It already has real pieces of a Cluely-style desktop AI meeting assistant:
 
 - Electron overlay app
 - Native audio capture
@@ -26,7 +26,7 @@ The biggest issue is that the product currently treats “modes” mostly as pro
 Mode = prompt + context policy + trigger rules + retrieval scope + actions + output templates + post-call workflow + telemetry + security policy
 ```
 
-Natively has the prompt/context/note-template part. It does not yet have first-class mode actions, per-mode retrieval policy, per-mode trigger rules, per-mode telemetry, per-mode privacy controls, or robust behavioral QA.
+momor has the prompt/context/note-template part. It does not yet have first-class mode actions, per-mode retrieval policy, per-mode trigger rules, per-mode telemetry, per-mode privacy controls, or robust behavioral QA.
 
 The second biggest issue is security. Several main-process IPC paths expose sensitive material or allow dangerous data flow:
 
@@ -39,27 +39,27 @@ The second biggest issue is security. Several main-process IPC paths expose sens
 
 The third biggest issue is reliability. The app has many STT/provider/reconnect/fallback paths, but test coverage is mostly structural/unit-level. There is not enough QA proving live meeting behavior under long sessions, provider failures, mode switching, reference-grounding, audio recovery, or hallucination pressure.
 
-Final verdict: Natively has strong raw ingredients, but the current implementation is best described as an advanced local AI meeting assistant prototype with serious product ambition, not yet a hardened Cluely-grade realtime meeting OS.
+Final verdict: momor has strong raw ingredients, but the current implementation is best described as an advanced local AI meeting assistant prototype with serious product ambition, not yet a hardened Cluely-grade realtime meeting OS.
 
 ---
 
 ## 2. Feature Parity Matrix
 
-| Capability | Natively current state | Cluely-style expectation | Gap severity |
-|---|---|---|---|
-| Live insights / answer suggestions | Real streaming suggestion system via `IntelligenceEngine.ts` and LLM wrappers | Continuous action/insight detection with lifecycle, confidence, evidence, and user action tracking | High |
-| Auto answer / Dynamic Actions | Partial. `PlannerDecision.ts` routes to answer/clarify/recap/follow-up/brainstorm | Action cards triggered by context, mode, confidence, and user command | High |
-| Modes | Real templates in `ModesManager.ts`; active prompt suffixes, custom context, reference files, note sections | Modes as full workflows with action policy, RAG policy, triggers, notes, telemetry, security | High |
-| Reference files | Real storage/injection; lexical retrieval via `ModeContextRetriever.ts` | Hybrid semantic RAG, citations, source ranking, ingestion, stale-index handling | High |
-| Meeting-history RAG | SQLite/sqlite-vec infrastructure exists via `RAGManager.ts` / `DatabaseManager.ts` | Integrated context engine across meetings, docs, profile, current call | Medium-high |
-| Audio/STT | Many providers implemented: Natively, Deepgram, OpenAI, Google, ElevenLabs, Local Whisper, REST, etc. | Battle-tested realtime capture with robust simulation/soak coverage | Medium-high |
-| Provider layer | Gemini/Groq/OpenAI/Claude/Ollama/Natively/custom cURL support in `LLMHelper.ts` | Policy-aware router by privacy, cost, latency, modality, health, mode | High |
-| Overlay UX | Electron always-on-top/transparent/stealth behavior in `WindowHelper.ts` | Native-feeling overlay with reliable capture invisibility claims and clear caveats | Medium |
-| Post-call notes | Real mode-specific summary pipeline in `MeetingPersistence.ts` | Validated schemas, CRM/ATS/export workflows, evidence-linked notes | Medium |
-| Profile intelligence | Some profile/resume/JD/knowledge modules appear present | Strong entity/profile memory linked to live context and modes | Medium-high |
-| Telemetry | Mostly console logs | Structured local telemetry, metrics, traces, SLOs, QA analytics | High |
-| Security/privacy | Credential encryption exists | End-to-end data-scope controls, DB encryption, retention, redaction, provider warnings | Critical |
-| Product completeness | Strong skeleton | Production-grade polished meeting OS | High |
+| Capability                         | momor current state                                                                                         | Cluely-style expectation                                                                           | Gap severity |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------ |
+| Live insights / answer suggestions | Real streaming suggestion system via `IntelligenceEngine.ts` and LLM wrappers                               | Continuous action/insight detection with lifecycle, confidence, evidence, and user action tracking | High         |
+| Auto answer / Dynamic Actions      | Partial. `PlannerDecision.ts` routes to answer/clarify/recap/follow-up/brainstorm                           | Action cards triggered by context, mode, confidence, and user command                              | High         |
+| Modes                              | Real templates in `ModesManager.ts`; active prompt suffixes, custom context, reference files, note sections | Modes as full workflows with action policy, RAG policy, triggers, notes, telemetry, security       | High         |
+| Reference files                    | Real storage/injection; lexical retrieval via `ModeContextRetriever.ts`                                     | Hybrid semantic RAG, citations, source ranking, ingestion, stale-index handling                    | High         |
+| Meeting-history RAG                | SQLite/sqlite-vec infrastructure exists via `RAGManager.ts` / `DatabaseManager.ts`                          | Integrated context engine across meetings, docs, profile, current call                             | Medium-high  |
+| Audio/STT                          | Many providers implemented: momor, Deepgram, OpenAI, Google, ElevenLabs, Local Whisper, REST, etc.          | Battle-tested realtime capture with robust simulation/soak coverage                                | Medium-high  |
+| Provider layer                     | Gemini/Groq/OpenAI/Claude/Ollama/momor/custom cURL support in `LLMHelper.ts`                                | Policy-aware router by privacy, cost, latency, modality, health, mode                              | High         |
+| Overlay UX                         | Electron always-on-top/transparent/stealth behavior in `WindowHelper.ts`                                    | Native-feeling overlay with reliable capture invisibility claims and clear caveats                 | Medium       |
+| Post-call notes                    | Real mode-specific summary pipeline in `MeetingPersistence.ts`                                              | Validated schemas, CRM/ATS/export workflows, evidence-linked notes                                 | Medium       |
+| Profile intelligence               | Some profile/resume/JD/knowledge modules appear present                                                     | Strong entity/profile memory linked to live context and modes                                      | Medium-high  |
+| Telemetry                          | Mostly console logs                                                                                         | Structured local telemetry, metrics, traces, SLOs, QA analytics                                    | High         |
+| Security/privacy                   | Credential encryption exists                                                                                | End-to-end data-scope controls, DB encryption, retention, redaction, provider warnings             | Critical     |
+| Product completeness               | Strong skeleton                                                                                             | Production-grade polished meeting OS                                                               | High         |
 
 ---
 
@@ -107,12 +107,12 @@ What is missing:
 Current `Mode` shape is essentially:
 
 ```ts
-id
-name
-templateType
-customContext
-isActive
-createdAt
+id;
+name;
+templateType;
+customContext;
+isActive;
+createdAt;
 ```
 
 That is not enough for Cluely-style modes.
@@ -198,7 +198,7 @@ Needed tests:
 
 ## 5. Auto Answer / Dynamic Actions Audit
 
-Natively has an early version of dynamic action routing, but it is not Cluely-grade.
+momor has an early version of dynamic action routing, but it is not Cluely-grade.
 
 Evidence:
 
@@ -224,7 +224,7 @@ Evidence:
 
 What this means:
 
-- Natively can detect some answer opportunities.
+- momor can detect some answer opportunities.
 - It can route to answer/clarify/recap/follow-up/brainstorm.
 - It can begin speculative answer generation from interim transcript.
 
@@ -271,7 +271,7 @@ interface DynamicAction {
   priority: number;
   evidenceRefs: EvidenceRef[];
   inputContext: ActionContext;
-  status: 'candidate' | 'shown' | 'accepted' | 'dismissed' | 'completed';
+  status: "candidate" | "shown" | "accepted" | "dismissed" | "completed";
 }
 ```
 
@@ -441,7 +441,7 @@ Evidence:
   - `electron/audio/SystemAudioCapture.ts`
   - `electron/audio/MicrophoneCapture.ts`
 - STT providers:
-  - `NativelyProSTT.ts`
+  - `momorProSTT.ts`
   - `DeepgramStreamingSTT.ts`
   - `OpenAIStreamingSTT.ts`
   - `ElevenLabsStreamingSTT.ts`
@@ -455,7 +455,7 @@ Evidence:
 Strengths:
 
 - Multi-provider STT is real.
-- Natively hosted STT has WebSocket buffering and reconnect behavior.
+- momor hosted STT has WebSocket buffering and reconnect behavior.
 - Deepgram has reconnect constants and buffering.
 - Local Whisper exists.
 - Google STT appears to handle stream restarts.
@@ -469,7 +469,7 @@ Weaknesses:
 - No robust evidence that partial/final transcript ordering survives reconnect.
 - No robust evidence that stop/flush race is fixed across all providers.
 - No real-device matrix encoded in tests.
-- Hosted Natively STT sends audio to cloud, contradicting any broad “local-only” privacy claim unless clearly disclosed.
+- Hosted momor STT sends audio to cloud, contradicting any broad “local-only” privacy claim unless clearly disclosed.
 
 Critical QA cases missing:
 
@@ -495,7 +495,7 @@ Critical QA cases missing:
 
 Evidence:
 
-- Supports Gemini, Groq, OpenAI, Claude, Natively, Ollama, Codex CLI, custom providers.
+- Supports Gemini, Groq, OpenAI, Claude, momor, Ollama, Codex CLI, custom providers.
 - Contains provider clients and keys.
 - Handles prompt assembly, image handling, provider selection, streaming, fallback, custom cURL, caching, and knowledge interception.
 - `ProviderRouter.ts` exists and models provider availability/capabilities.
@@ -540,7 +540,7 @@ GeminiProvider
 OpenAIProvider
 ClaudeProvider
 GroqProvider
-NativelyProvider
+momorProvider
 OllamaProvider
 CustomCurlProvider
 MediaPreprocessor
@@ -568,8 +568,8 @@ Recommended:
 
 ```ts
 interface ProviderPolicy {
-  privacy: 'local_only' | 'user_configured_cloud' | 'natively_cloud_allowed';
-  latencyClass: 'realtime' | 'balanced' | 'quality';
+  privacy: "local_only" | "user_configured_cloud" | "momor_cloud_allowed";
+  latencyClass: "realtime" | "balanced" | "quality";
   allowedProviders?: LLMProviderId[];
   disallowedProviders?: LLMProviderId[];
   requireVision?: boolean;
@@ -639,7 +639,7 @@ Product gap:
   - answer accept/dismiss
   - post-call continuity
 
-Natively has overlay foundations, but the product-level dynamic action UX appears incomplete.
+momor has overlay foundations, but the product-level dynamic action UX appears incomplete.
 
 ---
 
@@ -650,7 +650,7 @@ This is a major gap.
 Current state:
 
 - Many `console.log`, `console.warn`, `console.error` calls.
-- `main.ts` logs console output to `~/Documents/natively_debug.log`.
+- `main.ts` logs console output to `~/Documents/momor_debug.log`.
 - Provider attempts are logged in places.
 - No strong evidence of structured telemetry.
 
@@ -675,7 +675,7 @@ Missing:
 Needed abstraction:
 
 ```ts
-telemetry.span('llm.generate', {
+telemetry.span("llm.generate", {
   provider,
   model,
   modeId,
@@ -683,10 +683,10 @@ telemetry.span('llm.generate', {
   multimodal,
 });
 
-telemetry.counter('provider.fallback', { from, to, reason });
-telemetry.histogram('action.latency_ms', { modeId, actionId });
-telemetry.counter('rag.snippets_selected', { modeId });
-telemetry.counter('notes.parse_failed', { modeId });
+telemetry.counter("provider.fallback", { from, to, reason });
+telemetry.histogram("action.latency_ms", { modeId, actionId });
+telemetry.counter("rag.snippets_selected", { modeId });
+telemetry.counter("notes.parse_failed", { modeId });
 ```
 
 For a desktop app, default can be local structured JSONL with opt-in upload.
@@ -868,11 +868,11 @@ Current lexical retrieval and fallback raw injection are not enough.
 
 ### 13.4 “Local/offline/private” claims need qualification
 
-Natively supports local paths, but also hosted Natively STT and cloud LLM/STT providers. Product copy must be precise:
+momor supports local paths, but also hosted momor STT and cloud LLM/STT providers. Product copy must be precise:
 
 - Local Whisper is local.
 - Ollama/Codex local-ish paths may be local depending config.
-- Natively API STT sends audio to hosted backend.
+- momor API STT sends audio to hosted backend.
 - Deepgram/OpenAI/Google/ElevenLabs send audio/text externally.
 
 ### 13.5 Post-call workflow is partial
@@ -1098,12 +1098,12 @@ electron/modes/ModeDefinition.ts
 with:
 
 ```ts
-ModeDefinition
-ModeActionDefinition
-ModeRagPolicy
-ModeTriggerPolicy
-ModeProviderPolicy
-ModeRetentionPolicy
+ModeDefinition;
+ModeActionDefinition;
+ModeRagPolicy;
+ModeTriggerPolicy;
+ModeProviderPolicy;
+ModeRetentionPolicy;
 ```
 
 8. Update `ModesManager.ts`:
@@ -1128,15 +1128,16 @@ electron/intelligence/DynamicAction.ts
 ```
 
 11. Refactor `IntelligenceEngine.ts`:
-   - Keep current methods initially.
-   - Wrap each as registered action:
-     - answer
-     - clarify
-     - recap
-     - follow-up questions
-     - brainstorm
-     - code hint
-   - Move trigger planning toward mode action definitions.
+
+- Keep current methods initially.
+- Wrap each as registered action:
+  - answer
+  - clarify
+  - recap
+  - follow-up questions
+  - brainstorm
+  - code hint
+- Move trigger planning toward mode action definitions.
 
 ### Prompt/context changes
 
@@ -1161,9 +1162,10 @@ PromptSection {
 ```
 
 15. Update `ModeContextRetriever.ts`:
-   - Keep lexical fallback.
-   - Ensure all content/filenames are escaped.
-   - Always include untrusted evidence guard.
+
+- Keep lexical fallback.
+- Ensure all content/filenames are escaped.
+- Always include untrusted evidence guard.
 
 16. Deprecate direct use of `ModesManager.buildActiveModeContextBlock()` for generation paths.
 
@@ -1194,12 +1196,14 @@ electron/services/ModeReferenceRetriever.ts
 ### Meeting persistence changes
 
 21. In `MeetingPersistence.stopMeeting()`:
-   - Snapshot active mode ID/template/name/note sections/context at stop time.
+
+- Snapshot active mode ID/template/name/note sections/context at stop time.
 
 22. Persist mode metadata to `meetings` table or related table.
 
 23. In summary generation:
-   - Use snapshotted mode metadata, not current active mode.
+
+- Use snapshotted mode metadata, not current active mode.
 
 24. Replace title-based JSON keys with stable note section IDs.
 
@@ -1214,7 +1218,7 @@ electron/llm/providers/GeminiProvider.ts
 electron/llm/providers/OpenAIProvider.ts
 electron/llm/providers/ClaudeProvider.ts
 electron/llm/providers/GroqProvider.ts
-electron/llm/providers/NativelyProvider.ts
+electron/llm/providers/momorProvider.ts
 electron/llm/providers/OllamaProvider.ts
 electron/llm/providers/CustomCurlProvider.ts
 ```
@@ -1233,12 +1237,13 @@ electron/telemetry/LocalTelemetrySink.ts
 ```
 
 30. Instrument:
-   - STT connection/reconnect/error
-   - LLM request/stream/fallback
-   - prompt assembly
-   - RAG retrieval
-   - dynamic action trigger/show/accept/dismiss
-   - summary parse
+
+- STT connection/reconnect/error
+- LLM request/stream/fallback
+- prompt assembly
+- RAG retrieval
+- dynamic action trigger/show/accept/dismiss
+- summary parse
 
 ---
 
@@ -1268,7 +1273,7 @@ electron/telemetry/LocalTelemetrySink.ts
    - custom provider
    - Ollama
    - Codex if enabled
-   - Natively if available/mocked
+   - momor if available/mocked
 
 Assertions:
 
@@ -1317,11 +1322,11 @@ Assert:
 
 ### STT/audio tests
 
-15. NativelyProSTT auth failure.
+15. momorProSTT auth failure.
 
-16. NativelyProSTT DNS failure.
+16. momorProSTT DNS failure.
 
-17. NativelyProSTT reconnect cap.
+17. momorProSTT reconnect cap.
 
 18. Deepgram reconnect and buffer behavior.
 
@@ -1381,7 +1386,7 @@ Assert:
 
 ## 18. Final Verdict
 
-Natively has impressive breadth. It already contains many systems that a Cluely competitor needs: overlay, audio capture, STT providers, LLM providers, modes, reference files, RAG infrastructure, screenshots, meeting persistence, and post-call summaries.
+momor has impressive breadth. It already contains many systems that a Cluely competitor needs: overlay, audio capture, STT providers, LLM providers, modes, reference files, RAG infrastructure, screenshots, meeting persistence, and post-call summaries.
 
 But the product is currently held back by five structural problems:
 
@@ -1399,6 +1404,6 @@ The highest-leverage product move is not “make auto-answer more automatic.” 
 Mode Runtime + Context Engine + Dynamic Actions + Hybrid RAG + Provider Policy + Telemetry
 ```
 
-That architecture would move Natively from “AI assistant with modes” toward “Cluely-style realtime meeting OS.”
+That architecture would move momor from “AI assistant with modes” toward “Cluely-style realtime meeting OS.”
 
 Until then, the current codebase should be marketed carefully: powerful, local-first-capable, extensible, and open-source, but not yet more complete or more reliable than Cluely in the areas that matter most during live meetings.

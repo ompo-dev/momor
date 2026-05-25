@@ -9,18 +9,18 @@ FIXES.md
 python-installer.pkg
 Sales20260405-60-494j8t.csv
 /Sales20260405-60-494j8t.csv
-natively-api
-/natively-api
-/natively
-natively/
-.natively
+momor-api
+/momor-api
+/momor
+momor/
+.momor
 settings.json
-natively/pro_licenses.json
+momor/pro_licenses.json
 env
 /env
 *.log
-/Users/evin/natively-cluely-ai-assistant/natively
-natively
+/Users/evin/momor-cluely-ai-assistant/momor
+momor
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -34,8 +34,8 @@ tmp
 .cursorrules
 .windsurfrules
 change.md
-# nativelyapi is a separate git repo — exclude from parent repo tracking
-/nativelyapi
+# momorapi is a separate git repo — exclude from parent repo tracking
+/momorapi
 
 # Local premium dev copy — never commit to public repo
 /premium
@@ -252,3 +252,7 @@ refactor_profile.py
 refactor.js
 skills-lock.json
 windowswork.md
+
+# CEF native binaries — exceed GitHub 100MB limit; download locally when needed
+zero-native-poc/third_party/cef/**/Debug/
+zero-native-poc/third_party/cef/**/Release/

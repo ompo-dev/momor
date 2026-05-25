@@ -2,7 +2,7 @@
 //
 // LEGACY OCR PATH — RUNTIME-DISABLED (2026-05-17)
 // =====================================================================
-// Natively now uses vision-provider screen understanding by default.
+// momor now uses vision-provider screen understanding by default.
 // This module is retained for two reasons:
 //   1. Existing tests still verify the OCR interface contract.
 //   2. A future explicit OCR-only mode could be reintroduced by toggling
@@ -12,15 +12,15 @@
 // =====================================================================
 //
 // Original purpose:
-// Unified OCR provider interface for Natively.
+// Unified OCR provider interface for momor.
 // Supports: macOS Apple Vision, Windows OCR, RapidOCR, Tesseract.js
 
-import { createRequire } from 'node:module';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import sharp from 'sharp';
-import { v4 as uuidv4 } from 'uuid';
+import { createRequire } from "node:module";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import sharp from "sharp";
+import { v4 as uuidv4 } from "uuid";
 
 export interface OcrLine {
   text: string;
@@ -37,11 +37,11 @@ export interface OcrResult {
 }
 
 export type OcrProviderType =
-  | 'apple_vision'  // macOS native Vision OCR
-  | 'windows_ocr'   // Windows native OCR
-  | 'rapidocr'      // RapidOCR (ONNX-based)
-  | 'tesseract'     // Tesseract.js (fallback)
-  | 'unavailable';  // Provider not available
+  | "apple_vision" // macOS native Vision OCR
+  | "windows_ocr" // Windows native OCR
+  | "rapidocr" // RapidOCR (ONNX-based)
+  | "tesseract" // Tesseract.js (fallback)
+  | "unavailable"; // Provider not available
 
 export interface OcrProviderAdapter {
   /**
@@ -107,12 +107,17 @@ export interface OcrOptions {
 const requireFromBundle = createRequire(__filename);
 
 function getTesseractAssetPaths(): { workerPath: string; corePath: string } {
-  const workerPath = requireFromBundle.resolve('tesseract.js/src/worker-script/node/index.js');
-  const corePath = path.dirname(requireFromBundle.resolve('tesseract.js-core'));
+  const workerPath = requireFromBundle.resolve(
+    "tesseract.js/src/worker-script/node/index.js",
+  );
+  const corePath = path.dirname(requireFromBundle.resolve("tesseract.js-core"));
   return { workerPath, corePath };
 }
 
-async function prepareImageForOcr(imagePath: string, maxDimension = 1600): Promise<{ path: string; cleanup?: () => Promise<void> }> {
+async function prepareImageForOcr(
+  imagePath: string,
+  maxDimension = 1600,
+): Promise<{ path: string; cleanup?: () => Promise<void> }> {
   const metadata = await sharp(imagePath).metadata();
   const width = metadata.width || 0;
   const height = metadata.height || 0;
@@ -121,9 +126,14 @@ async function prepareImageForOcr(imagePath: string, maxDimension = 1600): Promi
     return { path: imagePath };
   }
 
-  const tempPath = path.join(os.tmpdir(), `natively-ocr-${uuidv4()}.png`);
+  const tempPath = path.join(os.tmpdir(), `momor-ocr-${uuidv4()}.png`);
   await sharp(imagePath)
-    .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
+    .resize({
+      width: maxDimension,
+      height: maxDimension,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
     .grayscale()
     .normalize()
     .png({ compressionLevel: 6 })
@@ -143,8 +153,8 @@ async function prepareImageForOcr(imagePath: string, maxDimension = 1600): Promi
 
 // Tesseract OCR adapter — primary fallback
 export class TesseractOcrAdapter implements OcrProviderAdapter {
-  readonly type: OcrProviderType = 'tesseract';
-  readonly name = 'Tesseract.js';
+  readonly type: OcrProviderType = "tesseract";
+  readonly name = "Tesseract.js";
 
   isAvailable(): boolean {
     // Tesseract.js is always available via npm
@@ -156,44 +166,58 @@ export class TesseractOcrAdapter implements OcrProviderAdapter {
     const prepared = await prepareImageForOcr(imagePath, options?.maxDimension);
 
     try {
-      const Tesseract = await import('tesseract.js');
+      const Tesseract = await import("tesseract.js");
       const assetPaths = getTesseractAssetPaths();
 
       const result = await Tesseract.recognize(
         prepared.path,
-        options?.languages?.[0] || 'eng',
+        options?.languages?.[0] || "eng",
         {
           ...assetPaths,
           logger: (m: any) => {
-            if (process.env.NATIVELY_OCR_DEBUG === '1' && m.status === 'recognizing text') {
-              console.log(`[TesseractOCR] progress: ${Math.round(m.progress * 100)}%`);
+            if (
+              process.env.momor_OCR_DEBUG === "1" &&
+              m.status === "recognizing text"
+            ) {
+              console.log(
+                `[TesseractOCR] progress: ${Math.round(m.progress * 100)}%`,
+              );
             }
           },
-        }
+        },
       );
 
       const durationMs = Date.now() - startTime;
 
       return {
         text: result.data.text.trim(),
-        lines: result.data.lines?.map((line: any) => ({
-          text: line.text,
-          confidence: line.confidence,
-          bbox: line.bbox,
-        })) || [],
+        lines:
+          result.data.lines?.map((line: any) => ({
+            text: line.text,
+            confidence: line.confidence,
+            bbox: line.bbox,
+          })) || [],
         confidence: result.data.confidence / 100, // Tesseract returns 0-100
         provider: this.name,
         durationMs,
       };
     } catch (error: any) {
-      console.error('[TesseractOCR] recognition failed:', error?.message || error);
-      throw new Error(`Tesseract OCR failed: ${error?.message || 'unknown error'}`);
+      console.error(
+        "[TesseractOCR] recognition failed:",
+        error?.message || error,
+      );
+      throw new Error(
+        `Tesseract OCR failed: ${error?.message || "unknown error"}`,
+      );
     } finally {
       await prepared.cleanup?.();
     }
   }
 
-  async recognizeBuffer(buffer: Buffer, options?: OcrOptions): Promise<OcrResult> {
+  async recognizeBuffer(
+    buffer: Buffer,
+    options?: OcrOptions,
+  ): Promise<OcrResult> {
     const tempPath = path.join(os.tmpdir(), `ocr-${uuidv4()}.png`);
     await fs.promises.writeFile(tempPath, buffer);
 
@@ -212,12 +236,12 @@ export class TesseractOcrAdapter implements OcrProviderAdapter {
 // Apple Vision OCR adapter — macOS native
 // TODO: Implement when native macOS OCR bridge is available
 export class AppleVisionOcrAdapter implements OcrProviderAdapter {
-  readonly type: OcrProviderType = 'apple_vision';
-  readonly name = 'Apple Vision OCR';
+  readonly type: OcrProviderType = "apple_vision";
+  readonly name = "Apple Vision OCR";
 
   isAvailable(): boolean {
     // Only available on macOS
-    if (process.platform !== 'darwin') {
+    if (process.platform !== "darwin") {
       return false;
     }
     // TODO: Check for Vision framework availability
@@ -225,23 +249,30 @@ export class AppleVisionOcrAdapter implements OcrProviderAdapter {
   }
 
   async recognize(imagePath: string, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('Apple Vision OCR not yet implemented. Use Tesseract.js fallback.');
+    throw new Error(
+      "Apple Vision OCR not yet implemented. Use Tesseract.js fallback.",
+    );
   }
 
-  async recognizeBuffer(buffer: Buffer, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('Apple Vision OCR not yet implemented. Use Tesseract.js fallback.');
+  async recognizeBuffer(
+    buffer: Buffer,
+    options?: OcrOptions,
+  ): Promise<OcrResult> {
+    throw new Error(
+      "Apple Vision OCR not yet implemented. Use Tesseract.js fallback.",
+    );
   }
 }
 
 // Windows OCR adapter — Windows native
 // TODO: Implement when native Windows OCR bridge is available
 export class WindowsOcrAdapter implements OcrProviderAdapter {
-  readonly type: OcrProviderType = 'windows_ocr';
-  readonly name = 'Windows OCR';
+  readonly type: OcrProviderType = "windows_ocr";
+  readonly name = "Windows OCR";
 
   isAvailable(): boolean {
     // Only available on Windows
-    if (process.platform !== 'win32') {
+    if (process.platform !== "win32") {
       return false;
     }
     // TODO: Check for Windows OCR availability
@@ -249,19 +280,26 @@ export class WindowsOcrAdapter implements OcrProviderAdapter {
   }
 
   async recognize(imagePath: string, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('Windows OCR not yet implemented. Use Tesseract.js fallback.');
+    throw new Error(
+      "Windows OCR not yet implemented. Use Tesseract.js fallback.",
+    );
   }
 
-  async recognizeBuffer(buffer: Buffer, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('Windows OCR not yet implemented. Use Tesseract.js fallback.');
+  async recognizeBuffer(
+    buffer: Buffer,
+    options?: OcrOptions,
+  ): Promise<OcrResult> {
+    throw new Error(
+      "Windows OCR not yet implemented. Use Tesseract.js fallback.",
+    );
   }
 }
 
 // RapidOCR adapter
 // TODO: Implement when RapidOCR sidecar is configured
 export class RapidOcrAdapter implements OcrProviderAdapter {
-  readonly type: OcrProviderType = 'rapidocr';
-  readonly name = 'RapidOCR';
+  readonly type: OcrProviderType = "rapidocr";
+  readonly name = "RapidOCR";
 
   isAvailable(): boolean {
     // TODO: Check for RapidOCR sidecar process
@@ -269,11 +307,14 @@ export class RapidOcrAdapter implements OcrProviderAdapter {
   }
 
   async recognize(imagePath: string, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('RapidOCR not yet configured. Use Tesseract.js fallback.');
+    throw new Error("RapidOCR not yet configured. Use Tesseract.js fallback.");
   }
 
-  async recognizeBuffer(buffer: Buffer, options?: OcrOptions): Promise<OcrResult> {
-    throw new Error('RapidOCR not yet configured. Use Tesseract.js fallback.');
+  async recognizeBuffer(
+    buffer: Buffer,
+    options?: OcrOptions,
+  ): Promise<OcrResult> {
+    throw new Error("RapidOCR not yet configured. Use Tesseract.js fallback.");
   }
 }
 
@@ -284,10 +325,14 @@ export const OCR_PROVIDERS: Record<OcrProviderType, OcrProviderAdapter> = {
   rapidocr: new RapidOcrAdapter(),
   tesseract: new TesseractOcrAdapter(),
   unavailable: {
-    type: 'unavailable',
-    name: 'Unavailable',
+    type: "unavailable",
+    name: "Unavailable",
     isAvailable: () => false,
-    recognize: async () => { throw new Error('No OCR provider available'); },
-    recognizeBuffer: async () => { throw new Error('No OCR provider available'); },
+    recognize: async () => {
+      throw new Error("No OCR provider available");
+    },
+    recognizeBuffer: async () => {
+      throw new Error("No OCR provider available");
+    },
   },
 };

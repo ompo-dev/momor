@@ -1,0 +1,96 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Momor",
+  "version": "2.6.0",
+  "identifier": "com.electron.meeting-notes",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5180",
+    "beforeDevCommand": "npm run dev -- --port 5180 --strictPort",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "launcher",
+        "title": "Momor",
+        "url": "index.html?window=launcher",
+        "width": 1200,
+        "height": 800,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true
+      },
+      {
+        "label": "overlay",
+        "title": "Momor Overlay",
+        "url": "index.html?window=overlay",
+        "width": 600,
+        "height": 240,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false
+      },
+      {
+        "label": "settings",
+        "title": "Momor Settings",
+        "url": "index.html?window=settings",
+        "width": 1100,
+        "height": 760,
+        "resizable": true,
+        "visible": false
+      },
+      {
+        "label": "model-selector",
+        "title": "Momor Model Selector",
+        "url": "index.html?window=model-selector",
+        "width": 220,
+        "height": 260,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false
+      },
+      {
+        "label": "cropper",
+        "title": "Momor Cropper",
+        "url": "index.html?window=cropper",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "entitlements": null
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {}
+  }
+}

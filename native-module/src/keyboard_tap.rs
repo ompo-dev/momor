@@ -12,12 +12,12 @@
 //!
 //! # Why we want this on top of NSPanel-nonactivating
 //!
-//! NSPanel + becomesKeyOnlyIfNeeded already prevents Natively from activating
+//! NSPanel + becomesKeyOnlyIfNeeded already prevents momor from activating
 //! the app when buttons are clicked or the input is focused. But for keystrokes
 //! to reach our text input via the normal DOM pipeline, the panel still has to
 //! become the OS-level "key window" — which causes a window-level focus shift
 //! that some screen-share / focus-follower tools can detect. With CGEventTap,
-//! Natively NEVER becomes the key window for keyboard input. The user's Zoom
+//! momor NEVER becomes the key window for keyboard input. The user's Zoom
 //! call stays the key window of the frontmost app; we silently siphon
 //! keystrokes off the wire and present them in the renderer.
 //!
@@ -317,14 +317,14 @@ fn tap_callback_inner(
     // active. That broke macOS system shortcuts entirely: Cmd+Tab, Cmd+Q,
     // Cmd+Space (Spotlight), Cmd+H (hide), Cmd+`, volume/brightness keys,
     // media keys, F-keys — all eaten silently the moment the tap engaged.
-    // User report: "shortcuts of the macbook aren't working when natively
+    // User report: "shortcuts of the macbook aren't working when momor
     // meeting interface is active."
     //
     // Fix: only swallow plain typing keys. Pass through (return event) any
     // event with a system modifier (Cmd / Ctrl / Option / Fn), any F-key,
     // and any modifier-flagsChanged event. The OS routes those normally to
     // the foreground app while non-modified character keys still get routed
-    // into Natively's input.
+    // into momor's input.
     //
     // Trade-off: Cmd+Backspace / Cmd+A / Cmd+Enter no longer reach the
     // renderer's switch statement. Plain Enter still submits (case 36),
@@ -633,7 +633,7 @@ impl StealthKeyboardTap {
 
         let state = self.state.clone();
         let handle = thread::Builder::new()
-            .name("natively-keyboard-tap".into())
+            .name("momor-keyboard-tap".into())
             .spawn(move || tap_worker(state))
             .map_err(|e| {
                 // Spawn failed → roll back state so JS can retry cleanly.

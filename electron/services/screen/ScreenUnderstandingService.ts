@@ -1,6 +1,6 @@
 // electron/services/screen/ScreenUnderstandingService.ts
 //
-// VISION-FIRST screen understanding pipeline for Natively.
+// VISION-FIRST screen understanding pipeline for momor.
 //
 // Flow:
 //   request
@@ -23,46 +23,53 @@
 //     ProviderInvoker contract so tests can inject fake providers and the
 //     production wiring uses LLMHelper-backed adapters.
 
-import { app } from 'electron';
-import { validateImagePath } from '../../utils/curlUtils';
-import { ImageHashService } from './ImageHashService';
+import { app } from "electron";
+import { validateImagePath } from "../../utils/curlUtils";
+import { ImageHashService } from "./ImageHashService";
 import {
   runVisionFallback,
   VisionFallbackResult,
   VisionProviderConfig,
   VisionMode,
   VisionFailureReason,
-} from './VisionProviderFallbackChain';
-import { getImageOptimizer, ImageOptimizer } from './ImageOptimizer';
-import { buildVisionProviders, VisionProviderBuildInputs } from './VisionProviderRegistry';
+} from "./VisionProviderFallbackChain";
+import { getImageOptimizer, ImageOptimizer } from "./ImageOptimizer";
+import {
+  buildVisionProviders,
+  VisionProviderBuildInputs,
+} from "./VisionProviderRegistry";
 
 export type UserAction =
-  | 'manual_use_screen'
-  | 'dynamic_action'
-  | 'shortcut'
-  | 'code_hint'
-  | 'brainstorm'
-  | 'what_to_say';
+  | "manual_use_screen"
+  | "dynamic_action"
+  | "shortcut"
+  | "code_hint"
+  | "brainstorm"
+  | "what_to_say";
 
-export type QualityMode = 'fast' | 'balanced' | 'best' | 'private';
+export type QualityMode = "fast" | "balanced" | "best" | "private";
 
 export type ScreenUnderstandingMode = VisionMode;
 
-export type ScreenStatus = 'available' | 'failed' | 'permission_missing' | 'unavailable';
+export type ScreenStatus =
+  | "available"
+  | "failed"
+  | "permission_missing"
+  | "unavailable";
 
-export type ScreenSource = 'vision_direct' | 'vision_extract' | 'unavailable';
+export type ScreenSource = "vision_direct" | "vision_extract" | "unavailable";
 
 export type ScreenType =
-  | 'document'
-  | 'code'
-  | 'slide'
-  | 'table'
-  | 'chart'
-  | 'ui'
-  | 'error'
-  | 'diagram'
-  | 'dashboard'
-  | 'unknown';
+  | "document"
+  | "code"
+  | "slide"
+  | "table"
+  | "chart"
+  | "ui"
+  | "error"
+  | "diagram"
+  | "dashboard"
+  | "unknown";
 
 export interface ScreenUnderstandingRequest {
   modeId: string;
@@ -93,7 +100,7 @@ export interface ScreenUnderstandingResult {
   screenType: ScreenType;
   providerUsed?: string;
   modelUsed?: string;
-  attempts: VisionFallbackResult['attempts'];
+  attempts: VisionFallbackResult["attempts"];
   visibleSummary?: string;
   extractedText?: string;
   codeBlocks?: string[];
@@ -116,7 +123,7 @@ export interface ScreenUnderstandingResult {
   hash?: string;
   timestamp?: number;
   // Marker so PromptAssembler knows this came from vision, not OCR.
-  source_kind?: 'vision' | 'ocr_legacy';
+  source_kind?: "vision" | "ocr_legacy";
 }
 
 export class ScreenUnderstandingService {
@@ -130,47 +137,55 @@ export class ScreenUnderstandingService {
     this.optimizer = optimizer || getImageOptimizer();
   }
 
-  async understand(request: ScreenUnderstandingRequest): Promise<ScreenUnderstandingResult> {
+  async understand(
+    request: ScreenUnderstandingRequest,
+  ): Promise<ScreenUnderstandingResult> {
     const started = Date.now();
     const warnings: string[] = [];
-    const mode: ScreenUnderstandingMode = (request.screenUnderstandingMode || 'vision_first') as ScreenUnderstandingMode;
+    const mode: ScreenUnderstandingMode = (request.screenUnderstandingMode ||
+      "vision_first") as ScreenUnderstandingMode;
     const policy: ProviderPolicy = request.providerPolicy || {};
 
     // Honor screenshots-scope gate up front — never even resolve paths if the user
     // disabled screenshots for the active provider.
     if (policy.allowScreenshots === false) {
-      warnings.push('Screenshots disabled by provider data scope');
+      warnings.push("Screenshots disabled by provider data scope");
       return this.buildUnavailable({
         request,
         warnings,
         started,
-        failureReason: 'scope_blocked',
-        unavailableReason: 'Screenshots are disabled for the current provider. Enable the screenshots scope to attach screen context.',
+        failureReason: "scope_blocked",
+        unavailableReason:
+          "Screenshots are disabled for the current provider. Enable the screenshots scope to attach screen context.",
       });
     }
 
     // Resolve image paths (capture if requested + missing).
-    let imagePaths = request.imagePaths || (request.imagePath ? [request.imagePath] : []);
+    let imagePaths =
+      request.imagePaths || (request.imagePath ? [request.imagePath] : []);
     if (request.captureIfMissing && imagePaths.length === 0) {
       try {
         imagePaths = [await this.captureScreenshot()];
       } catch (err: any) {
-        warnings.push(`Screenshot capture failed: ${err?.message || 'unknown error'}`);
+        warnings.push(
+          `Screenshot capture failed: ${err?.message || "unknown error"}`,
+        );
         return this.buildUnavailable({
           request,
           warnings,
           started,
-          status: 'permission_missing',
-          unavailableReason: 'Could not capture the screen. Check Screen Recording permission in System Settings.',
+          status: "permission_missing",
+          unavailableReason:
+            "Could not capture the screen. Check Screen Recording permission in System Settings.",
         });
       }
     }
 
     // Validate paths.
     const userDataDir =
-      (app?.getPath ? app.getPath('userData') : undefined) ||
-      process.env.NATIVELY_TEST_USER_DATA ||
-      '';
+      (app?.getPath ? app.getPath("userData") : undefined) ||
+      process.env.momor_TEST_USER_DATA ||
+      "";
     const validPaths: string[] = [];
     for (const p of imagePaths) {
       const v = validateImagePath(p, userDataDir);
@@ -181,17 +196,21 @@ export class ScreenUnderstandingService {
       validPaths.push(p);
     }
     if (validPaths.length === 0) {
-      warnings.push('No valid image paths available');
+      warnings.push("No valid image paths available");
       return this.buildUnavailable({ request, warnings, started });
     }
 
     // Hash for cache.
     let imageHash: string | undefined;
     try {
-      imageHash = await this.imageHashService.computeHash(validPaths[validPaths.length - 1]);
+      imageHash = await this.imageHashService.computeHash(
+        validPaths[validPaths.length - 1],
+      );
     } catch {
       try {
-        imageHash = await this.imageHashService.quickHash(validPaths[validPaths.length - 1]);
+        imageHash = await this.imageHashService.quickHash(
+          validPaths[validPaths.length - 1],
+        );
       } catch {
         imageHash = undefined;
       }
@@ -207,21 +226,23 @@ export class ScreenUnderstandingService {
     // buildVisionProviders(); tests can substitute their own list via the
     // optional `request.providerPolicy.__providersOverride` hook (untyped to
     // keep the public contract clean).
-    const providers: VisionProviderConfig[] = (request.providerPolicy as any)?.__providersOverride
-      || buildVisionProviders(this.collectBuildInputs(request, mode, policy));
+    const providers: VisionProviderConfig[] =
+      (request.providerPolicy as any)?.__providersOverride ||
+      buildVisionProviders(this.collectBuildInputs(request, mode, policy));
 
     if (providers.length === 0) {
-      warnings.push('No vision provider configured');
+      warnings.push("No vision provider configured");
       return this.buildUnavailable({
         request,
         warnings,
         started,
-        failureReason: 'no_vision_provider',
+        failureReason: "no_vision_provider",
         imagePaths: validPaths,
         imageHash,
-        unavailableReason: mode === 'private_vision'
-          ? 'No local vision provider is available. Configure Ollama with a vision-capable model (llava, qwen2.5-vl, llama3.2-vision, etc.) or enable Codex CLI vision.'
-          : 'No vision-capable provider is configured. Add an API key for OpenAI, Claude, Gemini, Groq, or Natively, or configure a local Ollama vision model.',
+        unavailableReason:
+          mode === "private_vision"
+            ? "No local vision provider is available. Configure Ollama with a vision-capable model (llava, qwen2.5-vl, llama3.2-vision, etc.) or enable Codex CLI vision."
+            : "No vision-capable provider is configured. Add an API key for OpenAI, Claude, Gemini, Groq, or momor, or configure a local Ollama vision model.",
       });
     }
 
@@ -229,7 +250,8 @@ export class ScreenUnderstandingService {
     const profile = this.pickOptimizationProfile(request);
 
     // System & user prompts come from the prompts module (Phase 6).
-    const { systemPrompt, userPrompt, isTechnical } = await this.buildPrompts(request);
+    const { systemPrompt, userPrompt, isTechnical } =
+      await this.buildPrompts(request);
 
     // Run the chain.
     const latestPath = validPaths[validPaths.length - 1];
@@ -265,18 +287,23 @@ export class ScreenUnderstandingService {
   ): VisionProviderBuildInputs {
     return {
       mode,
-      localOnly: policy.localOnly === true || mode === 'private_vision',
+      localOnly: policy.localOnly === true || mode === "private_vision",
       scopeAllowsScreenshots: policy.allowScreenshots !== false,
     };
   }
 
-  private pickOptimizationProfile(request: ScreenUnderstandingRequest): 'fast' | 'balanced' | 'technical' | 'best' {
-    if (request.qualityMode === 'fast') return 'fast';
-    if (request.qualityMode === 'best') return 'best';
-    if (this.isTechnicalMode(request.modeTemplateType) && request.technicalInterviewVisionFirst !== false) {
-      return 'technical';
+  private pickOptimizationProfile(
+    request: ScreenUnderstandingRequest,
+  ): "fast" | "balanced" | "technical" | "best" {
+    if (request.qualityMode === "fast") return "fast";
+    if (request.qualityMode === "best") return "best";
+    if (
+      this.isTechnicalMode(request.modeTemplateType) &&
+      request.technicalInterviewVisionFirst !== false
+    ) {
+      return "technical";
     }
-    return 'balanced';
+    return "balanced";
   }
 
   private async buildPrompts(request: ScreenUnderstandingRequest): Promise<{
@@ -284,18 +311,19 @@ export class ScreenUnderstandingService {
     userPrompt: string;
     isTechnical: boolean;
   }> {
-    const { buildVisionPrompts } = await import('./visionPrompts');
+    const { buildVisionPrompts } = await import("./visionPrompts");
     return buildVisionPrompts(request);
   }
 
   private async captureScreenshot(): Promise<string> {
-    const { ScreenshotHelper } = await import('../../ScreenshotHelper');
+    const { ScreenshotHelper } = await import("../../ScreenshotHelper");
     const helper = new ScreenshotHelper();
     return helper.takeScreenshot();
   }
 
   private cacheLookup(imageHash: string): ScreenUnderstandingResult | null {
-    if (!this.lastResult || this.lastResult.imageHash !== imageHash) return null;
+    if (!this.lastResult || this.lastResult.imageHash !== imageHash)
+      return null;
     const age = Date.now() - this.lastResult.capturedAt;
     if (age < this.STALE_THRESHOLD_MS) return { ...this.lastResult };
     return null;
@@ -303,27 +331,52 @@ export class ScreenUnderstandingService {
 
   private isTechnicalMode(modeTemplateType?: string): boolean {
     if (!modeTemplateType) return false;
-    const technical = ['technical-interview', 'coding', 'debug', 'code-review'];
-    return technical.some(m => modeTemplateType.toLowerCase().includes(m));
+    const technical = ["technical-interview", "coding", "debug", "code-review"];
+    return technical.some((m) => modeTemplateType.toLowerCase().includes(m));
   }
 
   private classifyScreenType(text: string, transcript?: string): ScreenType {
-    const combined = `${text} ${transcript || ''}`.toLowerCase();
-    if (/\b(function|const|let|var|import|return|class|def|public|private|void)\b/.test(combined) && /[{}\[\];]/.test(combined)) return 'code';
-    if (/\b(error|exception|failed|cannot|undefined|null pointer|stack trace)\b/i.test(combined)) return 'error';
-    if (/\|.*\|.*\|/.test(text) || /\btable\b.*\brow\b/i.test(combined)) return 'table';
-    if (/\b(chart|graph|dashboard|metrics|percent|increase|decrease)\b/i.test(combined)) return 'chart';
-    if (/\b(slide|presentation|powerpoint|keynote)\b/i.test(combined)) return 'slide';
-    if (/\b(document|article|paper|paragraph|section)\b/i.test(combined)) return 'document';
-    if (/\b(button|menu|dialog|window|checkbox|radio|dropdown)\b/i.test(combined)) return 'ui';
-    return 'unknown';
+    const combined = `${text} ${transcript || ""}`.toLowerCase();
+    if (
+      /\b(function|const|let|var|import|return|class|def|public|private|void)\b/.test(
+        combined,
+      ) &&
+      /[{}\[\];]/.test(combined)
+    )
+      return "code";
+    if (
+      /\b(error|exception|failed|cannot|undefined|null pointer|stack trace)\b/i.test(
+        combined,
+      )
+    )
+      return "error";
+    if (/\|.*\|.*\|/.test(text) || /\btable\b.*\brow\b/i.test(combined))
+      return "table";
+    if (
+      /\b(chart|graph|dashboard|metrics|percent|increase|decrease)\b/i.test(
+        combined,
+      )
+    )
+      return "chart";
+    if (/\b(slide|presentation|powerpoint|keynote)\b/i.test(combined))
+      return "slide";
+    if (/\b(document|article|paper|paragraph|section)\b/i.test(combined))
+      return "document";
+    if (
+      /\b(button|menu|dialog|window|checkbox|radio|dropdown)\b/i.test(combined)
+    )
+      return "ui";
+    return "unknown";
   }
 
   private detectTask(text: string, transcript?: string): string | undefined {
-    const combined = `${text} ${transcript || ''}`;
-    if (/\b(two sum|leetcode|algorithm|coding problem)\b/i.test(combined)) return 'coding_interview';
-    if (/\b(sales|pricing|quote|discount)\b/i.test(combined)) return 'sales_interaction';
-    if (/\b(lecture|teaching|course|lesson)\b/i.test(combined)) return 'lecture_note';
+    const combined = `${text} ${transcript || ""}`;
+    if (/\b(two sum|leetcode|algorithm|coding problem)\b/i.test(combined))
+      return "coding_interview";
+    if (/\b(sales|pricing|quote|discount)\b/i.test(combined))
+      return "sales_interaction";
+    if (/\b(lecture|teaching|course|lesson)\b/i.test(combined))
+      return "lecture_note";
     return undefined;
   }
 
@@ -341,25 +394,47 @@ export class ScreenUnderstandingService {
     confidence?: number;
   } {
     const trimmed = rawOutput.trim();
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
       try {
         const parsed = JSON.parse(trimmed);
         return {
-          visibleSummary: typeof parsed.visibleSummary === 'string' ? parsed.visibleSummary : '',
-          extractedText: typeof parsed.extractedText === 'string' ? parsed.extractedText : (typeof parsed.visibleSummary === 'string' ? parsed.visibleSummary : ''),
-          codeBlocks: Array.isArray(parsed.codeBlocks) ? parsed.codeBlocks.filter((c: any) => typeof c === 'string') : this.extractCodeBlocks(trimmed),
+          visibleSummary:
+            typeof parsed.visibleSummary === "string"
+              ? parsed.visibleSummary
+              : "",
+          extractedText:
+            typeof parsed.extractedText === "string"
+              ? parsed.extractedText
+              : typeof parsed.visibleSummary === "string"
+                ? parsed.visibleSummary
+                : "",
+          codeBlocks: Array.isArray(parsed.codeBlocks)
+            ? parsed.codeBlocks.filter((c: any) => typeof c === "string")
+            : this.extractCodeBlocks(trimmed),
           tables: Array.isArray(parsed.tables) ? parsed.tables : [],
-          errors: Array.isArray(parsed.errors) ? parsed.errors.filter((e: any) => typeof e === 'string') : [],
-          screenType: typeof parsed.screenType === 'string' ? parsed.screenType : undefined,
-          taskDetected: typeof parsed.taskDetected === 'string' ? parsed.taskDetected : undefined,
-          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : undefined,
+          errors: Array.isArray(parsed.errors)
+            ? parsed.errors.filter((e: any) => typeof e === "string")
+            : [],
+          screenType:
+            typeof parsed.screenType === "string"
+              ? parsed.screenType
+              : undefined,
+          taskDetected:
+            typeof parsed.taskDetected === "string"
+              ? parsed.taskDetected
+              : undefined,
+          confidence:
+            typeof parsed.confidence === "number"
+              ? parsed.confidence
+              : undefined,
         };
       } catch {
         // fall through to plain-text path
       }
     }
     return {
-      visibleSummary: trimmed.length > 600 ? trimmed.substring(0, 600) + '...' : trimmed,
+      visibleSummary:
+        trimmed.length > 600 ? trimmed.substring(0, 600) + "..." : trimmed,
       extractedText: trimmed,
       codeBlocks: this.extractCodeBlocks(trimmed),
       tables: [],
@@ -379,8 +454,12 @@ export class ScreenUnderstandingService {
 
   private extractErrors(text: string): string[] {
     const errors: string[] = [];
-    for (const line of text.split('\n')) {
-      if (/\b(error|exception|failed|cannot|undefined|null pointer|stack trace|at\s+\w+\.\w+)\b/i.test(line)) {
+    for (const line of text.split("\n")) {
+      if (
+        /\b(error|exception|failed|cannot|undefined|null pointer|stack trace|at\s+\w+\.\w+)\b/i.test(
+          line,
+        )
+      ) {
         errors.push(line.trim());
       }
     }
@@ -401,17 +480,17 @@ export class ScreenUnderstandingService {
     const now = Date.now();
     if (!fallback.ok) {
       const unavailableReason =
-        fallback.failureReason === 'privacy_blocked'
-          ? 'Private mode blocked all cloud vision providers and no local vision provider is configured.'
-          : fallback.failureReason === 'scope_blocked'
-            ? 'Screenshots are disabled for the active provider.'
-            : fallback.failureReason === 'no_vision_provider'
-              ? 'No vision-capable provider is configured.'
-              : 'All configured vision providers failed.';
+        fallback.failureReason === "privacy_blocked"
+          ? "Private mode blocked all cloud vision providers and no local vision provider is configured."
+          : fallback.failureReason === "scope_blocked"
+            ? "Screenshots are disabled for the active provider."
+            : fallback.failureReason === "no_vision_provider"
+              ? "No vision-capable provider is configured."
+              : "All configured vision providers failed.";
       return {
-        status: 'failed',
-        source: 'unavailable',
-        screenType: 'unknown',
+        status: "failed",
+        source: "unavailable",
+        screenType: "unknown",
         attempts: fallback.attempts,
         confidence: 0,
         imagePaths: ctx.imagePaths,
@@ -421,27 +500,39 @@ export class ScreenUnderstandingService {
         warnings: ctx.warnings,
         failureReason: fallback.failureReason,
         unavailableReason,
-        source_kind: 'vision',
+        source_kind: "vision",
       };
     }
 
-    const structured = this.extractStructured(fallback.outputText || '');
-    const screenType = structured.screenType
-      || this.classifyScreenType(structured.extractedText || structured.visibleSummary, ctx.request.transcript);
-    const taskDetected = structured.taskDetected || this.detectTask(structured.extractedText || structured.visibleSummary, ctx.request.transcript);
+    const structured = this.extractStructured(fallback.outputText || "");
+    const screenType =
+      structured.screenType ||
+      this.classifyScreenType(
+        structured.extractedText || structured.visibleSummary,
+        ctx.request.transcript,
+      );
+    const taskDetected =
+      structured.taskDetected ||
+      this.detectTask(
+        structured.extractedText || structured.visibleSummary,
+        ctx.request.transcript,
+      );
 
     // Technical interview / code hint / debug → mark as vision_direct (final answer).
     // Otherwise extraction path → vision_extract.
     const source: ScreenSource =
-      ctx.isTechnical || ctx.request.userAction === 'code_hint' || ctx.request.userAction === 'brainstorm'
-        ? 'vision_direct'
-        : 'vision_extract';
+      ctx.isTechnical ||
+      ctx.request.userAction === "code_hint" ||
+      ctx.request.userAction === "brainstorm"
+        ? "vision_direct"
+        : "vision_extract";
 
-    const visibleSummary = structured.visibleSummary || structured.extractedText;
+    const visibleSummary =
+      structured.visibleSummary || structured.extractedText;
     const extractedText = structured.extractedText || visibleSummary;
 
     return {
-      status: 'available',
+      status: "available",
       source,
       screenType,
       providerUsed: fallback.providerUsed,
@@ -460,11 +551,11 @@ export class ScreenUnderstandingService {
       durationMs: now - ctx.started,
       warnings: ctx.warnings,
       // PromptAssembler-compat fields:
-      ocrText: extractedText,                              // legacy key, populated by vision
+      ocrText: extractedText, // legacy key, populated by vision
       imagePath: ctx.imagePaths[ctx.imagePaths.length - 1],
       hash: ctx.imageHash,
       timestamp: now,
-      source_kind: 'vision',
+      source_kind: "vision",
     };
   }
 
@@ -480,9 +571,9 @@ export class ScreenUnderstandingService {
   }): ScreenUnderstandingResult {
     const now = Date.now();
     return {
-      status: opts.status || 'unavailable',
-      source: 'unavailable',
-      screenType: 'unknown',
+      status: opts.status || "unavailable",
+      source: "unavailable",
+      screenType: "unknown",
       attempts: [],
       confidence: 0,
       imagePaths: opts.imagePaths || [],
@@ -492,7 +583,7 @@ export class ScreenUnderstandingService {
       warnings: opts.warnings,
       failureReason: opts.failureReason,
       unavailableReason: opts.unavailableReason,
-      source_kind: 'vision',
+      source_kind: "vision",
     };
   }
 

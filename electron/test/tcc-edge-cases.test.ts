@@ -8,15 +8,15 @@
  *   4. Dev mode bypass returns 'granted' without calling systemPreferences
  *
  * Run with:
- *   cd /Users/evin/natively-cluely-ai-assistant/electron
+ *   cd /Users/evin/momor-cluely-ai-assistant/electron
  *   npx tsx test/tcc-edge-cases.test.ts
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from "events";
 
 // ── Mock systemPreferences ─────────────────────────────────────────────────
-type ScreenStatus = 'granted' | 'denied' | 'not-determined' | 'restricted';
-type MicStatus = 'granted' | 'denied' | 'not-determined';
+type ScreenStatus = "granted" | "denied" | "not-determined" | "restricted";
+type MicStatus = "granted" | "denied" | "not-determined";
 
 interface MockSystemPreferences {
   screenStatus: ScreenStatus;
@@ -26,20 +26,20 @@ interface MockSystemPreferences {
 }
 
 const mockPrefs: MockSystemPreferences = {
-  screenStatus: 'granted',
-  micStatus: 'granted',
+  screenStatus: "granted",
+  micStatus: "granted",
   askForMediaAccessCalls: [],
   getMediaAccessStatusCalls: [],
 };
 
 const mockSystemPreferences = {
-  getMediaAccessStatus(type: 'microphone' | 'screen'): string {
+  getMediaAccessStatus(type: "microphone" | "screen"): string {
     mockPrefs.getMediaAccessStatusCalls.push(type);
-    return type === 'microphone' ? mockPrefs.micStatus : mockPrefs.screenStatus;
+    return type === "microphone" ? mockPrefs.micStatus : mockPrefs.screenStatus;
   },
-  async askForMediaAccess(type: 'microphone'): Promise<boolean> {
+  async askForMediaAccess(type: "microphone"): Promise<boolean> {
     mockPrefs.askForMediaAccessCalls.push(type);
-    return type === 'microphone' ? mockPrefs.micStatus === 'granted' : false;
+    return type === "microphone" ? mockPrefs.micStatus === "granted" : false;
   },
 };
 
@@ -48,7 +48,10 @@ const mockApp = { isPackaged: true };
 // ── Reimplementation of the key TCC logic for testing ─────────────────────
 // (Copied from main.ts wireSystemCapture / wireMicCapture logic)
 
-function makeZerofillDetector(observationMs: number, onTrigger: (msg: string) => void) {
+function makeZerofillDetector(
+  observationMs: number,
+  onTrigger: (msg: string) => void,
+) {
   let firstChunkAt = 0;
   let zerofillLatched = false;
   let zerofillTriggered = false;
@@ -65,7 +68,10 @@ function makeZerofillDetector(observationMs: number, onTrigger: (msg: string) =>
       for (let i = 0; i + 1 < chunkLen; i += stride) {
         const s = chunk.readInt16LE(i);
         const a = s < 0 ? -s : s;
-        if (a > peak) { peak = a; if (peak > THRESHOLD_PEAK) break; }
+        if (a > peak) {
+          peak = a;
+          if (peak > THRESHOLD_PEAK) break;
+        }
       }
 
       if (peak > THRESHOLD_PEAK) {
@@ -80,8 +86,12 @@ function makeZerofillDetector(observationMs: number, onTrigger: (msg: string) =>
       zerofillLatched = false;
       zerofillTriggered = false;
     },
-    get latched() { return zerofillLatched; },
-    get triggered() { return zerofillTriggered; },
+    get latched() {
+      return zerofillLatched;
+    },
+    get triggered() {
+      return zerofillTriggered;
+    },
   };
 }
 
@@ -98,20 +108,27 @@ function makeWatchdog(timeoutMs: number, onFire: (stuck: boolean) => void) {
       }, timeoutMs);
     },
     disarm() {
-      if (timer) { clearTimeout(timer); timer = null; }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
     },
-    recordChunk() { chunkCount++; },
-    get armed() { return timer !== null; },
+    recordChunk() {
+      chunkCount++;
+    },
+    get armed() {
+      return timer !== null;
+    },
   };
 }
 
 // Reimplementation of getMacScreenCaptureStatus for testing
 function getMacScreenCaptureStatusTEST(
   appIsPackaged: boolean,
-  getStatusFn: (type: 'microphone' | 'screen') => string
+  getStatusFn: (type: "microphone" | "screen") => string,
 ): ScreenStatus {
-  if (!appIsPackaged) return 'granted';
-  return getStatusFn('screen') as ScreenStatus;
+  if (!appIsPackaged) return "granted";
+  return getStatusFn("screen") as ScreenStatus;
 }
 
 // ── Test helpers ───────────────────────────────────────────────────────────
@@ -121,13 +138,17 @@ function makeZeroChunk(byteLen: number): Buffer {
 function makeNoiseChunk(byteLen: number): Buffer {
   const buf = Buffer.alloc(byteLen);
   for (let i = 0; i + 1 < byteLen; i += 2) {
-    buf.writeInt16LE(i % 32768 - 16384, i);
+    buf.writeInt16LE((i % 32768) - 16384, i);
   }
   return buf;
 }
-function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-async function runtimed<T>(fn: () => Promise<T>): Promise<{ ms: number; result: T }> {
+async function runtimed<T>(
+  fn: () => Promise<T>,
+): Promise<{ ms: number; result: T }> {
   const t0 = Date.now();
   const result = await fn();
   return { ms: Date.now() - t0, result };
@@ -135,9 +156,9 @@ async function runtimed<T>(fn: () => Promise<T>): Promise<{ ms: number; result: 
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 async function testZerofillDetector() {
-  console.log('─'.repeat(60));
-  console.log('TEST: Zero-fill detector fires at 12-14s of all-zero chunks');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log("TEST: Zero-fill detector fires at 12-14s of all-zero chunks");
+  console.log("─".repeat(60));
 
   const OBS_MS = 12000;
   const CHUNK_MS = 20; // simulated chunk cadence
@@ -152,7 +173,7 @@ async function testZerofillDetector() {
 
   const start = Date.now();
   // Feed chunks until triggered or max wait exceeded
-  while (triggeredAtMs === null && (Date.now() - start) < MAX_WAIT_MS) {
+  while (triggeredAtMs === null && Date.now() - start < MAX_WAIT_MS) {
     detector.feed(makeZeroChunk(CHUNK_BYTES), CHUNK_BYTES);
     await delay(CHUNK_MS);
   }
@@ -160,18 +181,20 @@ async function testZerofillDetector() {
   const elapsed = Date.now() - start;
   const pass = triggeredAtMs !== null;
   console.log(`  Triggered after ${elapsed}ms (expected ~${OBS_MS}ms)`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 async function testZerofillDoesNotFireForNoise() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: Zero-fill detector does NOT fire for real audio');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log("TEST: Zero-fill detector does NOT fire for real audio");
+  console.log("─".repeat(60));
 
   let triggered = false;
-  const detector = makeZerofillDetector(12000, () => { triggered = true; });
+  const detector = makeZerofillDetector(12000, () => {
+    triggered = true;
+  });
 
   // Feed 13s of real audio chunks
   for (let i = 0; i < 650; i++) {
@@ -181,15 +204,15 @@ async function testZerofillDoesNotFireForNoise() {
 
   const pass = !triggered;
   console.log(`  Triggered after 13s of noise: ${triggered}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 async function testStuckWatchdog() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: Stuck watchdog fires at ~8s when no chunks arrive');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log("TEST: Stuck watchdog fires at ~8s when no chunks arrive");
+  console.log("─".repeat(60));
 
   const TIMEOUT_MS = 8000;
   const SLACK_MS = 500;
@@ -204,19 +227,23 @@ async function testStuckWatchdog() {
   watchdog.arm();
   await delay(TIMEOUT_MS + SLACK_MS);
   const pass = firedAtMs !== null && fireCount === 1;
-  console.log(`  Fired: ${fireCount} time(s) at ${firedAtMs ? Date.now() - firedAtMs : 'n/a'}ms`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(
+    `  Fired: ${fireCount} time(s) at ${firedAtMs ? Date.now() - firedAtMs : "n/a"}ms`,
+  );
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 async function testWatchdogClearsOnFirstChunk() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: Stuck watchdog clears when first chunk arrives');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log("TEST: Stuck watchdog clears when first chunk arrives");
+  console.log("─".repeat(60));
 
   let fireCount = 0;
-  const watchdog = makeWatchdog(8000, () => { fireCount++; });
+  const watchdog = makeWatchdog(8000, () => {
+    fireCount++;
+  });
 
   watchdog.arm();
   await delay(3000);
@@ -225,106 +252,135 @@ async function testWatchdogClearsOnFirstChunk() {
 
   const pass = fireCount === 0;
   console.log(`  Fire count after 8s+ with chunk at 3s: ${fireCount}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 async function testScreenCaptureDenied() {
   console.log();
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
   console.log('TEST: getMacScreenCaptureStatus returns "denied" correctly');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
 
-  mockPrefs.screenStatus = 'denied';
+  mockPrefs.screenStatus = "denied";
   mockPrefs.getMediaAccessStatusCalls = [];
 
-  const status = getMacScreenCaptureStatusTEST(true, mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences));
-  const pass = status === 'denied' && !mockPrefs.askForMediaAccessCalls.includes('screen');
+  const status = getMacScreenCaptureStatusTEST(
+    true,
+    mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences),
+  );
+  const pass =
+    status === "denied" && !mockPrefs.askForMediaAccessCalls.includes("screen");
   console.log(`  Status: ${status} (expected: denied)`);
-  console.log(`  askForMediaAccess called for screen: ${mockPrefs.askForMediaAccessCalls.includes('screen')}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(
+    `  askForMediaAccess called for screen: ${mockPrefs.askForMediaAccessCalls.includes("screen")}`,
+  );
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
 
-  mockPrefs.screenStatus = 'granted'; // reset
+  mockPrefs.screenStatus = "granted"; // reset
   return pass;
 }
 
 async function testScreenCaptureGranted() {
   console.log();
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
   console.log('TEST: getMacScreenCaptureStatus returns "granted" for granted');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
 
-  mockPrefs.screenStatus = 'granted';
-  const status = getMacScreenCaptureStatusTEST(true, mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences));
-  const pass = status === 'granted';
+  mockPrefs.screenStatus = "granted";
+  const status = getMacScreenCaptureStatusTEST(
+    true,
+    mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences),
+  );
+  const pass = status === "granted";
   console.log(`  Status: ${status} (expected: granted)`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 async function testDevModeBypass() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: Dev mode (!app.isPackaged) bypasses TCC and returns granted');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log(
+    "TEST: Dev mode (!app.isPackaged) bypasses TCC and returns granted",
+  );
+  console.log("─".repeat(60));
 
-  mockPrefs.screenStatus = 'denied'; // Would return 'denied' if checked
+  mockPrefs.screenStatus = "denied"; // Would return 'denied' if checked
   mockPrefs.getMediaAccessStatusCalls = [];
 
-  const status = getMacScreenCaptureStatusTEST(false, mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences));
-  const systemPrefsCalled = mockPrefs.getMediaAccessStatusCalls.includes('screen');
+  const status = getMacScreenCaptureStatusTEST(
+    false,
+    mockSystemPreferences.getMediaAccessStatus.bind(mockSystemPreferences),
+  );
+  const systemPrefsCalled =
+    mockPrefs.getMediaAccessStatusCalls.includes("screen");
 
-  const pass = status === 'granted' && !systemPrefsCalled;
+  const pass = status === "granted" && !systemPrefsCalled;
   console.log(`  Status: ${status} (expected: granted in dev mode)`);
-  console.log(`  systemPreferences.getMediaAccessStatus called: ${systemPrefsCalled}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(
+    `  systemPreferences.getMediaAccessStatus called: ${systemPrefsCalled}`,
+  );
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
 
-  mockPrefs.screenStatus = 'granted'; // reset
+  mockPrefs.screenStatus = "granted"; // reset
   return pass;
 }
 
 async function testMicAccessDenied() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: ensureMacMicrophoneAccess handles denied correctly');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log("TEST: ensureMacMicrophoneAccess handles denied correctly");
+  console.log("─".repeat(60));
 
-  mockPrefs.micStatus = 'denied';
+  mockPrefs.micStatus = "denied";
   mockPrefs.askForMediaAccessCalls = [];
 
   // Simulate ensureMacMicrophoneAccess logic
-  const currentStatus = mockSystemPreferences.getMediaAccessStatus('microphone');
-  const pass = currentStatus === 'denied' && !mockPrefs.askForMediaAccessCalls.includes('microphone');
+  const currentStatus =
+    mockSystemPreferences.getMediaAccessStatus("microphone");
+  const pass =
+    currentStatus === "denied" &&
+    !mockPrefs.askForMediaAccessCalls.includes("microphone");
   console.log(`  Current status: ${currentStatus}`);
-  console.log(`  askForMediaAccess called: ${mockPrefs.askForMediaAccessCalls.includes('microphone')}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(
+    `  askForMediaAccess called: ${mockPrefs.askForMediaAccessCalls.includes("microphone")}`,
+  );
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
 
-  mockPrefs.micStatus = 'granted'; // reset
+  mockPrefs.micStatus = "granted"; // reset
   return pass;
 }
 
 async function testMicAccessGranted() {
   console.log();
-  console.log('─'.repeat(60));
-  console.log('TEST: ensureMacMicrophoneAccess skips prompt when already granted');
-  console.log('─'.repeat(60));
+  console.log("─".repeat(60));
+  console.log(
+    "TEST: ensureMacMicrophoneAccess skips prompt when already granted",
+  );
+  console.log("─".repeat(60));
 
-  mockPrefs.micStatus = 'granted';
+  mockPrefs.micStatus = "granted";
   mockPrefs.askForMediaAccessCalls = [];
 
-  const currentStatus = mockSystemPreferences.getMediaAccessStatus('microphone');
-  const pass = currentStatus === 'granted' && !mockPrefs.askForMediaAccessCalls.includes('microphone');
+  const currentStatus =
+    mockSystemPreferences.getMediaAccessStatus("microphone");
+  const pass =
+    currentStatus === "granted" &&
+    !mockPrefs.askForMediaAccessCalls.includes("microphone");
   console.log(`  Current status: ${currentStatus}`);
-  console.log(`  askForMediaAccess called: ${mockPrefs.askForMediaAccessCalls.includes('microphone')}`);
-  console.log(`  ✅ PASS: ${pass ? 'YES' : 'NO'}`);
+  console.log(
+    `  askForMediaAccess called: ${mockPrefs.askForMediaAccessCalls.includes("microphone")}`,
+  );
+  console.log(`  ✅ PASS: ${pass ? "YES" : "NO"}`);
   return pass;
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('═'.repeat(60));
-  console.log('TCC EDGE CASES TEST SUITE');
-  console.log('═'.repeat(60));
+  console.log("═".repeat(60));
+  console.log("TCC EDGE CASES TEST SUITE");
+  console.log("═".repeat(60));
   console.log();
 
   const results = [
@@ -343,20 +399,20 @@ async function main() {
   const total = results.length;
 
   console.log();
-  console.log('═'.repeat(60));
+  console.log("═".repeat(60));
   console.log(`RESULTS: ${passed}/${total} passed`);
-  console.log('═'.repeat(60));
+  console.log("═".repeat(60));
 
   if (passed === total) {
-    console.log('✅ ALL TCC EDGE CASE TESTS PASSED');
+    console.log("✅ ALL TCC EDGE CASE TESTS PASSED");
   } else {
-    console.log('❌ SOME TCC EDGE CASE TESTS FAILED');
+    console.log("❌ SOME TCC EDGE CASE TESTS FAILED");
   }
 
   process.exit(passed === total ? 0 : 1);
 }
 
-main().catch(err => {
-  console.error('Fatal:', err);
+main().catch((err) => {
+  console.error("Fatal:", err);
   process.exit(1);
 });

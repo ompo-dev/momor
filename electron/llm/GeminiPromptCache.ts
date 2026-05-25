@@ -1,5 +1,5 @@
-import crypto from 'crypto';
-import type { GoogleGenAI } from '@google/genai';
+import crypto from "crypto";
+import type { GoogleGenAI } from "@google/genai";
 
 /**
  * Process-local manager for Gemini explicit context caches (caches.create).
@@ -74,7 +74,7 @@ export class GeminiPromptCache {
   async getOrCreate(
     client: GoogleGenAI,
     model: string,
-    systemPrompt: string
+    systemPrompt: string,
   ): Promise<string | null> {
     if (!systemPrompt || systemPrompt.length < MIN_PROMPT_CHARS) return null;
 
@@ -95,9 +95,11 @@ export class GeminiPromptCache {
     const pending = this.inflight.get(key);
     if (pending) return pending;
 
-    const creation = this.create(client, model, systemPrompt, key).finally(() => {
-      this.inflight.delete(key);
-    });
+    const creation = this.create(client, model, systemPrompt, key).finally(
+      () => {
+        this.inflight.delete(key);
+      },
+    );
     this.inflight.set(key, creation);
     return creation;
   }
@@ -124,7 +126,7 @@ export class GeminiPromptCache {
     client: GoogleGenAI,
     model: string,
     systemPrompt: string,
-    key: string
+    key: string,
   ): Promise<string | null> {
     try {
       // Gemini requires both `contents` AND `systemInstruction` to have non-empty
@@ -133,22 +135,26 @@ export class GeminiPromptCache {
       const response: any = await (client as any).caches.create({
         model,
         config: {
-          contents: [{ role: 'user', parts: [{ text: '_' }] }],
+          contents: [{ role: "user", parts: [{ text: "_" }] }],
           systemInstruction: { parts: [{ text: systemPrompt }] },
           ttl: `${CACHE_TTL_SECONDS}s`,
-          displayName: `natively-sys-${key.slice(0, 8)}`,
+          displayName: `momor-sys-${key.slice(0, 8)}`,
         },
       });
       const name: string | undefined = response?.name;
       if (!name) {
-        console.warn('[GeminiPromptCache] caches.create returned no name; skipping cache');
+        console.warn(
+          "[GeminiPromptCache] caches.create returned no name; skipping cache",
+        );
         return null;
       }
       this.entries.set(key, {
         name,
         expiresAt: Date.now() + CACHE_TTL_SECONDS * 1000,
       });
-      console.log(`[GeminiPromptCache] created ${name} for model=${model} (${systemPrompt.length} chars)`);
+      console.log(
+        `[GeminiPromptCache] created ${name} for model=${model} (${systemPrompt.length} chars)`,
+      );
       return name;
     } catch (err: any) {
       // Non-fatal. Common reasons: prompt below model minimum, model doesn't
@@ -158,11 +164,11 @@ export class GeminiPromptCache {
       // when the underlying constraint is structural.
       console.warn(
         `[GeminiPromptCache] caches.create failed for model=${model}: ${err?.message || err}. ` +
-        `Falling back to systemInstruction.`
+          `Falling back to systemInstruction.`,
       );
       // Mark as failed for a short cooldown by stashing a sentinel entry.
       this.entries.set(key, {
-        name: '',
+        name: "",
         expiresAt: Date.now() + 5 * 60 * 1000, // 5min cooldown before retrying create
       });
       return null;
@@ -170,6 +176,11 @@ export class GeminiPromptCache {
   }
 
   private hashKey(model: string, systemPrompt: string): string {
-    return crypto.createHash('sha1').update(model).update('\0').update(systemPrompt).digest('hex');
+    return crypto
+      .createHash("sha1")
+      .update(model)
+      .update("\0")
+      .update(systemPrompt)
+      .digest("hex");
   }
 }

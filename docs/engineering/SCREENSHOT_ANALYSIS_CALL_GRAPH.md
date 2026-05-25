@@ -14,21 +14,21 @@ tree; every claim is grounded in code, not inference.
 
 ## Module surface
 
-| File | Role |
-|---|---|
-| `electron/ScreenshotHelper.ts:400-811` | Owns the on-disk screenshot queues, takes screenshots via `desktopCapturer`, validates TCC permission |
-| `electron/CropperWindowHelper.ts:1-634` | Borderless transparent BrowserWindow that lets the user select an `Electron.Rectangle` for cropping |
+| File                                                     | Role                                                                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `electron/ScreenshotHelper.ts:400-811`                   | Owns the on-disk screenshot queues, takes screenshots via `desktopCapturer`, validates TCC permission                     |
+| `electron/CropperWindowHelper.ts:1-634`                  | Borderless transparent BrowserWindow that lets the user select an `Electron.Rectangle` for cropping                       |
 | `electron/services/screen/ScreenContextService.ts:1-164` | Wraps `ScreenshotHelper` and runs **Tesseract.js** OCR; computes perceptual + quick image hash; caches OCR text for 5 min |
-| `electron/services/screen/ImageHashService.ts:1-71` | `sharp` 16×16 grayscale → average-hash; MD5 of first 8 KB as fallback |
-| `electron/services/context/PromptAssembler.ts:263-287` | Wraps OCR text in `<screen_context trust_level="untrusted_visual_evidence">` block |
-| `electron/services/context/TrustLevels.ts:28` | Declares `UNTRUSTED_SCREEN` trust level |
-| `electron/llm/WhatToAnswerLLM.ts:40-205` | `generateStream(transcript, temporal, intent, imagePaths, screenContext, promptInstruction)` |
-| `electron/LLMHelper.ts:1198-2526` | Per-provider multimodal dispatch (Gemini, OpenAI, Claude, Groq, Ollama, Codex CLI, Natively, custom cURL) |
-| `electron/llm/ProviderRouter.ts:87-162` | `routeLLMProviders({capability:'vision', multimodal:true, …})` — six providers declared vision-capable |
-| `electron/llm/modelCapabilities.ts:75-108` | `supportsImages` lookup (Ollama family regex; cloud whitelist) |
-| `electron/IntelligenceEngine.ts:506-1081` | Orchestrates `runWhatShouldISay`, `runCodeHint`, `runBrainstorm` |
-| `electron/ipcHandlers.ts:255-2680` | All renderer-exposed IPC channels (`take-screenshot`, `delete-screenshot`, `generate-what-to-say`, …) |
-| `electron/utils/curlUtils.ts:253-302` | `validateImagePath(imagePath, userDataPath)` — **see Phase 3 for a real bug here** |
+| `electron/services/screen/ImageHashService.ts:1-71`      | `sharp` 16×16 grayscale → average-hash; MD5 of first 8 KB as fallback                                                     |
+| `electron/services/context/PromptAssembler.ts:263-287`   | Wraps OCR text in `<screen_context trust_level="untrusted_visual_evidence">` block                                        |
+| `electron/services/context/TrustLevels.ts:28`            | Declares `UNTRUSTED_SCREEN` trust level                                                                                   |
+| `electron/llm/WhatToAnswerLLM.ts:40-205`                 | `generateStream(transcript, temporal, intent, imagePaths, screenContext, promptInstruction)`                              |
+| `electron/LLMHelper.ts:1198-2526`                        | Per-provider multimodal dispatch (Gemini, OpenAI, Claude, Groq, Ollama, Codex CLI, momor, custom cURL)                    |
+| `electron/llm/ProviderRouter.ts:87-162`                  | `routeLLMProviders({capability:'vision', multimodal:true, …})` — six providers declared vision-capable                    |
+| `electron/llm/modelCapabilities.ts:75-108`               | `supportsImages` lookup (Ollama family regex; cloud whitelist)                                                            |
+| `electron/IntelligenceEngine.ts:506-1081`                | Orchestrates `runWhatShouldISay`, `runCodeHint`, `runBrainstorm`                                                          |
+| `electron/ipcHandlers.ts:255-2680`                       | All renderer-exposed IPC channels (`take-screenshot`, `delete-screenshot`, `generate-what-to-say`, …)                     |
+| `electron/utils/curlUtils.ts:253-302`                    | `validateImagePath(imagePath, userDataPath)` — **see Phase 3 for a real bug here**                                        |
 
 ---
 
@@ -36,8 +36,8 @@ tree; every claim is grounded in code, not inference.
 
 ```
 src/hooks/useShortcuts.ts:65 ⌘+H
-  → src/components/NativelyInterface.tsx:2575 isShortcutPressed('takeScreenshot')
-    → handlers.takeScreenshot()  (NativelyInterface.tsx:2493)
+  → src/components/momorInterface.tsx:2575 isShortcutPressed('takeScreenshot')
+    → handlers.takeScreenshot()  (momorInterface.tsx:2493)
       → window.electronAPI.takeScreenshot()       (preload.ts:397)
         → ipcMain.invoke "take-screenshot"        (ipcHandlers.ts:266)
           → appState.takeScreenshot()              (main.ts:3346)
@@ -52,7 +52,7 @@ src/hooks/useShortcuts.ts:65 ⌘+H
             └── data:image/png;base64,<…>
           ← { path, preview }
         ← { path, preview }
-      → setAttachedContext([...prev, {path, preview}])  (NativelyInterface.tsx:1001)
+      → setAttachedContext([...prev, {path, preview}])  (momorInterface.tsx:1001)
 ```
 
 Tray menu accelerator does the same via `globalShortcut.register` registered
@@ -70,7 +70,7 @@ performed yet**.
 
 ```
 src/hooks/useShortcuts.ts                          ⌘+Shift+H
-  → handlers.takeSelectiveScreenshot()             (NativelyInterface.tsx:2505)
+  → handlers.takeSelectiveScreenshot()             (momorInterface.tsx:2505)
     → window.electronAPI.takeSelectiveScreenshot() (preload.ts:398)
       → ipcMain.invoke "take-selective-screenshot" (ipcHandlers.ts:277)
         → appState.takeSelectiveScreenshot()       (main.ts:3352)
@@ -99,14 +99,14 @@ global shortcut 'general:capture-and-process'      (main.ts:428)
   → mainWindow.webContents.send('capture-and-process', { path, preview })
                                                    (main.ts:441)
   → preload subscription onCaptureAndProcess       (preload.ts:424)
-  → NativelyInterface handler [implicit via attachment + manual submit flow]
+  → momorInterface handler [implicit via attachment + manual submit flow]
     ... still uses the same Path E to actually run OCR+LLM.
 ```
 
-The handler logic in `NativelyInterface.tsx` lines 2003 and 2037 sends the
+The handler logic in `momorInterface.tsx` lines 2003 and 2037 sends the
 attachment to a Gemini chat with a hard-coded "analyze this screenshot in
 context of what the user said" prompt — this goes through the
-`streamGeminiChat` IPC, *not* through the OCR pipeline.
+`streamGeminiChat` IPC, _not_ through the OCR pipeline.
 
 ---
 
@@ -115,7 +115,7 @@ context of what the user said" prompt — this goes through the
 This is the **only** path that uses `ScreenContextService` + Tesseract OCR.
 
 ```
-NativelyInterface.tsx:1499  handleWhatToSay()
+momorInterface.tsx:1499  handleWhatToSay()
   └── currentAttachments = attachedContext + pendingCaptureRef
   └── window.electronAPI.generateWhatToSay(question, paths, options)
         (preload.ts:781)
@@ -151,7 +151,7 @@ NativelyInterface.tsx:1499  handleWhatToSay()
               → per-provider: see Path F
     ← { answer, question, screenContextStatus, ocrTextLength }
   → setScreenContextStatus(result.screenContextStatus)
-       (NativelyInterface.tsx:1537)
+       (momorInterface.tsx:1537)
 ```
 
 Net effect: **OCR text + raw image bytes are both sent** to the model. OCR text
@@ -164,7 +164,7 @@ OCR text reaches the model.
 ## Path E — Code hint / Brainstorm (image-only, no OCR)
 
 ```
-NativelyInterface.tsx:1644  handleCodeHint()
+momorInterface.tsx:1644  handleCodeHint()
   └── window.electronAPI.generateCodeHint(paths, problemStatement)
                                                    (preload.ts:783)
     → ipcMain.invoke "generate-code-hint"          (ipcHandlers.ts:2605)
@@ -193,6 +193,7 @@ with `undefined` so the IPC handler uses the server-side queue directly.
 ## Path F — LLM dispatch (multimodal payload)
 
 `LLMHelper.streamChat(...)` chooses based on:
+
 - `MULTIMODAL_REQUEST_OVERRIDE` (`process.env`)
 - active provider + model id
 - `ProviderRouter.routeLLMProviders({ capability:'vision', multimodal:true, …})`
@@ -203,7 +204,7 @@ The full multimodal dispatch table is in
 `SCREENSHOT_ANALYSIS_PROVIDER_MATRIX.md`. Common shape:
 
 ```
-streamWithNatively       → multipart with base64-PNG (Sharp resized to ≤768px)
+streamWithmomor       → multipart with base64-PNG (Sharp resized to ≤768px)
 streamWithGeminiModel    → inline_data { mime_type, data: base64 } via google-genai
 streamWithOpenaiMultimodal → message.content[].type='image_url' with data: URI
 streamWithClaudeMultimodal → message.content[].type='image', source=base64
@@ -232,7 +233,7 @@ SessionTracker emits transcript turn
   → user accepts the chip
     → window.electronAPI.acceptDynamicAction(...)
       → 'dynamic-action-accepted' IPC
-        → handleWhatToSay(promptInstruction)       (NativelyInterface.tsx:1499)
+        → handleWhatToSay(promptInstruction)       (momorInterface.tsx:1499)
           → generateWhatToSay(question=undefined, paths=undefined, {promptInstruction})
 ```
 
@@ -246,11 +247,11 @@ the no-imagePaths branch (`ipcHandlers.ts:2534`) and **never invokes
 
 ## Storage & lifecycle of screenshot files
 
-| File | Birthplace | Lifetime | Cleanup |
-|---|---|---|---|
-| `userData/screenshots/<uuid>.png` | `ScreenshotHelper.takeScreenshot` | FIFO queue cap = 5 | Auto-shift on overflow (`ScreenshotHelper.ts:622`); manual `delete-screenshot` (IPC `ipcHandlers.ts:255`); `clearQueues()` on session reset |
-| `userData/screenshots/selective-<uuid>.png` | `takeSelectiveScreenshot` | Same FIFO | Same |
-| `userData/extra_screenshots/<uuid>.png` | `takeScreenshot` when `view='solutions'` | FIFO cap = 5 | Same |
+| File                                        | Birthplace                               | Lifetime           | Cleanup                                                                                                                                     |
+| ------------------------------------------- | ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userData/screenshots/<uuid>.png`           | `ScreenshotHelper.takeScreenshot`        | FIFO queue cap = 5 | Auto-shift on overflow (`ScreenshotHelper.ts:622`); manual `delete-screenshot` (IPC `ipcHandlers.ts:255`); `clearQueues()` on session reset |
+| `userData/screenshots/selective-<uuid>.png` | `takeSelectiveScreenshot`                | Same FIFO          | Same                                                                                                                                        |
+| `userData/extra_screenshots/<uuid>.png`     | `takeScreenshot` when `view='solutions'` | FIFO cap = 5       | Same                                                                                                                                        |
 
 `delete-screenshot` IPC handler (`ipcHandlers.ts:255`) enforces
 `resolved.startsWith(userDataDir + path.sep)` and rejects anything outside.
@@ -259,14 +260,14 @@ the no-imagePaths branch (`ipcHandlers.ts:2534`) and **never invokes
 
 ## Summary of trigger surfaces
 
-| Surface | Trigger | Path | OCR? | Vision? |
-|---|---|---|---|---|
-| Tray menu "Take Screenshot" | mouse | A | no | no (attach only) |
-| ⌘+H global shortcut | key | A | no | no |
-| ⌘+Shift+H (selective) | key | B | no | no |
-| `general:capture-and-process` global shortcut | key | C | no | yes (manual Gemini chat) |
-| "What should I say" button (with attachment) | mouse | D | **yes (Tesseract)** | yes (if provider supports) |
-| "Code hint" button | mouse | E | no | yes (raw image) |
-| "Brainstorm" button | mouse | E | no | yes (raw image) |
-| Dynamic action chip "Answer from screen" | mouse | G | **no — half-built** | no |
-| Queue page "Solve" button (`Queue.tsx:289`) | mouse | E | no | yes (raw image, queue fallback) |
+| Surface                                       | Trigger | Path | OCR?                | Vision?                         |
+| --------------------------------------------- | ------- | ---- | ------------------- | ------------------------------- |
+| Tray menu "Take Screenshot"                   | mouse   | A    | no                  | no (attach only)                |
+| ⌘+H global shortcut                           | key     | A    | no                  | no                              |
+| ⌘+Shift+H (selective)                         | key     | B    | no                  | no                              |
+| `general:capture-and-process` global shortcut | key     | C    | no                  | yes (manual Gemini chat)        |
+| "What should I say" button (with attachment)  | mouse   | D    | **yes (Tesseract)** | yes (if provider supports)      |
+| "Code hint" button                            | mouse   | E    | no                  | yes (raw image)                 |
+| "Brainstorm" button                           | mouse   | E    | no                  | yes (raw image)                 |
+| Dynamic action chip "Answer from screen"      | mouse   | G    | **no — half-built** | no                              |
+| Queue page "Solve" button (`Queue.tsx:289`)   | mouse   | E    | no                  | yes (raw image, queue fallback) |

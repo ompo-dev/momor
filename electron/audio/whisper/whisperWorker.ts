@@ -12,30 +12,48 @@
  * CommonJS, which means TypeScript rewrites `import()` to `require()`.
  * We bypass this by loading the package through `new Function(...)` so
  * the compiler never sees the import expression and Node.js handles it
- * natively as a true dynamic ESM import at runtime.
+ * momor as a true dynamic ESM import at runtime.
  */
-import { parentPort } from 'worker_threads';
+import { parentPort } from "worker_threads";
 
 const LANG_MAP: Record<string, string | null> = {
-  'auto': null,
-  'en-US': 'english',
-  'en-GB': 'english',
-  'fr-FR': 'french',
-  'de-DE': 'german',
-  'es-ES': 'spanish',
-  'ja-JP': 'japanese',
-  'ko-KR': 'korean',
-  'zh-CN': 'chinese',
-  'zh-TW': 'chinese',
-  'pt-BR': 'portuguese',
-  'it-IT': 'italian',
-  'ru-RU': 'russian',
-  'ar': 'arabic',
-  'hi-IN': 'hindi',
+  auto: null,
+  // BCP47 codes (legacy — kept for compat)
+  "en-US": "english",
+  "en-GB": "english",
+  "fr-FR": "french",
+  "de-DE": "german",
+  "es-ES": "spanish",
+  "ja-JP": "japanese",
+  "ko-KR": "korean",
+  "zh-CN": "chinese",
+  "zh-TW": "chinese",
+  "pt-BR": "portuguese",
+  "it-IT": "italian",
+  "ru-RU": "russian",
+  ar: "arabic",
+  "hi-IN": "hindi",
+  // Plain-word keys — matches RECOGNITION_LANGUAGES keys used by setRecognitionLanguage()
+  // English variants intentionally omitted: 'english-us' is the default fallback value
+  // and should auto-detect rather than force English on non-English speakers.
+  portuguese: "portuguese",
+  french: "french",
+  german: "german",
+  spanish: "spanish",
+  japanese: "japanese",
+  korean: "korean",
+  chinese: "chinese",
+  italian: "italian",
+  russian: "russian",
+  arabic: "arabic",
+  hindi: "hindi",
+  turkish: "turkish",
+  ukrainian: "ukrainian",
+  indonesian: "indonesian",
 };
 
 let pipe: any = null;
-let loadedModelId = '';
+let loadedModelId = "";
 
 // Tokenized prompt cache — populated by `setPrompt` messages, reused by
 // every subsequent transcribe. Cleared on model swap.
@@ -46,7 +64,7 @@ let loadedModelId = '';
 // strictly with transcribe messages. As long as no two transcribe messages
 // are in flight concurrently (the streamingTaskInFlight guard ensures this),
 // the cache is consistent.
-let cachedPromptText = '';
+let cachedPromptText = "";
 let cachedPromptIds: number[] | null = null;
 
 // Moonshine doesn't have Whisper's prompt_ids mechanism. Detect by model id
@@ -56,9 +74,9 @@ const isMoonshineModel = (id: string) => /\/moonshine-/i.test(id);
 const PROMPT_TOKEN_CAP = 224; // Whisper's prompt window per generation_whisper.js
 
 async function updatePromptCache(promptText: string): Promise<void> {
-  const trimmed = (promptText ?? '').trim();
+  const trimmed = (promptText ?? "").trim();
   if (!trimmed) {
-    cachedPromptText = '';
+    cachedPromptText = "";
     cachedPromptIds = null;
     return;
   }
@@ -72,29 +90,37 @@ async function updatePromptCache(promptText: string): Promise<void> {
   }
   try {
     // add_special_tokens=false: Whisper inserts <|startofprev|> itself.
-    const encoded = await pipe.tokenizer(trimmed, { add_special_tokens: false });
+    const encoded = await pipe.tokenizer(trimmed, {
+      add_special_tokens: false,
+    });
     const raw = encoded?.input_ids?.tolist?.()?.[0] ?? [];
     // Truncate from the END (keep first 224). Session-static biasing prompts
     // typically front-load the most important vocabulary (attendee names,
     // company/project names, glossary terms), so dropping the tail of less
     // important tokens preserves the user's priority order.
-    cachedPromptIds = raw.slice(0, PROMPT_TOKEN_CAP).map((n: bigint | number) => {
-      const v = Number(n);
-      // Whisper vocab is ~50k tokens — well under 2^53 — but if a future
-      // model ships sentinel ids with high bits set, fail loud rather than
-      // silently bias on a precision-lost token id.
-      if (!Number.isSafeInteger(v)) {
-        throw new Error(`Token id ${n} exceeds Number.MAX_SAFE_INTEGER — cannot use as prompt_id`);
-      }
-      return v;
-    });
+    cachedPromptIds = raw
+      .slice(0, PROMPT_TOKEN_CAP)
+      .map((n: bigint | number) => {
+        const v = Number(n);
+        // Whisper vocab is ~50k tokens — well under 2^53 — but if a future
+        // model ships sentinel ids with high bits set, fail loud rather than
+        // silently bias on a precision-lost token id.
+        if (!Number.isSafeInteger(v)) {
+          throw new Error(
+            `Token id ${n} exceeds Number.MAX_SAFE_INTEGER — cannot use as prompt_id`,
+          );
+        }
+        return v;
+      });
     cachedPromptText = trimmed;
     if (cachedPromptIds.length === 0) {
-      console.debug('[WhisperWorker] Prompt tokenized to 0 ids — biasing disabled');
+      console.debug(
+        "[WhisperWorker] Prompt tokenized to 0 ids — biasing disabled",
+      );
     }
   } catch (e: any) {
-    console.warn('[WhisperWorker] Prompt tokenization failed:', e.message);
-    cachedPromptText = '';
+    console.warn("[WhisperWorker] Prompt tokenization failed:", e.message);
+    cachedPromptText = "";
     cachedPromptIds = null;
   }
 }
@@ -105,38 +131,39 @@ async function updatePromptCache(promptText: string): Promise<void> {
 // behaviour is at least documented and consistent.
 const ENGLISH_ONLY_MODELS = new Set([
   // Moonshine — English-only by design
-  'onnx-community/moonshine-tiny-ONNX',
-  'onnx-community/moonshine-base-ONNX',
+  "onnx-community/moonshine-tiny-ONNX",
+  "onnx-community/moonshine-base-ONNX",
   // Distil-Whisper — English-only checkpoints
-  'distil-whisper/distil-small.en',
-  'distil-whisper/distil-medium.en',
-  'distil-whisper/distil-large-v2',
-  'distil-whisper/distil-large-v3',
+  "distil-whisper/distil-small.en",
+  "distil-whisper/distil-medium.en",
+  "distil-whisper/distil-large-v2",
+  "distil-whisper/distil-large-v3",
   // Whisper .en variants
-  'Xenova/whisper-tiny.en',
-  'Xenova/whisper-base.en',
-  'Xenova/whisper-small.en',
-  'Xenova/whisper-medium.en',
+  "Xenova/whisper-tiny.en",
+  "Xenova/whisper-base.en",
+  "Xenova/whisper-small.en",
+  "Xenova/whisper-medium.en",
 ]);
 
-if (!parentPort) throw new Error('whisperWorker must be run as a Worker thread');
+if (!parentPort)
+  throw new Error("whisperWorker must be run as a Worker thread");
 
 // Loads @huggingface/transformers via a real dynamic import() at runtime.
 // Using new Function prevents TypeScript from rewriting import() → require()
 // in the CommonJS output, which would fail because the package is ESM-only.
 async function loadTransformers(): Promise<{ pipeline: any; env: any }> {
-  return (new Function('return import("@huggingface/transformers")')()) as any;
+  return new Function('return import("@huggingface/transformers")')() as any;
 }
 
-parentPort.on('message', async (msg: any) => {
-  if (msg.type === 'init') {
+parentPort.on("message", async (msg: any) => {
+  if (msg.type === "init") {
     // Validate required fields BEFORE entering the try/catch so the error
     // surfaces as a structured `error` postMessage rather than an unhandled
     // worker throw (which would leave the host's workerReady stuck false).
     if (msg.dtype === undefined || msg.dtype === null) {
       parentPort!.postMessage({
-        type: 'error',
-        message: 'init.dtype is required (use resolveInferenceConfig().dtype)',
+        type: "error",
+        message: "init.dtype is required (use resolveInferenceConfig().dtype)",
       });
       return;
     }
@@ -147,7 +174,7 @@ parentPort.on('message', async (msg: any) => {
       env.allowRemoteModels = true;
 
       // Apply hardware-specific execution providers (CoreML, DirectML, CUDA, CPU)
-      const providers: string[] = msg.executionProviders ?? ['cpu'];
+      const providers: string[] = msg.executionProviders ?? ["cpu"];
       if (env.backends?.onnx) {
         env.backends.onnx.executionProviders = providers;
       }
@@ -155,11 +182,18 @@ parentPort.on('message', async (msg: any) => {
       // honors the v2 `quantized: true` flag — must use `dtype` explicitly.
       const dtype: string | Record<string, string> = msg.dtype;
       // Sort entries for deterministic log output across runs.
-      const dtypeDesc = typeof dtype === 'string'
-        ? dtype
-        : 'mixed:' + Object.entries(dtype).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(',');
+      const dtypeDesc =
+        typeof dtype === "string"
+          ? dtype
+          : "mixed:" +
+            Object.entries(dtype)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, v]) => `${k}=${v}`)
+              .join(",");
 
-      console.log(`[WhisperWorker] Loading ${msg.modelId} | providers=${providers.join(',')} | dtype=${dtypeDesc}`);
+      console.log(
+        `[WhisperWorker] Loading ${msg.modelId} | providers=${providers.join(",")} | dtype=${dtypeDesc}`,
+      );
 
       // HF Transformers fires progress_callback per *file* (encoder, decoder,
       // tokenizer, config…). The raw `data.progress` is per-file 0..100, which
@@ -173,18 +207,22 @@ parentPort.on('message', async (msg: any) => {
       // the 'ready' message below.
       const fileProgress = new Map<string, number>();
       let lastPostedPct = 0;
-      pipe = await pipeline('automatic-speech-recognition', msg.modelId, {
+      pipe = await pipeline("automatic-speech-recognition", msg.modelId, {
         dtype,
         progress_callback: (data: any) => {
           const key: string | undefined = data.file ?? data.name;
           if (!key) return;
           let val: number | null = null;
-          if (data.status === 'initiate' || data.status === 'download' || data.status === 'downloading') {
+          if (
+            data.status === "initiate" ||
+            data.status === "download" ||
+            data.status === "downloading"
+          ) {
             if (!fileProgress.has(key)) val = 0;
-          } else if (data.status === 'progress') {
+          } else if (data.status === "progress") {
             const p = Number(data.progress);
             if (!Number.isNaN(p)) val = Math.min(100, Math.max(0, p));
-          } else if (data.status === 'done') {
+          } else if (data.status === "done") {
             val = 100;
           } else {
             return;
@@ -207,7 +245,7 @@ parentPort.on('message', async (msg: any) => {
           if (next === lastPostedPct) return;
           lastPostedPct = next;
           parentPort!.postMessage({
-            type: 'progress',
+            type: "progress",
             modelId: msg.modelId,
             progress: next,
           });
@@ -215,21 +253,21 @@ parentPort.on('message', async (msg: any) => {
       });
       loadedModelId = msg.modelId;
       // New model = stale prompt cache (different tokenizer vocab)
-      cachedPromptText = '';
+      cachedPromptText = "";
       cachedPromptIds = null;
 
-      parentPort!.postMessage({ type: 'ready' });
+      parentPort!.postMessage({ type: "ready" });
     } catch (e: any) {
       parentPort!.postMessage({
-        type: 'error',
+        type: "error",
         message: `Failed to load model: ${e.message}`,
       });
     }
-  } else if (msg.type === 'setPrompt') {
+  } else if (msg.type === "setPrompt") {
     await updatePromptCache(msg.prompt);
-  } else if (msg.type === 'transcribe') {
+  } else if (msg.type === "transcribe") {
     if (!pipe) {
-      parentPort!.postMessage({ type: 'error', message: 'Model not loaded' });
+      parentPort!.postMessage({ type: "error", message: "Model not loaded" });
       return;
     }
     try {
@@ -241,7 +279,7 @@ parentPort.on('message', async (msg: any) => {
       // user's auto/non-English setting so the model isn't asked to
       // transcribe phonetically into the wrong language.
       if (ENGLISH_ONLY_MODELS.has(loadedModelId)) {
-        language = 'english';
+        language = "english";
       }
 
       // Streaming partial passes use deterministic settings so consecutive
@@ -252,43 +290,56 @@ parentPort.on('message', async (msg: any) => {
       const opts: any = streaming
         ? {
             sampling_rate: 16000,
-            task: 'transcribe',
+            task: "transcribe",
+            // Fixed temperature for streaming — deterministic output needed for
+            // LocalAgreement-2 (two overlapping passes must converge on a stable
+            // prefix; non-zero temperature introduces stochastic flicker).
             temperature: 0,
+            // Keep aggressive no_speech_threshold on partials — we don't want
+            // partial hallucinations (the final pass will confirm real speech).
             no_speech_threshold: 0.6,
-            // Whisper's anti-loop check — drops outputs whose token gzip
-            // ratio exceeds 2.4 (typical of "thank you. thank you. thank
-            // you..." hallucinations on near-silent windows). Final pass
-            // uses the same threshold; streaming should match for
-            // consistency in what reaches the user.
             compression_ratio_threshold: 2.4,
             condition_on_previous_text: false,
             return_timestamps: false,
           }
         : {
             sampling_rate: 16000,
-            task: 'transcribe',
+            task: "transcribe",
             condition_on_previous_text: false,
             compression_ratio_threshold: 2.4,
             logprob_threshold: -1.0,
-            no_speech_threshold: 0.6,
+            // Lower threshold for final pass — 0.6 rejects too many real
+            // utterances (especially short phrases and non-English speech).
+            // 0.45 preserves the hallucination filter while accepting marginal
+            // audio that 0.6 would incorrectly suppress.
+            no_speech_threshold: 0.45,
+            // Temperature fallback — mirrors Whisper's official decode strategy:
+            // attempt greedy (0) first; retry with higher temperature if the
+            // compression_ratio or logprob checks fail. The library picks the
+            // next entry automatically on threshold violation.
+            temperature: [0, 0.2, 0.4, 0.6],
           };
       if (language) opts.language = language;
 
       // Use the pre-tokenized prompt cache populated by setPrompt messages.
       // Skip for Moonshine (cached IDs are null in that case anyway).
-      if (cachedPromptIds && cachedPromptIds.length > 0 && !isMoonshineModel(loadedModelId)) {
+      if (
+        cachedPromptIds &&
+        cachedPromptIds.length > 0 &&
+        !isMoonshineModel(loadedModelId)
+      ) {
         opts.prompt_ids = cachedPromptIds;
       }
 
       const result = await pipe(msg.audio, opts);
       parentPort!.postMessage({
-        type: streaming ? 'partial' : 'result',
+        type: streaming ? "partial" : "result",
         taskId: msg.taskId,
-        text: result.text ?? '',
+        text: result.text ?? "",
       });
     } catch (e: any) {
       parentPort!.postMessage({
-        type: 'error',
+        type: "error",
         taskId: msg.taskId,
         message: `Transcription failed: ${e.message}`,
       });

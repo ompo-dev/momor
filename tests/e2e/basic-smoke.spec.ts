@@ -1,6 +1,6 @@
 // tests/e2e/basic-smoke.spec.ts
 //
-// FINDING-006: Playwright E2E smoke tests for Natively.
+// FINDING-006: Playwright E2E smoke tests for momor.
 //
 // This file exercises the renderer → main-process IPC contract that
 // service-level tests cannot cover. Each test opens the actual Electron
@@ -19,12 +19,12 @@
 //   npm run build && npm run start &
 //   sleep 5 && npx playwright test
 
-import { test, expect, skip } from '@playwright/test';
+import { test, expect, skip } from "@playwright/test";
 
-const CI = process.env.CI === 'true';
-const APP_PORT = parseInt(process.env.ELECTRON_APP_PORT ?? '0', 10);
+const CI = process.env.CI === "true";
+const APP_PORT = parseInt(process.env.ELECTRON_APP_PORT ?? "0", 10);
 
-test.describe('FINDING-006: Natively E2E smoke', () => {
+test.describe("FINDING-006: momor E2E smoke", () => {
   test.beforeEach(async ({ page }) => {
     if (CI) {
       test.skip();
@@ -32,54 +32,72 @@ test.describe('FINDING-006: Natively E2E smoke', () => {
     }
     // Guard: if no dev server is running, skip instead of failing
     if (!APP_PORT) {
-      test.skip('Set ELECTRON_APP_PORT to the dev server port (e.g. 5173) before running E2E tests');
+      test.skip(
+        "Set ELECTRON_APP_PORT to the dev server port (e.g. 5173) before running E2E tests",
+      );
       return;
     }
   });
 
-  test('app window loads without crash', async ({ page }) => {
+  test("app window loads without crash", async ({ page }) => {
     const errors: string[] = [];
-    page.on('pageerror', e => errors.push(e.message));
-    page.on('console', m => {
-      if (m.type() === 'error') errors.push(m.text());
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
     });
 
     await page.goto(`http://localhost:${APP_PORT}`);
     // Wait for the main content area — exact selector is app-specific.
     // We wait for any element with the "app" or "root" identifier.
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(2000); // allow async init
 
-    const crashIndicators = ['is not defined', 'Cannot find module', 'Electron Error'];
-    const criticalErrors = errors.filter(e => crashIndicators.some(ci => e.includes(ci)));
-    expect(criticalErrors, `Critical errors: ${criticalErrors.join(' | ')}`).toHaveLength(0);
+    const crashIndicators = [
+      "is not defined",
+      "Cannot find module",
+      "Electron Error",
+    ];
+    const criticalErrors = errors.filter((e) =>
+      crashIndicators.some((ci) => e.includes(ci)),
+    );
+    expect(
+      criticalErrors,
+      `Critical errors: ${criticalErrors.join(" | ")}`,
+    ).toHaveLength(0);
   });
 
-  test('main IPC channel responds to ping', async ({ page }) => {
+  test("main IPC channel responds to ping", async ({ page }) => {
     if (!APP_PORT) test.skip();
     await page.goto(`http://localhost:${APP_PORT}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
 
     // Evaluate a ping through the preload bridge (exposed as window.electronAPI).
     // If the preload is loaded, window.electronAPI will be truthy.
     const hasPreload = await page.evaluate(() => {
-      return typeof (window as any).electronAPI?.ping === 'function'
-        || typeof (window as any).electron === 'object';
+      return (
+        typeof (window as any).electronAPI?.ping === "function" ||
+        typeof (window as any).electron === "object"
+      );
     });
 
     // A missing preload is a failure — the IPC contract is broken.
     expect(hasPreload).toBe(true);
   });
 
-  test('modes panel renders with mode list', async ({ page }) => {
+  test("modes panel renders with mode list", async ({ page }) => {
     if (!APP_PORT) test.skip();
     await page.goto(`http://localhost:${APP_PORT}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
 
     // Look for the modes panel — searches by text content typical of mode names.
     // If the UI uses a specific element, update the selector accordingly.
-    const modePanelLocator = page.locator('text=/general|sales|recruiting|team-meet|looking-for-work|technical-interview|lecture/i');
-    const visible = await modePanelLocator.first().isVisible().catch(() => false);
+    const modePanelLocator = page.locator(
+      "text=/general|sales|recruiting|team-meet|looking-for-work|technical-interview|lecture/i",
+    );
+    const visible = await modePanelLocator
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     // The mode list may be lazy; give it more time before declaring missing.
     if (!visible) {
@@ -89,13 +107,15 @@ test.describe('FINDING-006: Natively E2E smoke', () => {
     expect(visible).toBe(true);
   });
 
-  test('settings panel opens and closes', async ({ page }) => {
+  test("settings panel opens and closes", async ({ page }) => {
     if (!APP_PORT) test.skip();
     await page.goto(`http://localhost:${APP_PORT}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
 
     // Click the settings button/icon — placeholder selector.
-    const settingsBtn = page.locator('button[aria-label*="settings" i], button:has-text("Settings")').first();
+    const settingsBtn = page
+      .locator('button[aria-label*="settings" i], button:has-text("Settings")')
+      .first();
     const settingsVisible = await settingsBtn.isVisible().catch(() => false);
 
     if (settingsVisible) {
@@ -103,7 +123,9 @@ test.describe('FINDING-006: Natively E2E smoke', () => {
       await page.waitForTimeout(500);
 
       // Close again
-      const closeBtn = page.locator('button[aria-label*="close" i], button:has-text("Close")').first();
+      const closeBtn = page
+        .locator('button[aria-label*="close" i], button:has-text("Close")')
+        .first();
       if (await closeBtn.isVisible()) {
         await closeBtn.click();
       }
@@ -111,7 +133,7 @@ test.describe('FINDING-006: Natively E2E smoke', () => {
 
     // Settings not yet rendered is not a test failure — skip with a note
     if (!settingsVisible) {
-      test.skip('Settings button not found in this UI layout');
+      test.skip("Settings button not found in this UI layout");
     }
   });
 });

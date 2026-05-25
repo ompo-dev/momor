@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Trash2, HardDrive, Check, Loader2, Zap, AlertCircle, ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Download, Trash2, HardDrive, Check, Loader2, Zap, AlertCircle, ChevronDown, Server } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface ModelInfo {
@@ -63,6 +64,7 @@ function PremiumSelect({ label, value, options, onChange, placeholder }: any) {
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
+                        key="dropdown"
                         initial={{ opacity: 0, y: 4, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 4, scale: 0.98 }}
@@ -94,7 +96,18 @@ function PremiumSelect({ label, value, options, onChange, placeholder }: any) {
     );
 }
 
-export function LocalWhisperModelPanel() {
+export interface LocalWhisperModelPanelProps {
+    /** Hide WhisperX server block; use inside STT profile cards */
+    embedded?: boolean;
+    /** Persist model id on the STT profile when user picks a model */
+    onModelChange?: (modelId: string) => void;
+}
+
+export function LocalWhisperModelPanel({
+    embedded = false,
+    onModelChange,
+}: LocalWhisperModelPanelProps = {}) {
+    const { t } = useTranslation();
     const [models, setModels] = useState<ModelInfo[]>([]);
     const [hardware, setHardware] = useState<HardwareInfo | null>(null);
     const [config, setConfig] = useState<ChannelConfig>({
@@ -107,6 +120,12 @@ export function LocalWhisperModelPanel() {
     const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
     const [downloadingSet, setDownloadingSet] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
+
+    // WhisperX Local Server state
+    const [whisperxEnabled, setWhisperxEnabled] = useState(false);
+    const [whisperxUrl, setWhisperxUrl] = useState('http://localhost:8000');
+    const [whisperxSaving, setWhisperxSaving] = useState(false);
+    const [whisperxSaved, setWhisperxSaved] = useState(false);
 
     const loadData = useCallback(async () => {
         try {
@@ -155,7 +174,25 @@ export function LocalWhisperModelPanel() {
 
     useEffect(() => {
         loadData();
+        // Load WhisperX config
+        electronAPI?.getWhisperXConfig?.().then((cfg: { url: string; enabled: boolean }) => {
+            if (cfg) {
+                setWhisperxEnabled(cfg.enabled);
+                setWhisperxUrl(cfg.url || 'http://localhost:8000');
+            }
+        }).catch(() => {});
     }, [loadData]);
+
+    const saveWhisperXConfig = async () => {
+        setWhisperxSaving(true);
+        try {
+            await electronAPI?.setWhisperXConfig?.({ url: whisperxUrl, enabled: whisperxEnabled });
+            setWhisperxSaved(true);
+            setTimeout(() => setWhisperxSaved(false), 2000);
+        } finally {
+            setWhisperxSaving(false);
+        }
+    };
 
     // Handle downloads
     useEffect(() => {
@@ -204,19 +241,26 @@ export function LocalWhisperModelPanel() {
         await electronAPI?.localWhisperSetChannelConfig?.({ enabled });
     };
 
+    const notifyModelChange = (modelId: string) => {
+        if (modelId) onModelChange?.(modelId);
+    };
+
     const setGlobalModel = async (modelId: string) => {
         setConfig(prev => ({ ...prev, globalModelId: modelId }));
         await electronAPI?.localWhisperSetModel?.(modelId);
+        notifyModelChange(modelId);
     };
 
     const setMicModel = async (modelId: string) => {
         setConfig(prev => ({ ...prev, micModelId: modelId }));
         await electronAPI?.localWhisperSetChannelConfig?.({ micModelId: modelId });
+        notifyModelChange(modelId);
     };
 
     const setSystemModel = async (modelId: string) => {
         setConfig(prev => ({ ...prev, systemModelId: modelId }));
         await electronAPI?.localWhisperSetChannelConfig?.({ systemModelId: modelId });
+        notifyModelChange(modelId);
     };
 
     if (loading) {
@@ -225,15 +269,22 @@ export function LocalWhisperModelPanel() {
 
     const availableModels = models.filter(m => m.status === 'available');
     
+    const sectionClass = embedded
+        ? "space-y-4"
+        : "bg-bg-card rounded-xl border border-border-subtle p-5 shadow-sm";
+
+    const titleClass = embedded ? "text-foreground" : "text-text-primary";
+    const mutedClass = embedded ? "text-muted-foreground" : "text-text-secondary";
+
     return (
         <div className="space-y-4">
-            <div className="bg-bg-card rounded-xl border border-border-subtle p-5 shadow-sm">
-                <div className="mb-5">
-                    <h3 className="text-sm font-semibold text-text-primary">Local Engine Configuration</h3>
-                    <p className="text-xs text-text-secondary mt-1 leading-relaxed">Select the AI models you want to use for Speech-to-Text inference.</p>
+            <div className={sectionClass}>
+                <div className={embedded ? "space-y-1" : "mb-5"}>
+                    <h3 className={`text-sm font-semibold ${titleClass}`}>{t('whisper.localEngine')}</h3>
+                    <p className={`text-xs mt-1 leading-relaxed ${mutedClass}`}>{t('whisper.localEngineDesc')}</p>
                 </div>
 
-                <label className="flex items-center justify-between p-3.5 rounded-xl border border-border-subtle bg-bg-elevated/30 hover:bg-bg-elevated transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] cursor-pointer group mb-5 active:scale-[0.99]">
+                <label className={`flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3 cursor-pointer group ${embedded ? "mb-4" : "mb-5 rounded-xl border-border-subtle bg-bg-elevated/30 p-3.5"}`}>
                     <input 
                         type="checkbox" 
                         className="hidden" 
@@ -241,8 +292,8 @@ export function LocalWhisperModelPanel() {
                         onChange={(e) => toggleDualChannel(e.target.checked)} 
                     />
                     <div>
-                        <span className="text-sm font-medium text-text-primary block transition-colors group-hover:text-accent-primary">Split Audio Channels</span>
-                        <span className="text-xs text-text-tertiary mt-0.5 block">Use different models for microphone and system audio</span>
+                        <span className="text-sm font-medium text-text-primary block transition-colors group-hover:text-accent-primary">{t('whisper.splitChannels')}</span>
+                        <span className="text-xs text-text-tertiary mt-0.5 block">{t('whisper.splitChannelsDesc')}</span>
                     </div>
                     <div className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-opacity-75 ${config.enabled ? 'bg-accent-primary' : 'bg-border-muted'}`}>
                         <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${config.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -258,21 +309,21 @@ export function LocalWhisperModelPanel() {
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -10 }}
                                 transition={{ duration: 0.2, ease: "easeOut" }}
-                                className="grid grid-cols-2 gap-4"
+                                className={embedded ? "flex flex-col gap-3" : "grid grid-cols-2 gap-4"}
                             >
                                 <PremiumSelect
-                                    label="Mic Audio Model"
+                                    label={t('whisper.micModel')}
                                     value={config.micModelId}
                                     onChange={setMicModel}
                                     options={availableModels}
-                                    placeholder="Select mic model"
+                                    placeholder={t('whisper.selectMicModel')}
                                 />
                                 <PremiumSelect
-                                    label="System Audio Model"
+                                    label={t('whisper.systemModel')}
                                     value={config.systemModelId}
                                     onChange={setSystemModel}
                                     options={availableModels}
-                                    placeholder="Select system model"
+                                    placeholder={t('whisper.selectSystemModel')}
                                 />
                             </motion.div>
                         ) : (
@@ -284,11 +335,11 @@ export function LocalWhisperModelPanel() {
                                 transition={{ duration: 0.2, ease: "easeOut" }}
                             >
                                 <PremiumSelect
-                                    label="Global Model"
+                                    label={t('whisper.globalModel')}
                                     value={config.globalModelId}
                                     onChange={setGlobalModel}
                                     options={availableModels}
-                                    placeholder="Select global model"
+                                    placeholder={t('whisper.selectGlobalModel')}
                                 />
                             </motion.div>
                         )}
@@ -296,12 +347,12 @@ export function LocalWhisperModelPanel() {
                 </div>
             </div>
 
-            <div className="bg-bg-card rounded-xl border border-border-subtle overflow-hidden shadow-sm relative z-0">
+            <div className={`${embedded ? "rounded-lg border border-border overflow-hidden" : "bg-bg-card rounded-xl border border-border-subtle overflow-hidden shadow-sm"} relative z-0`}>
                 <div className="px-5 py-4 bg-bg-elevated/50 border-b border-border-subtle flex justify-between items-center">
-                    <h3 className="text-sm font-semibold text-text-primary">Model Manager</h3>
+                    <h3 className="text-sm font-semibold text-text-primary">{t('whisper.modelManager')}</h3>
                     {hardware?.recommendedModel && (
                         <span className="text-[11px] text-text-tertiary font-medium bg-bg-input px-2 py-1 rounded-md border border-border-subtle">
-                            Recommended for your {hardware.isAppleSilicon ? 'Mac' : 'PC'}: <span className="text-text-primary">{models.find(m => m.id === hardware.recommendedModel)?.name}</span>
+                            {t('whisper.recommendedFor', { device: hardware.isAppleSilicon ? 'Mac' : 'PC' })}: <span className="text-text-primary">{models.find(m => m.id === hardware.recommendedModel)?.name}</span>
                         </span>
                     )}
                 </div>
@@ -312,29 +363,34 @@ export function LocalWhisperModelPanel() {
                         const progress = downloadProgress[model.id] || 0;
                         const isAvailable = model.status === 'available';
                         const isRecommended = hardware?.recommendedModel === model.id;
-                        
+                        const isStaticKV = !!(model as any).staticKV;
+
                         return (
-                            <div key={model.id} className="p-4 flex items-center justify-between bg-bg-card border border-border-subtle rounded-[14px] hover:shadow-sm hover:border-border-muted transition-all duration-200">
+                            <div key={model.id} className={`p-4 flex items-center justify-between bg-bg-card border border-border-subtle rounded-[14px] hover:shadow-sm hover:border-border-muted transition-all duration-200 ${isStaticKV ? 'opacity-60' : ''}`}>
                                 <div className="flex-1 min-w-0 pr-4">
                                     <div className="flex items-center gap-2 mb-1.5">
                                         <span className="text-sm font-medium text-text-primary truncate tracking-tight">{model.name}</span>
                                         {isRecommended && (
-                                            <span className="px-1.5 py-0.5 rounded-[4px] bg-accent-primary/10 text-accent-primary text-[9px] font-bold uppercase tracking-wider">Recommended</span>
+                                            <span className="px-1.5 py-0.5 rounded-[4px] bg-accent-primary/10 text-accent-primary text-[9px] font-bold uppercase tracking-wider">{t('common.recommended')}</span>
+                                        )}
+                                        {isStaticKV && (
+                                            <span className="px-1.5 py-0.5 rounded-[4px] bg-yellow-500/15 text-yellow-500 text-[9px] font-bold uppercase tracking-wider">{t('whisper.notCompatible')}</span>
                                         )}
                                         {model.requiresAppleSilicon && (
-                                            <span className="px-1.5 py-0.5 rounded-[4px] bg-purple-500/10 text-purple-500 text-[9px] font-bold uppercase tracking-wider">Apple Silicon</span>
+                                            <span className="px-1.5 py-0.5 rounded-[4px] bg-purple-500/10 text-purple-500 text-[9px] font-bold uppercase tracking-wider">{t('whisper.appleSilicon')}</span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-3.5 text-xs text-text-tertiary">
                                         <span className="flex items-center gap-1.5"><HardDrive size={13} className="opacity-70" /> {model.sizeMb} MB</span>
                                         <span className="flex items-center gap-1.5"><Zap size={13} className="opacity-70" /> {model.speed}</span>
                                         <span className="flex items-center gap-1.5"><Check size={13} className="opacity-70" /> {model.accuracy} acc</span>
+                                        {isStaticKV && <span className="text-yellow-500/70 italic">{t('whisper.requiresRuntimeUpdate')}</span>}
                                     </div>
-                                    
+
                                     {isDownloading && (
                                         <div className="mt-3.5 pr-8">
                                             <div className="flex justify-between items-center text-[10px] text-text-secondary mb-1.5 uppercase tracking-wider font-semibold">
-                                                <span>Downloading...</span>
+                                                <span>{t('whisper.downloading')}</span>
                                                 <span className="text-accent-primary tabular-nums">{Math.round(progress)}%</span>
                                             </div>
                                             <div className="w-full h-1.5 bg-bg-input rounded-full overflow-hidden shadow-inner ring-1 ring-inset ring-black/5 dark:ring-white/5">
@@ -351,19 +407,19 @@ export function LocalWhisperModelPanel() {
                                     {model.status === 'error' && (
                                         <div className="mt-2.5 text-xs text-red-500 flex items-center gap-1.5 font-medium bg-red-500/10 px-2.5 py-1.5 rounded-md inline-flex">
                                             <AlertCircle size={14} />
-                                            {model.errorMessage || 'Failed to download model'}
+                                            {model.errorMessage || t('whisper.failedDownload')}
                                         </div>
                                     )}
                                 </div>
                                 
                                 <div className="flex-shrink-0 flex items-center gap-2">
-                                    {!isAvailable && !isDownloading && (
+                                    {!isAvailable && !isDownloading && !isStaticKV && (
                                         <button
                                             onClick={() => handleDownload(model.id)}
                                             className="group/btn relative h-[34px] px-4 flex items-center gap-1.5 rounded-[10px] bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary text-[13px] font-semibold transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] shadow-sm"
                                         >
-                                            <Download size={14} className="transition-transform duration-300 group-hover/btn:-translate-y-[2px]" /> 
-                                            <span>Install</span>
+                                            <Download size={14} className="transition-transform duration-300 group-hover/btn:-translate-y-[2px]" />
+                                            <span>{t('whisper.install')}</span>
                                         </button>
                                     )}
                                     
@@ -383,11 +439,66 @@ export function LocalWhisperModelPanel() {
                 </div>
             </div>
             
+            {/* ── WhisperX Local Server ── */}
+            {!embedded && (
+            <div className="bg-bg-card rounded-xl border border-border-subtle p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                    <Server size={16} className="text-accent-primary" />
+                    <h3 className="text-sm font-semibold text-text-primary">{t('whisper.whisperxServer')}</h3>
+                </div>
+                <p className="text-xs text-text-secondary mb-4 leading-relaxed">
+                    {t('whisper.whisperxServerDesc')}
+                    Install with: <code className="bg-bg-input px-1.5 py-0.5 rounded text-[11px] font-mono text-accent-primary">pip install faster-whisper[server]</code>
+                </p>
+
+                <label className="flex items-center justify-between p-3.5 rounded-xl border border-border-subtle bg-bg-elevated/30 hover:bg-bg-elevated transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] cursor-pointer group mb-4 active:scale-[0.99]">
+                    <input
+                        type="checkbox"
+                        className="hidden"
+                        checked={whisperxEnabled}
+                        onChange={(e) => setWhisperxEnabled(e.target.checked)}
+                    />
+                    <div>
+                        <span className="text-sm font-medium text-text-primary block transition-colors group-hover:text-accent-primary">{t('whisper.enableWhisperxServer')}</span>
+                        <span className="text-xs text-text-tertiary mt-0.5 block">{t('whisper.enableWhisperxServerDesc')}</span>
+                    </div>
+                    <div className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${whisperxEnabled ? 'bg-accent-primary' : 'bg-border-muted'}`}>
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${whisperxEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                </label>
+
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wide">{t('whisper.serverUrl')}</label>
+                        <input
+                            type="text"
+                            value={whisperxUrl}
+                            onChange={(e) => setWhisperxUrl(e.target.value)}
+                            placeholder="http://localhost:8000"
+                            className="w-full bg-bg-input border border-border-subtle hover:border-border-muted rounded-xl px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-accent-primary/20 focus:border-accent-primary/50 transition-all duration-200"
+                        />
+                    </div>
+                    <button
+                        onClick={saveWhisperXConfig}
+                        disabled={whisperxSaving}
+                        className="h-[34px] px-4 flex items-center gap-1.5 rounded-[10px] bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary text-[13px] font-semibold transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {whisperxSaving ? (
+                            <Loader2 size={14} className="animate-spin" />
+                        ) : whisperxSaved ? (
+                            <Check size={14} />
+                        ) : null}
+                        <span>{whisperxSaved ? t('common.save') + '!' : t('common.save')}</span>
+                    </button>
+                </div>
+            </div>
+            )}
+            
             {/* ── Footer note ── */}
             {hardware?.tier === 'limited' && (
                 <div className="pt-1 text-center">
                     <p className="text-[10px] font-medium text-amber-500 dark:text-amber-400/80 uppercase tracking-widest">
-                        ⓘ Limited hardware — cloud STT recommended for long sessions
+                        {t('whisper.limitedHardware')}
                     </p>
                 </div>
             )}

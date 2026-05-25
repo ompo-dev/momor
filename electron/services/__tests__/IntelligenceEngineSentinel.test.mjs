@@ -39,7 +39,10 @@ test('runWhatShouldISay suppresses nothing-actionable sentinel output', async ()
   const answer = await engine.runWhatShouldISay('anything actionable?', 0.9, undefined, { skipCooldown: true });
 
   assert.equal(answer, null);
-  assert.deepEqual(events, []);
+  assert.deepEqual(
+    events.filter(([kind]) => kind === "final"),
+    [],
+  );
   assert.deepEqual(session.getFullUsage(), []);
   assert.equal(session.getFullTranscript().some(segment => segment.text.includes('Nothing actionable')), false);
 });
@@ -53,7 +56,10 @@ test('runWhatShouldISay suppresses nothing-to-capture sentinel output', async ()
   const answer = await engine.runWhatShouldISay('anything to capture?', 0.9, undefined, { skipCooldown: true });
 
   assert.equal(answer, null);
-  assert.deepEqual(events, []);
+  assert.deepEqual(
+    events.filter(([kind]) => kind === "final"),
+    [],
+  );
   assert.deepEqual(session.getFullUsage(), []);
   assert.equal(session.getFullTranscript().some(segment => segment.text.includes('Nothing to capture')), false);
 });
@@ -67,7 +73,10 @@ test('runWhatShouldISay suppresses normalized sentinel variants', async () => {
   const answer = await engine.runWhatShouldISay('anything actionable?', 0.9, undefined, { skipCooldown: true });
 
   assert.equal(answer, null);
-  assert.deepEqual(events, []);
+  assert.deepEqual(
+    events.filter(([kind]) => kind === "final"),
+    [],
+  );
   assert.deepEqual(session.getFullUsage(), []);
 });
 
@@ -143,7 +152,11 @@ test('runWhatShouldISay still emits and stores real answers', async () => {
   const answer = await engine.runWhatShouldISay('how should I answer?', 0.9, undefined, { skipCooldown: true });
 
   assert.equal(answer, realAnswer);
-  assert.deepEqual(tokens, [realAnswer]);
+  assert.deepEqual(tokens, [
+    "I would explain ",
+    "the tradeoff clearly ",
+    "and ask which constraint matters most.",
+  ]);
   assert.deepEqual(finals, [realAnswer]);
   assert.equal(session.getFullUsage().length, 1);
   assert.equal(session.getFullUsage()[0].answer, realAnswer);

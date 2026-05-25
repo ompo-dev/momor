@@ -11,6 +11,7 @@ import { EmbeddingPipeline } from './EmbeddingPipeline';
 import { RAGRetriever } from './RAGRetriever';
 import { LiveRAGIndexer } from './LiveRAGIndexer';
 import { buildRAGPrompt, NO_CONTEXT_FALLBACK, NO_GLOBAL_CONTEXT_FALLBACK } from './prompts';
+import { CHAT_MODE_PROMPT } from '../llm/prompts';
 import type { ProviderDataScopePolicy } from '../llm/ProviderRouter';
 
 export interface RAGManagerConfig {
@@ -183,13 +184,15 @@ export class RAGManager {
         // Build prompt with intent hint
         const prompt = buildRAGPrompt(query, context.formattedContext, 'meeting', context.intent);
 
-        // Stream response
-        const stream = this.llmHelper.streamChatWithGemini(prompt, undefined, undefined, true);
-
-        for await (const chunk of stream) {
-            if (abortSignal?.aborted) break;
-            yield chunk;
-        }
+        // Stream via active model (DeepSeek, Groq, etc.) — not hardcoded Gemini
+        yield* this.llmHelper.streamChat(
+            prompt,
+            undefined,
+            undefined,
+            CHAT_MODE_PROMPT,
+            true,
+            true,
+        );
     }
 
     /**
@@ -214,13 +217,14 @@ export class RAGManager {
         // Build prompt with intent hint
         const prompt = buildRAGPrompt(query, context.formattedContext, 'global', context.intent);
 
-        // Stream response
-        const stream = this.llmHelper.streamChatWithGemini(prompt, undefined, undefined, true);
-
-        for await (const chunk of stream) {
-            if (abortSignal?.aborted) break;
-            yield chunk;
-        }
+        yield* this.llmHelper.streamChat(
+            prompt,
+            undefined,
+            undefined,
+            CHAT_MODE_PROMPT,
+            true,
+            true,
+        );
     }
 
     /**

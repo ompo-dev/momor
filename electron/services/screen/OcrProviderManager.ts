@@ -2,7 +2,7 @@
 //
 // LEGACY OCR PATH — RUNTIME-DISABLED (2026-05-17)
 // =====================================================================
-// Natively now uses vision-provider screen understanding by default.
+// momor now uses vision-provider screen understanding by default.
 // This manager is retained ONLY so existing tests and any future opt-in
 // legacy OCR mode can still reference the OCR provider chain. The default
 // screen-understanding pipeline (ScreenUnderstandingService) no longer
@@ -21,7 +21,7 @@ import {
   OcrOptions,
   OCR_PROVIDERS,
   TesseractOcrAdapter,
-} from './OcrProvider';
+} from "./OcrProvider";
 
 export class OcrProviderManager {
   private primaryProvider: OcrProviderAdapter;
@@ -35,7 +35,9 @@ export class OcrProviderManager {
 
     console.log(`[OcrProviderManager] Primary: ${this.primaryProvider.name}`);
     if (this.fallbackChain.length > 0) {
-      console.log(`[OcrProviderManager] Fallback chain: ${this.fallbackChain.map(p => p.name).join(' → ')}`);
+      console.log(
+        `[OcrProviderManager] Fallback chain: ${this.fallbackChain.map((p) => p.name).join(" → ")}`,
+      );
     }
   }
 
@@ -64,7 +66,9 @@ export class OcrProviderManager {
   /**
    * Build fallback chain excluding the primary provider.
    */
-  private buildFallbackChain(primary: OcrProviderAdapter): OcrProviderAdapter[] {
+  private buildFallbackChain(
+    primary: OcrProviderAdapter,
+  ): OcrProviderAdapter[] {
     const allProviders: OcrProviderAdapter[] = [
       OCR_PROVIDERS.apple_vision,
       OCR_PROVIDERS.windows_ocr,
@@ -72,7 +76,9 @@ export class OcrProviderManager {
       OCR_PROVIDERS.tesseract,
     ];
 
-    return allProviders.filter(p => p.type !== primary.type && p.isAvailable());
+    return allProviders.filter(
+      (p) => p.type !== primary.type && p.isAvailable(),
+    );
   }
 
   /**
@@ -88,7 +94,7 @@ export class OcrProviderManager {
   getAvailableProviders(): OcrProviderType[] {
     const available: OcrProviderType[] = [];
     for (const provider of Object.values(OCR_PROVIDERS)) {
-      if (provider.isAvailable() && provider.type !== 'unavailable') {
+      if (provider.isAvailable() && provider.type !== "unavailable") {
         available.push(provider.type);
       }
     }
@@ -105,7 +111,10 @@ export class OcrProviderManager {
   async recognize(imagePath: string, options?: OcrOptions): Promise<OcrResult> {
     const timeoutMs = options?.timeoutMs || this.DEFAULT_TIMEOUT_MS;
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`OCR timeout after ${timeoutMs}ms`)), timeoutMs)
+      setTimeout(
+        () => reject(new Error(`OCR timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      ),
     );
 
     // Try primary provider first
@@ -114,10 +123,14 @@ export class OcrProviderManager {
         this.primaryProvider.recognize(imagePath, options),
         timeoutPromise,
       ]);
-      console.log(`[OcrProviderManager] OCR succeeded with ${this.primaryProvider.name}`);
+      console.log(
+        `[OcrProviderManager] OCR succeeded with ${this.primaryProvider.name}`,
+      );
       return result;
     } catch (primaryError: any) {
-      console.warn(`[OcrProviderManager] Primary provider ${this.primaryProvider.name} failed: ${primaryError?.message}`);
+      console.warn(
+        `[OcrProviderManager] Primary provider ${this.primaryProvider.name} failed: ${primaryError?.message}`,
+      );
     }
 
     // Fall back through chain
@@ -127,24 +140,34 @@ export class OcrProviderManager {
           provider.recognize(imagePath, options),
           timeoutPromise,
         ]);
-        console.log(`[OcrProviderManager] OCR succeeded with fallback ${provider.name}`);
+        console.log(
+          `[OcrProviderManager] OCR succeeded with fallback ${provider.name}`,
+        );
         return result;
       } catch (fallbackError: any) {
-        console.warn(`[OcrProviderManager] Fallback provider ${provider.name} failed: ${fallbackError?.message}`);
+        console.warn(
+          `[OcrProviderManager] Fallback provider ${provider.name} failed: ${fallbackError?.message}`,
+        );
       }
     }
 
     // All providers failed
-    throw new Error('All OCR providers failed');
+    throw new Error("All OCR providers failed");
   }
 
   /**
    * Perform OCR on an image buffer with automatic fallback.
    */
-  async recognizeBuffer(buffer: Buffer, options?: OcrOptions): Promise<OcrResult> {
+  async recognizeBuffer(
+    buffer: Buffer,
+    options?: OcrOptions,
+  ): Promise<OcrResult> {
     const timeoutMs = options?.timeoutMs || this.DEFAULT_TIMEOUT_MS;
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`OCR timeout after ${timeoutMs}ms`)), timeoutMs)
+      setTimeout(
+        () => reject(new Error(`OCR timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      ),
     );
 
     // Try primary provider first
@@ -155,7 +178,9 @@ export class OcrProviderManager {
       ]);
       return result;
     } catch (primaryError: any) {
-      console.warn(`[OcrProviderManager] Primary provider ${this.primaryProvider.name} failed on buffer: ${primaryError?.message}`);
+      console.warn(
+        `[OcrProviderManager] Primary provider ${this.primaryProvider.name} failed on buffer: ${primaryError?.message}`,
+      );
     }
 
     // Fall back through chain
@@ -165,14 +190,18 @@ export class OcrProviderManager {
           provider.recognizeBuffer(buffer, options),
           timeoutPromise,
         ]);
-        console.log(`[OcrProviderManager] OCR buffer succeeded with fallback ${provider.name}`);
+        console.log(
+          `[OcrProviderManager] OCR buffer succeeded with fallback ${provider.name}`,
+        );
         return result;
       } catch (fallbackError: any) {
-        console.warn(`[OcrProviderManager] Fallback provider ${provider.name} failed on buffer: ${fallbackError?.message}`);
+        console.warn(
+          `[OcrProviderManager] Fallback provider ${provider.name} failed on buffer: ${fallbackError?.message}`,
+        );
       }
     }
 
-    throw new Error('All OCR providers failed on buffer');
+    throw new Error("All OCR providers failed on buffer");
   }
 }
 

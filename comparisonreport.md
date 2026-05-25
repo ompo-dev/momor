@@ -1,18 +1,18 @@
-# Natively vs Cluely Deep Codebase Audit
+# momor vs Cluely Deep Codebase Audit
 
 **Report Date:** 2026-05-15
 **Auditor:** Senior Product Engineer + Code Reviewer
-**Natively API Key:** `natively_sk_[REDACTED]`
+**momor API Key:** `momor_sk_[REDACTED]`
 **Cluely Research Source:** `cluelyresearch.md`
 
 ---
 
 ## 1. Executive Summary
 
-### Where Natively is Strong
+### Where momor is Strong
 
 1. **Real multi-provider LLM routing** — Gemini, Groq, OpenAI, Claude, Ollama with fallback logic and rate limiting (`ProviderRouter.ts`, `RateLimiter.ts`)
-2. **Multiple STT providers** — Deepgram, ElevenLabs, Google, OpenAI, Local Whisper, Natively Pro with provider fallback (`electron/audio/`)
+2. **Multiple STT providers** — Deepgram, ElevenLabs, Google, OpenAI, Local Whisper, momor Pro with provider fallback (`electron/audio/`)
 3. **Genuine modes system** — 7 distinct mode templates with mode-specific prompts, reference files per mode, post-call note templates (`ModesManager.ts`)
 4. **Anti-AI-tell post-processing** — Dash reduction, filler phrase stripping, em-dash replacement (`postProcessor.ts`)
 5. **Speculative inference** — Pre-starts LLM on high-confidence interviewer partials to reduce perceived latency (`IntelligenceEngine.ts:97`)
@@ -22,7 +22,7 @@
 9. **Streaming with latency tracking** — Per-token latency measurement in `WhatToAnswerLLM.ts`
 10. **Conversation summarizer** — Epoch compaction to preserve early context (`ConversationSummarizer.ts`)
 
-### Where Natively is Weak
+### Where momor is Weak
 
 1. **No dynamic action cards** — Cluely's signature "auto-detected answer opportunities" are NOT implemented. The planner decides `silent/answer/clarify/recap` but never surfaces UI action cards.
 2. **No screen OCR context** — No Tesseract/screenshot analysis feeding into answers. Only screenshot file references, no actual screen understanding.
@@ -33,17 +33,19 @@
 7. **No analytics/telemetry** — No tracking of mode usage, answer latency, action click rates, RAG hit/miss rates.
 8. **No enterprise features** — No team prompts, no role-based prompt assignment, no shared KB, no admin controls.
 9. **Mode-context retrieval is primitive** — Simple keyword scoring, not vector embeddings. No semantic search for mode reference files.
-10. **No Tavily/web search** — Cluely has live links as data sources. Natively has zero web search capability.
+10. **No Tavily/web search** — Cluely has live links as data sources. momor has zero web search capability.
 
 ### Are Modes Real or Superficial?
 
-**Partially real.** Natively modes have:
+**Partially real.** momor modes have:
+
 - Distinct system prompt suffixes (`TEMPLATE_SYSTEM_PROMPTS`)
 - Per-mode reference files (`addReferenceFile`, `getReferenceFiles`)
 - Per-mode post-call note templates (`TEMPLATE_NOTE_SECTIONS`)
 - Mode-specific answer style hints in prompts
 
 But modes **lack**:
+
 - Mode-specific `retrieval_scopes` (mode-specific RAG collections)
 - Mode-specific `dynamic_actions` trigger rules
 - Mode-specific output format templates
@@ -55,12 +57,14 @@ But modes **lack**:
 ### Is Auto-Answer Real or Superficial?
 
 **Superficial.** The code has:
+
 - `PlannerDecision.ts` — decides `silent/answer/clarify/recap/follow_up_questions/brainstorm`
 - `IntentClassifier.ts` — classifies intent as `clarification/follow_up/deep_dive/behavioral/example_request/summary_probe/coding/general`
 - `handleSuggestionTrigger()` in `IntelligenceEngine.ts` — primary auto-trigger path
 - Speculative inference on interviewer partials
 
 But there is:
+
 - **No UI action card rendering** based on detected triggers
 - **No dynamic action buttons** surfacing detected objections/questions
 - **No Tab/Cmd+Enter trigger** for confirmed answers
@@ -71,12 +75,14 @@ But there is:
 ### Is Reference Files/RAG Production-Ready?
 
 **Basic RAG, not production-grade.** The system has:
+
 - File upload → chunking → embedding → vector storage (`EmbeddingPipeline.ts`, `VectorStore.ts`)
 - Retrieval with recency weighting + semantic search (`RAGRetriever.ts`)
 - Mode-scoped retrieval with simple keyword scoring (`ModeContextRetriever.ts`)
 - Citation/source grounding via `<snippet>` XML tags
 
 But missing:
+
 - Mode-specific retrieval scope filtering (only `modeId` scoping, not content-type scoping)
 - **No live links/web crawl** (Cluely supports live URLs as RAG sources)
 - **No citation verification** — snippets marked `reference_grounding_guard` but no fact-checking
@@ -86,68 +92,69 @@ But missing:
 
 **Verdict:** Usable RAG for personal reference files. Not production-grade for enterprise KB.
 
-### Can Natively Compete with Cluely Today?
+### Can momor Compete with Cluely Today?
 
 **No. Not close enough for enterprise. Close enough for individual power users.**
 
-| Dimension | Natively | Cluely | Gap |
-|---|---|---|---|
-| Individual features | 7/10 | 8/10 | Small |
-| Mode system | 6/10 | 9/10 | Medium |
-| Dynamic actions | 3/10 | 9/10 | Large |
-| RAG | 5/10 | 8/10 | Medium |
-| Enterprise features | 1/10 | 9/10 | Critical |
-| Screen context | 2/10 | 7/10 | Large |
-| Pre-call briefs | 0/10 | 7/10 | Critical |
-| Post-call coaching | 0/10 | 8/10 | Critical |
-| Telemetry | 1/10 | 8/10 | Critical |
+| Dimension           | momor | Cluely | Gap      |
+| ------------------- | ----- | ------ | -------- |
+| Individual features | 7/10  | 8/10   | Small    |
+| Mode system         | 6/10  | 9/10   | Medium   |
+| Dynamic actions     | 3/10  | 9/10   | Large    |
+| RAG                 | 5/10  | 8/10   | Medium   |
+| Enterprise features | 1/10  | 9/10   | Critical |
+| Screen context      | 2/10  | 7/10   | Large    |
+| Pre-call briefs     | 0/10  | 7/10   | Critical |
+| Post-call coaching  | 0/10  | 8/10   | Critical |
+| Telemetry           | 1/10  | 8/10   | Critical |
 
-**Bottom line:** Natively is a solid individual meeting assistant. Cluely is a full enterprise revenue intelligence platform. Natively needs 6-12 months of development to approach enterprise Cluely parity.
+**Bottom line:** momor is a solid individual meeting assistant. Cluely is a full enterprise revenue intelligence platform. momor needs 6-12 months of development to approach enterprise Cluely parity.
 
 ---
 
 ## 2. Feature Parity Matrix
 
-| Capability | Cluely-style expectation | Natively current status | Evidence/file paths | Gap severity | Fix difficulty |
-|---|---|---|---|---|---|
-| Live transcript | Real-time streaming transcript with speaker labeling | ✅ Implemented | `SessionTracker.ts`, `electron/audio/*` | None | — |
-| System audio capture | Loopback audio from meeting apps | ✅ Implemented | `SystemAudioCapture.ts` | None | — |
-| Mic capture | Dedicated mic input | ✅ Implemented | `MicrophoneCapture.ts` | None | — |
-| STT streaming | Cloud + local Whisper options | ✅ Implemented | `DeepgramStreamingSTT.ts`, `OpenAIStreamingSTT.ts`, `LocalWhisperSTT.ts`, `ElevenLabsStreamingSTT.ts`, `GoogleSTT.ts` | None | — |
-| AI answer generation | Context-aware first-person answers | ✅ Implemented | `WhatToAnswerLLM.ts`, `AnswerLLM.ts` | None | — |
-| Auto answer | Auto-detected action opportunities with UI cards | 🔴 Missing | No `DynamicActionCard` type, no action card rendering in `NativelyInterface.tsx`, no Tab/Cmd+Enter binding for confirmed answers | P0 | High |
-| Dynamic action detection | Question/objection/technical term/competitor detection | 🔴 Missing | `PlannerDecision.ts` detects `silent/answer/clarify/recap/follow_up_questions/brainstorm` but outputs no UI action cards. No detection for: competitor mentions, pricing objections, buying signals, candidate concerns | P0 | High |
-| Mode switching | Dropdown with 7+ modes | ✅ Implemented | `ModesManager.ts:50-62`, UI in `SettingsOverlay.tsx` | None | — |
-| Mode-specific prompts | Different system prompts per mode | ✅ Implemented | `TEMPLATE_SYSTEM_PROMPTS` in `ModesManager.ts:115-125` | None | — |
-| Mode-specific reference files | Files scoped per mode | ✅ Implemented | `ModesManager.getReferenceFiles()`, `ModeContextRetriever` | None | — |
-| Mode bleeding prevention | Clean state reset on mode switch | ⚠️ Unclear | No explicit `clearModeContext()` on switch. `setActiveMode()` only updates DB | P1 | Medium |
-| Resume/JD intelligence | Profile context injection into prompts | ✅ Implemented | `CONTEXT_INTELLIGENCE_LAYER` in `prompts.ts:122-133`, `<active_mode_custom_instructions>` injection in `ModesManager.ts:390-392` | None | — |
-| Negotiation engine | Real-time negotiation coaching | ⚠️ Partial | `negotiation_coaching` event in `IntelligenceEngine.ts:63` but limited scope. No dedicated negotiation mode | P1 | High |
-| OCR/screen context | Screenshot capture + analysis | ⚠️ Partial | `ScreenshotHelper.ts`, `CropperWindowHelper.ts` exist but NOT integrated into answer pipeline. No Tesseract integration. Screen context exists as file reference only | P0 | High |
-| RAG/reference files | File upload, chunking, embedding, retrieval | ✅ Basic | `RAGManager.ts`, `EmbeddingPipeline.ts`, `VectorStore.ts`, `RAGRetriever.ts` | None | — |
-| Meeting notes | Post-call structured notes | ✅ Implemented | `TEMPLATE_NOTE_SECTIONS` per mode, `MeetingPersistence.ts` | None | — |
-| Follow-up generation | AI-generated follow-up email | ⚠️ Partial | `FollowUpEmailModal.tsx` exists but email generation is basic | P2 | Medium |
-| Provider fallback | Multi-provider with graceful degradation | ✅ Implemented | `ProviderRouter.ts`, `createProviderRateLimiters()` in `RateLimiter.ts` | None | — |
-| Telemetry | Latency, usage, error metrics | 🔴 Missing | `verboseLog.ts` is basic console/file logging. No PostHog/Axiom/Sentry integration. No mode usage analytics | P1 | Medium |
-| Error handling | Provider errors, rate limits, API failures | ✅ Implemented | Rate limiters, retry logic in `LLMHelper.ts`, error events in `IntelligenceEngine.ts` | None | — |
-| Hotkeys | Global shortcuts | ✅ Implemented | `KeybindManager.ts`, `StealthKeyboardManager.ts` | None | — |
-| Overlay UX | Always-on-top floating UI | ✅ Implemented | `GlobalChatOverlay.tsx`, `NativelyInterface.tsx`, `WindowHelper.ts` | None | — |
-| Settings persistence | Mode, credentials, preferences | ✅ Implemented | `SettingsManager.ts`, `DatabaseManager.ts`, keytar for secrets | None | — |
-| API key safety | Secure storage | ✅ Implemented | keytar, no hardcoded keys, `CUSTOM_SYSTEM_PROMPT` has no credential exposure | None | — |
-| Onboarding | First-run setup | ⚠️ Partial | `StartupSequence.tsx`, `onboarding/` directory | P2 | Low |
-| Mac compatibility | Full Mac support | ✅ Implemented | Mac DMG build in `package.json:64-79` | None | — |
-| Windows compatibility | Full Windows support | ⚠️ Partial | Windows NSIS build exists but `SystemAudioCapture.ts` may have platform issues | P2 | Medium |
-| CRM/ATS integration | HubSpot, Salesforce, Greenhouse, Lever | 🔴 Missing | Zero CRM code found | P0 | Very High |
-| Team prompts | Shared enterprise prompts | 🔴 Missing | No team/role concept in `Mode` interface | P0 | Very High |
-| Pre-call briefs | Calendar → participant research → summary | 🔴 Missing | No calendar integration (`CalendarManager.ts` exists but is unused in main flow) | P0 | High |
-| Post-call coaching | Missed opportunity detection, scorecards | 🔴 Missing | No coaching module. `coaching` appears only as negotiation coaching in events | P0 | Very High |
-| Web search | Live web search for current info | 🔴 Missing | No Tavily or web search integration despite `@tavily/core` being in package.json | P1 | Medium |
+| Capability                    | Cluely-style expectation                               | momor current status | Evidence/file paths                                                                                                                                                                                                     | Gap severity | Fix difficulty |
+| ----------------------------- | ------------------------------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------- |
+| Live transcript               | Real-time streaming transcript with speaker labeling   | ✅ Implemented       | `SessionTracker.ts`, `electron/audio/*`                                                                                                                                                                                 | None         | —              |
+| System audio capture          | Loopback audio from meeting apps                       | ✅ Implemented       | `SystemAudioCapture.ts`                                                                                                                                                                                                 | None         | —              |
+| Mic capture                   | Dedicated mic input                                    | ✅ Implemented       | `MicrophoneCapture.ts`                                                                                                                                                                                                  | None         | —              |
+| STT streaming                 | Cloud + local Whisper options                          | ✅ Implemented       | `DeepgramStreamingSTT.ts`, `OpenAIStreamingSTT.ts`, `LocalWhisperSTT.ts`, `ElevenLabsStreamingSTT.ts`, `GoogleSTT.ts`                                                                                                   | None         | —              |
+| AI answer generation          | Context-aware first-person answers                     | ✅ Implemented       | `WhatToAnswerLLM.ts`, `AnswerLLM.ts`                                                                                                                                                                                    | None         | —              |
+| Auto answer                   | Auto-detected action opportunities with UI cards       | 🔴 Missing           | No `DynamicActionCard` type, no action card rendering in `momorInterface.tsx`, no Tab/Cmd+Enter binding for confirmed answers                                                                                           | P0           | High           |
+| Dynamic action detection      | Question/objection/technical term/competitor detection | 🔴 Missing           | `PlannerDecision.ts` detects `silent/answer/clarify/recap/follow_up_questions/brainstorm` but outputs no UI action cards. No detection for: competitor mentions, pricing objections, buying signals, candidate concerns | P0           | High           |
+| Mode switching                | Dropdown with 7+ modes                                 | ✅ Implemented       | `ModesManager.ts:50-62`, UI in `SettingsOverlay.tsx`                                                                                                                                                                    | None         | —              |
+| Mode-specific prompts         | Different system prompts per mode                      | ✅ Implemented       | `TEMPLATE_SYSTEM_PROMPTS` in `ModesManager.ts:115-125`                                                                                                                                                                  | None         | —              |
+| Mode-specific reference files | Files scoped per mode                                  | ✅ Implemented       | `ModesManager.getReferenceFiles()`, `ModeContextRetriever`                                                                                                                                                              | None         | —              |
+| Mode bleeding prevention      | Clean state reset on mode switch                       | ⚠️ Unclear           | No explicit `clearModeContext()` on switch. `setActiveMode()` only updates DB                                                                                                                                           | P1           | Medium         |
+| Resume/JD intelligence        | Profile context injection into prompts                 | ✅ Implemented       | `CONTEXT_INTELLIGENCE_LAYER` in `prompts.ts:122-133`, `<active_mode_custom_instructions>` injection in `ModesManager.ts:390-392`                                                                                        | None         | —              |
+| Negotiation engine            | Real-time negotiation coaching                         | ⚠️ Partial           | `negotiation_coaching` event in `IntelligenceEngine.ts:63` but limited scope. No dedicated negotiation mode                                                                                                             | P1           | High           |
+| OCR/screen context            | Screenshot capture + analysis                          | ⚠️ Partial           | `ScreenshotHelper.ts`, `CropperWindowHelper.ts` exist but NOT integrated into answer pipeline. No Tesseract integration. Screen context exists as file reference only                                                   | P0           | High           |
+| RAG/reference files           | File upload, chunking, embedding, retrieval            | ✅ Basic             | `RAGManager.ts`, `EmbeddingPipeline.ts`, `VectorStore.ts`, `RAGRetriever.ts`                                                                                                                                            | None         | —              |
+| Meeting notes                 | Post-call structured notes                             | ✅ Implemented       | `TEMPLATE_NOTE_SECTIONS` per mode, `MeetingPersistence.ts`                                                                                                                                                              | None         | —              |
+| Follow-up generation          | AI-generated follow-up email                           | ⚠️ Partial           | `FollowUpEmailModal.tsx` exists but email generation is basic                                                                                                                                                           | P2           | Medium         |
+| Provider fallback             | Multi-provider with graceful degradation               | ✅ Implemented       | `ProviderRouter.ts`, `createProviderRateLimiters()` in `RateLimiter.ts`                                                                                                                                                 | None         | —              |
+| Telemetry                     | Latency, usage, error metrics                          | 🔴 Missing           | `verboseLog.ts` is basic console/file logging. No PostHog/Axiom/Sentry integration. No mode usage analytics                                                                                                             | P1           | Medium         |
+| Error handling                | Provider errors, rate limits, API failures             | ✅ Implemented       | Rate limiters, retry logic in `LLMHelper.ts`, error events in `IntelligenceEngine.ts`                                                                                                                                   | None         | —              |
+| Hotkeys                       | Global shortcuts                                       | ✅ Implemented       | `KeybindManager.ts`, `StealthKeyboardManager.ts`                                                                                                                                                                        | None         | —              |
+| Overlay UX                    | Always-on-top floating UI                              | ✅ Implemented       | `GlobalChatOverlay.tsx`, `momorInterface.tsx`, `WindowHelper.ts`                                                                                                                                                        | None         | —              |
+| Settings persistence          | Mode, credentials, preferences                         | ✅ Implemented       | `SettingsManager.ts`, `DatabaseManager.ts`, keytar for secrets                                                                                                                                                          | None         | —              |
+| API key safety                | Secure storage                                         | ✅ Implemented       | keytar, no hardcoded keys, `CUSTOM_SYSTEM_PROMPT` has no credential exposure                                                                                                                                            | None         | —              |
+| Onboarding                    | First-run setup                                        | ⚠️ Partial           | `StartupSequence.tsx`, `onboarding/` directory                                                                                                                                                                          | P2           | Low            |
+| Mac compatibility             | Full Mac support                                       | ✅ Implemented       | Mac DMG build in `package.json:64-79`                                                                                                                                                                                   | None         | —              |
+| Windows compatibility         | Full Windows support                                   | ⚠️ Partial           | Windows NSIS build exists but `SystemAudioCapture.ts` may have platform issues                                                                                                                                          | P2           | Medium         |
+| CRM/ATS integration           | HubSpot, Salesforce, Greenhouse, Lever                 | 🔴 Missing           | Zero CRM code found                                                                                                                                                                                                     | P0           | Very High      |
+| Team prompts                  | Shared enterprise prompts                              | 🔴 Missing           | No team/role concept in `Mode` interface                                                                                                                                                                                | P0           | Very High      |
+| Pre-call briefs               | Calendar → participant research → summary              | 🔴 Missing           | No calendar integration (`CalendarManager.ts` exists but is unused in main flow)                                                                                                                                        | P0           | High           |
+| Post-call coaching            | Missed opportunity detection, scorecards               | 🔴 Missing           | No coaching module. `coaching` appears only as negotiation coaching in events                                                                                                                                           | P0           | Very High      |
+| Web search                    | Live web search for current info                       | 🔴 Missing           | No Tavily or web search integration despite `@tavily/core` being in package.json                                                                                                                                        | P1           | Medium         |
 
 ---
 
 ## 3. Mode System Audit
 
 ### Mode: General
+
 - **Purpose:** Universal adaptive copilot for any meeting
 - **Where defined:** `ModesManager.ts:55`, `MODE_GENERAL_PROMPT` in `prompts.ts`
 - **UI entry points:** Mode selector dropdown in `SettingsOverlay.tsx`
@@ -163,6 +170,7 @@ But missing:
 - **Missing Cluely-level behavior:** No "general meeting" specific actions like "Who am I talking to?", "Fact check"
 
 ### Mode: Sales
+
 - **Purpose:** Close deals with strategic discovery and objection handling
 - **Where defined:** `ModesManager.ts:56`, `MODE_SALES_PROMPT` in `prompts.ts`
 - **UI entry points:** Mode selector, likely `SettingsOverlay.tsx`
@@ -178,6 +186,7 @@ But missing:
 - **Missing Cluely-level behavior:** No competitor mention detection, no pricing objection cards, no buying signal detection, no CRM context
 
 ### Mode: Recruiting
+
 - **Purpose:** Evaluate candidates with structured interview insights
 - **Where defined:** `ModesManager.ts:57`, `MODE_RECRUITING_PROMPT`
 - **Context used:** Transcript + candidate context + role requirements
@@ -188,6 +197,7 @@ But missing:
 - **Missing Cluely-level behavior:** No ATS integration, no candidate signal detection (strong/weak fit), no scorecard generation, no interview notes push to ATS
 
 ### Mode: Team Meet
+
 - **Purpose:** Track action items and key decisions from meetings
 - **Where defined:** `ModesManager.ts:58`, `MODE_TEAM_MEET_PROMPT`
 - **Context used:** Transcript + meeting notes
@@ -198,6 +208,7 @@ But missing:
 - **Missing Cluely-level behavior:** No decision point detection, no action item extraction from live transcript, no blocker detection
 
 ### Mode: Looking for Work (Interview)
+
 - **Purpose:** Answer interview questions with confidence
 - **Where defined:** `ModesManager.ts:59`, `MODE_LOOKING_FOR_WORK_PROMPT`
 - **Context used:** Resume, JD, story bank, STAR answers
@@ -209,6 +220,7 @@ But missing:
 - **Missing Cluely-level behavior:** No coding sub-mode, no system design sub-mode, no PM/case sub-mode, no sub-mode auto-detection
 
 ### Mode: Technical Interview
+
 - **Purpose:** Whiteboard-style coding and system design support
 - **Where defined:** `ModesManager.ts:60`, `MODE_TECHNICAL_INTERVIEW_PROMPT`
 - **Context used:** Transcript + custom context + reference files
@@ -219,6 +231,7 @@ But missing:
 - **Missing Cluely-level behavior:** No LeetCode problem detection, no compiler error detection, no runtime complexity questions, no system design mode
 
 ### Mode: Lecture
+
 - **Purpose:** Capture key concepts from lectures
 - **Where defined:** `ModesManager.ts:61`, `MODE_LECTURE_PROMPT`
 - **Context used:** Transcript + reference materials
@@ -235,22 +248,26 @@ But missing:
 ### Evidence of Mode Bleeding Risks
 
 **1. `setActiveMode()` only updates DB — no state clearing:**
+
 ```typescript
 // ModesManager.ts:262-264
 public setActiveMode(id: string | null): void {
     DatabaseManager.getInstance().setActiveMode(id);
 }
 ```
+
 No `SessionTracker.clearContext()`, no `assistantResponseHistory` flush, no `detectedCodingQuestion` reset.
 
 **2. Context window persists across mode switches:**
 `SessionTracker.contextItems[]` (120s window, 500 items max) is never cleared on mode switch. Previous mode's transcript context remains.
 
 **3. Reference file context block is rebuilt per-request:**
+
 ```typescript
 // ModesManager.ts:384-434 - buildActiveModeContextBlock()
 // Called fresh each time in WhatToAnswerLLM.ts:90
 ```
+
 This is correct — mode context is reloaded per request.
 
 **4. `detectedCodingQuestion` is cleared only on explicit `clearCodingQuestion()` call:**
@@ -274,43 +291,43 @@ This is correct — mode context is reloaded per request.
 
 ### What is Implemented
 
-| Detection Type | Status | Location | Implementation |
-|---|---|---|---|
-| Question detected | ✅ Regex | `PlannerDecision.ts:24` | `QUESTION_PATTERN` regex |
-| Follow-up opportunity | ✅ Regex | `PlannerDecision.ts:30` | `FOLLOW_UP_PATTERN` regex |
-| Recap request | ✅ Regex | `PlannerDecision.ts:29` | `RECAP_PATTERN` regex |
-| Clarify request | ✅ Regex | `PlannerDecision.ts:26` | `CLARIFY_PATTERN` regex |
-| Brainstorm/strategy | ✅ Regex | `PlannerDecision.ts:25` | `BRAINSTORM_PATTERN` regex |
-| Visual problem (screenshot) | ✅ Code | `PlannerDecision.ts:85` | `hasImages` check |
-| Coding question detected | ✅ Heuristic | `SessionTracker.ts:168` | `looksLikeCodingQuestion()` |
-| Intent classification (SLM) | ✅ HuggingFace | `IntentClassifier.ts` | Zero-shot mobilebert |
-| Speculative inference | ✅ Timer-based | `IntelligenceEngine.ts:193` | Debounced on interviewer partials |
-| Negotiation coaching | ✅ Event-based | `IntelligenceEngine.ts:63` | Dedicated channel |
+| Detection Type              | Status         | Location                    | Implementation                    |
+| --------------------------- | -------------- | --------------------------- | --------------------------------- |
+| Question detected           | ✅ Regex       | `PlannerDecision.ts:24`     | `QUESTION_PATTERN` regex          |
+| Follow-up opportunity       | ✅ Regex       | `PlannerDecision.ts:30`     | `FOLLOW_UP_PATTERN` regex         |
+| Recap request               | ✅ Regex       | `PlannerDecision.ts:29`     | `RECAP_PATTERN` regex             |
+| Clarify request             | ✅ Regex       | `PlannerDecision.ts:26`     | `CLARIFY_PATTERN` regex           |
+| Brainstorm/strategy         | ✅ Regex       | `PlannerDecision.ts:25`     | `BRAINSTORM_PATTERN` regex        |
+| Visual problem (screenshot) | ✅ Code        | `PlannerDecision.ts:85`     | `hasImages` check                 |
+| Coding question detected    | ✅ Heuristic   | `SessionTracker.ts:168`     | `looksLikeCodingQuestion()`       |
+| Intent classification (SLM) | ✅ HuggingFace | `IntentClassifier.ts`       | Zero-shot mobilebert              |
+| Speculative inference       | ✅ Timer-based | `IntelligenceEngine.ts:193` | Debounced on interviewer partials |
+| Negotiation coaching        | ✅ Event-based | `IntelligenceEngine.ts:63`  | Dedicated channel                 |
 
 ### What is Missing (Cluely-Level)
 
-| Detection Type | Status | Location | Missing |
-|---|---|---|---|
-| **Pricing objection** | 🔴 Missing | — | No regex for "expensive", "too much", "budget" triggers |
-| **Competitor mention** | 🔴 Missing | — | No detection for Gong, Chorus, ZoomInfo, Salesloft names |
-| **Buying signal** | 🔴 Missing | — | No "ready to move forward", "send contract" detection |
-| **Security/compliance question** | 🔴 Missing | — | No GDPR, SOC2, data handling question detection |
-| **Candidate concern signals** | 🔴 Missing | — | No " Visa", "relocation", "compensation" question detection |
-| **Action item extraction** | 🔴 Missing | — | No "I'll do X", "need to follow up" extraction |
-| **Decision point detection** | 🔴 Missing | — | No "we decided", "let's go with" detection |
-| **Risk/blocker detection** | 🔴 Missing | — | No "blocked on", "issue with", "problem" detection |
-| **Screen problem (OCR)** | 🔴 Missing | — | `ScreenshotHelper.ts` exists but not in answer pipeline |
+| Detection Type                   | Status     | Location | Missing                                                     |
+| -------------------------------- | ---------- | -------- | ----------------------------------------------------------- |
+| **Pricing objection**            | 🔴 Missing | —        | No regex for "expensive", "too much", "budget" triggers     |
+| **Competitor mention**           | 🔴 Missing | —        | No detection for Gong, Chorus, ZoomInfo, Salesloft names    |
+| **Buying signal**                | 🔴 Missing | —        | No "ready to move forward", "send contract" detection       |
+| **Security/compliance question** | 🔴 Missing | —        | No GDPR, SOC2, data handling question detection             |
+| **Candidate concern signals**    | 🔴 Missing | —        | No " Visa", "relocation", "compensation" question detection |
+| **Action item extraction**       | 🔴 Missing | —        | No "I'll do X", "need to follow up" extraction              |
+| **Decision point detection**     | 🔴 Missing | —        | No "we decided", "let's go with" detection                  |
+| **Risk/blocker detection**       | 🔴 Missing | —        | No "blocked on", "issue with", "problem" detection          |
+| **Screen problem (OCR)**         | 🔴 Missing | —        | `ScreenshotHelper.ts` exists but not in answer pipeline     |
 
-### Dynamic Action Architecture (Proposed for Natively)
+### Dynamic Action Architecture (Proposed for momor)
 
-Based on Cluely's model and Natively's current code, a production dynamic action system needs:
+Based on Cluely's model and momor's current code, a production dynamic action system needs:
 
 ```typescript
 interface DynamicAction {
   id: string;
   mode: ModeTemplateType;
   trigger: {
-    type: 'regex' | 'keyword' | 'intent' | 'llm_classify';
+    type: "regex" | "keyword" | "intent" | "llm_classify";
     pattern?: string;
     intent?: ConversationIntent;
     confidence?: number;
@@ -320,14 +337,32 @@ interface DynamicAction {
   prompt: string; // What to tell the LLM when triggered
   answerStyle?: {
     maxWords: number;
-    format: 'headline' | 'bullets' | 'code' | 'story';
+    format: "headline" | "bullets" | "code" | "story";
   };
 }
 
 const DYNAMIC_ACTIONS: Record<ModeTemplateType, DynamicAction[]> = {
   sales: [
-    { id: 'pricing_objection', trigger: { type: 'regex', pattern: '(expensive|too much|budget|price|cost)' }, priority: 0.9, label: 'Handle pricing objection', prompt: '...' },
-    { id: 'competitor_mention', trigger: { type: 'regex', pattern: '(Gong|Chrous|ZoomInfo|Salesloft|Outreach)' }, priority: 0.85, label: 'Handle competitor comparison', prompt: '...' },
+    {
+      id: "pricing_objection",
+      trigger: {
+        type: "regex",
+        pattern: "(expensive|too much|budget|price|cost)",
+      },
+      priority: 0.9,
+      label: "Handle pricing objection",
+      prompt: "...",
+    },
+    {
+      id: "competitor_mention",
+      trigger: {
+        type: "regex",
+        pattern: "(Gong|Chrous|ZoomInfo|Salesloft|Outreach)",
+      },
+      priority: 0.85,
+      label: "Handle competitor comparison",
+      prompt: "...",
+    },
     // ...
   ],
   // ...
@@ -355,37 +390,48 @@ const DYNAMIC_ACTIONS: Record<ModeTemplateType, DynamicAction[]> = {
 
 ### What Context Is Included
 
-| Context Type | Included | Token Limit | Location |
-|---|---|---|---|
-| Transcript (rolling) | ✅ | `fitContextForCurrentModel()` dynamic | `WhatToAnswerLLM.ts:100` |
-| Mode custom context | ✅ | 40,000 chars total | `ModesManager.ts:384-434` |
-| Reference files | ✅ | 12,000 chars/file | `ModesManager.ts:407` |
-| Intent result | ✅ | N/A (metadata) | `WhatToAnswerLLM.ts:52-58` |
-| Prior responses (anti-repetition) | ✅ | N/A | `WhatToAnswerLLM.ts:60-72` |
-| Screenshot context | ⚠️ Partial | File path only | `ScreenshotHelper.ts` not in pipeline |
-| Speaker context | ✅ | Via role mapping | `SessionTracker.ts:194` |
-| Meeting metadata | ✅ | N/A | `SessionTracker.ts:49` |
-| Resume/JD context | ✅ | Via mode reference files | ModesManager |
-| Temporal context | ✅ | N/A | `TemporalContextBuilder.ts` |
+| Context Type                      | Included   | Token Limit                           | Location                              |
+| --------------------------------- | ---------- | ------------------------------------- | ------------------------------------- |
+| Transcript (rolling)              | ✅         | `fitContextForCurrentModel()` dynamic | `WhatToAnswerLLM.ts:100`              |
+| Mode custom context               | ✅         | 40,000 chars total                    | `ModesManager.ts:384-434`             |
+| Reference files                   | ✅         | 12,000 chars/file                     | `ModesManager.ts:407`                 |
+| Intent result                     | ✅         | N/A (metadata)                        | `WhatToAnswerLLM.ts:52-58`            |
+| Prior responses (anti-repetition) | ✅         | N/A                                   | `WhatToAnswerLLM.ts:60-72`            |
+| Screenshot context                | ⚠️ Partial | File path only                        | `ScreenshotHelper.ts` not in pipeline |
+| Speaker context                   | ✅         | Via role mapping                      | `SessionTracker.ts:194`               |
+| Meeting metadata                  | ✅         | N/A                                   | `SessionTracker.ts:49`                |
+| Resume/JD context                 | ✅         | Via mode reference files              | ModesManager                          |
+| Temporal context                  | ✅         | N/A                                   | `TemporalContextBuilder.ts`           |
 
 ### Issues Found
 
 **1. `fitContextForCurrentModel` only shrinks for cloud models:**
+
 ```typescript
 // WhatToAnswerLLM.ts:100
-const workingTranscript = this.llmHelper.fitContextForCurrentModel(cleanedTranscript, reservedForFit);
+const workingTranscript = this.llmHelper.fitContextForCurrentModel(
+  cleanedTranscript,
+  reservedForFit,
+);
 // "only shrinks for cloud models; tiny-tier returns unchanged"
 ```
+
 Token overflow risk on tiny tier.
 
 **2. No explicit screen OCR text in context:**
 `imagePaths` parameter in `generateStream()` is accepted but not used in the answer pipeline — screen context doesn't flow into answers.
 
 **3. Mode context block retrieved with transcript as query (potential circular):**
+
 ```typescript
 // WhatToAnswerLLM.ts:90
-modeContextBlock = this.modesManager.buildRetrievedActiveModeContextBlock(cleanedTranscript, cleanedTranscript, 1800)
+modeContextBlock = this.modesManager.buildRetrievedActiveModeContextBlock(
+  cleanedTranscript,
+  cleanedTranscript,
+  1800,
+);
 ```
+
 Using `cleanedTranscript` as both query and transcript argument.
 
 **4. No context freshness validation:**
@@ -399,18 +445,22 @@ When modeContextBlock + transcript exceeds budget, there's no intelligent priori
 ## 7. Reference Files / RAG Audit
 
 ### Upload Pipeline
+
 - File added via `ModesManager.addReferenceFile()` → stored in SQLite with `content` column
 - Supported formats: text, MD, TXT (based on `mammoth` for DOCX, `pdf-parse` for PDF in `package.json`)
 
 ### Parsing
+
 - `mammoth` for DOCX, `pdf-parse` for PDF, raw text for TXT/MD
 - But **no explicit file parsing calls in RAGManager** — likely parsing happens client-side before upload
 
 ### Chunking
+
 - **Mode reference files:** `ModeContextRetriever.chunkText()` — 140 word chunks, 30 word overlap, simple word-based
 - **Meeting history:** `SemanticChunker` in `rag/` — more sophisticated
 
 ### Embeddings
+
 - `EmbeddingPipeline.ts` — supports multiple providers
 - `GeminiEmbeddingProvider` (Google)
 - `OpenAIEmbeddingProvider` (OpenAI)
@@ -418,16 +468,19 @@ When modeContextBlock + transcript exceeds budget, there's no intelligent priori
 - `OllamaEmbeddingProvider`
 
 ### Storage
+
 - `VectorStore.ts` — SQLite-vec based
 - `vectorSearchWorker.ts` — Web Worker for non-blocking search
 
 ### Retrieval
+
 - `RAGRetriever.ts` — semantic similarity + recency weighting
 - `ModeContextRetriever.ts` — keyword scoring (NOT vector search for mode files)
 
 ### Classification: **Basic RAG**
 
 **Strengths:**
+
 - Multi-provider embeddings with fallback
 - Recency-weighted retrieval for meeting history
 - Token budget enforcement
@@ -435,6 +488,7 @@ When modeContextBlock + transcript exceeds budget, there's no intelligent priori
 - Citation/source grounding with XML tags
 
 **Weaknesses:**
+
 - **Mode files use keyword search, not vectors** (`ModeContextRetriever.ts:76-89` — TF-IDF-like scoring, no embeddings)
 - No live links/web crawling (unlike Cluely)
 - No RAG evaluation/hit-rate tracking
@@ -454,7 +508,7 @@ MicrophoneCapture.ts / SystemAudioCapture.ts
         ↓
 [Native Audio] → [Platform-specific audio capture]
         ↓
-STT Adapter (Deepgram/ElevenLabs/OpenAI/Google/Whisper/NativelyPro)
+STT Adapter (Deepgram/ElevenLabs/OpenAI/Google/Whisper/momorPro)
         ↓
 [Streaming transcription with interim/final handling]
         ↓
@@ -470,22 +524,22 @@ WhatToAnswerLLM.generateStream() → LLM response
         ↓
 preload.ts → renderer (ipcRenderer)
         ↓
-NativelyInterface.tsx → UI rendering
+momorInterface.tsx → UI rendering
 ```
 
 ### Current Implementation Status
 
-| Component | Status | Files |
-|---|---|---|
-| Mic capture | ✅ Working | `MicrophoneCapture.ts` |
-| System audio | ✅ Working | `SystemAudioCapture.ts` |
-| STT streaming | ✅ Working | `electron/audio/*.ts` |
-| Transcript handling | ✅ Working | `SessionTracker.ts` |
-| Intent classification | ✅ Working | `IntentClassifier.ts` |
-| Planner decision | ✅ Working | `PlannerDecision.ts` |
-| LLM streaming | ✅ Working | `LLMHelper.ts`, `WhatToAnswerLLM.ts` |
-| UI rendering | ⚠️ Partial | `NativelyInterface.tsx` (180K lines, very large) |
-| IPC bridge | ✅ Working | `preload.ts`, `ipcHandlers.ts` |
+| Component             | Status     | Files                                         |
+| --------------------- | ---------- | --------------------------------------------- |
+| Mic capture           | ✅ Working | `MicrophoneCapture.ts`                        |
+| System audio          | ✅ Working | `SystemAudioCapture.ts`                       |
+| STT streaming         | ✅ Working | `electron/audio/*.ts`                         |
+| Transcript handling   | ✅ Working | `SessionTracker.ts`                           |
+| Intent classification | ✅ Working | `IntentClassifier.ts`                         |
+| Planner decision      | ✅ Working | `PlannerDecision.ts`                          |
+| LLM streaming         | ✅ Working | `LLMHelper.ts`, `WhatToAnswerLLM.ts`          |
+| UI rendering          | ⚠️ Partial | `momorInterface.tsx` (180K lines, very large) |
+| IPC bridge            | ✅ Working | `preload.ts`, `ipcHandlers.ts`                |
 
 ### Latency Risks
 
@@ -507,24 +561,26 @@ NativelyInterface.tsx → UI rendering
 
 ### Provider Matrix
 
-| Provider | Key Storage | Streaming | Fallback | Rate Limiting | Retry |
-|---|---|---|---|---|---|
-| Gemini | `setApiKey()` → `GoogleGenAI` | ✅ | Via `ProviderRouter` | ❌ None | ❌ None |
-| Groq | `setGroqApiKey()` → `Groq` | ✅ | Via `ProviderRouter` | ❌ None | ❌ None |
-| OpenAI | `setOpenaiApiKey()` → `OpenAI` | ✅ | Via `ProviderRouter` | ❌ None | ❌ None |
-| Claude | `setClaudeApiKey()` → `Anthropic` | ✅ Via streaming | Via `ProviderRouter` | ❌ None | ❌ None |
-| Ollama | Direct URL | ✅ | Self-hosted only | ❌ None | ❌ None |
-| Natively Pro | `setNativelyKey()` | ✅ | Via `NativelyProSTT` | ❌ Unknown | ❌ Unknown |
+| Provider  | Key Storage                       | Streaming        | Fallback             | Rate Limiting | Retry      |
+| --------- | --------------------------------- | ---------------- | -------------------- | ------------- | ---------- |
+| Gemini    | `setApiKey()` → `GoogleGenAI`     | ✅               | Via `ProviderRouter` | ❌ None       | ❌ None    |
+| Groq      | `setGroqApiKey()` → `Groq`        | ✅               | Via `ProviderRouter` | ❌ None       | ❌ None    |
+| OpenAI    | `setOpenaiApiKey()` → `OpenAI`    | ✅               | Via `ProviderRouter` | ❌ None       | ❌ None    |
+| Claude    | `setClaudeApiKey()` → `Anthropic` | ✅ Via streaming | Via `ProviderRouter` | ❌ None       | ❌ None    |
+| Ollama    | Direct URL                        | ✅               | Self-hosted only     | ❌ None       | ❌ None    |
+| momor Pro | `setmomorKey()`                   | ✅               | Via `momorProSTT`    | ❌ Unknown    | ❌ Unknown |
 
 ### Key Issues
 
 **1. `ProviderRouter` fallbacks are basic:**
+
 ```typescript
 // ProviderRouter.ts
 // Simple priority-based routing, no latency-aware load balancing
 ```
 
 **2. Rate limiters are created but not wired into LLM calls:**
+
 ```typescript
 // RateLimiter.ts creates per-provider limiters
 // But LLMHelper.ts doesn't call rateLimiters.acquire() before requests
@@ -534,6 +590,7 @@ NativelyInterface.tsx → UI rendering
 `ModelVersionManager.ts` manages model discovery but no cost tracking.
 
 **4. No provider-specific payload bugs documented, but:**
+
 - Model IDs hardcoded (`GEMINI_FLASH_MODEL = "gemini-3.1-flash-lite-preview"`)
 - These could become outdated/invalid
 
@@ -544,25 +601,27 @@ NativelyInterface.tsx → UI rendering
 ### Electron Implementation
 
 **Main process:** `electron/main.ts` (175K+ lines — very large)
-**Renderer:** `src/components/NativelyInterface.tsx` (180K lines — extremely large)
+**Renderer:** `src/components/momorInterface.tsx` (180K lines — extremely large)
 **Window management:** `WindowHelper.ts`, `SettingsWindowHelper.ts`
 
 ### Hotkeys
 
-| Hotkey | File | Status |
-|---|---|---|
-| Global shortcut | `KeybindManager.ts` | Implemented |
+| Hotkey           | File                        | Status      |
+| ---------------- | --------------------------- | ----------- |
+| Global shortcut  | `KeybindManager.ts`         | Implemented |
 | Stealth keyboard | `StealthKeyboardManager.ts` | Implemented |
-| Toggle overlay | Likely in `WindowHelper.ts` | Implemented |
+| Toggle overlay   | Likely in `WindowHelper.ts` | Implemented |
 
 ### Overlay Behavior
 
 **Implemented:**
+
 - Always-on-top via Electron `win.setAlwaysOnTop()`
 - `setContentProtection()` for screen-share invisibility on Mac
 - Multi-monitor support via `display` events
 
 **Potentially Broken (from cluelyresearch.md):**
+
 - `NSWindowSharingNone` on macOS with ScreenCaptureKit may still capture overlay
 - Windows `WDA_EXCLUDEFROMCAPTURE` doesn't work on Windows 10/11 Home
 - No documented invisibility compatibility matrix
@@ -580,6 +639,7 @@ NativelyInterface.tsx → UI rendering
 ### What Exists
 
 **`verboseLog.ts`:** File-based logging with log rotation
+
 ```typescript
 // Writes to applog.log
 // Only basic log levels, no structured fields
@@ -587,18 +647,18 @@ NativelyInterface.tsx → UI rendering
 
 ### What is Missing
 
-| Metric | Status | Fix |
-|---|---|---|
-| Average AI latency | 🔴 None | Add PostHog/Axiom |
-| STT latency | 🔴 None | Add metrics |
-| Connection failures | ⚠️ Logs only | Improve log structure |
-| Provider errors | ⚠️ Logs only | Add error categorization |
-| Mode usage | 🔴 None | Add mode switch events |
-| Auto-answer trigger rate | 🔴 None | Add trigger/success tracking |
-| RAG retrieval hit/miss | 🔴 None | Add retrieval metrics |
-| User feedback (thumbs up/down) | ⚠️ Exists but not persisted | Verify storage |
-| Onboarding dropoff | 🔴 None | Add funnel tracking |
-| Crash reports | 🔴 None | Add Sentry/crash reporter |
+| Metric                         | Status                      | Fix                          |
+| ------------------------------ | --------------------------- | ---------------------------- |
+| Average AI latency             | 🔴 None                     | Add PostHog/Axiom            |
+| STT latency                    | 🔴 None                     | Add metrics                  |
+| Connection failures            | ⚠️ Logs only                | Improve log structure        |
+| Provider errors                | ⚠️ Logs only                | Add error categorization     |
+| Mode usage                     | 🔴 None                     | Add mode switch events       |
+| Auto-answer trigger rate       | 🔴 None                     | Add trigger/success tracking |
+| RAG retrieval hit/miss         | 🔴 None                     | Add retrieval metrics        |
+| User feedback (thumbs up/down) | ⚠️ Exists but not persisted | Verify storage               |
+| Onboarding dropoff             | 🔴 None                     | Add funnel tracking          |
+| Crash reports                  | 🔴 None                     | Add Sentry/crash reporter    |
 
 **Recommended stack:** PostHog for product analytics + Axiom for logs + Sentry for crashes. Current `verboseLog` is insufficient for production debugging.
 
@@ -617,18 +677,18 @@ NativelyInterface.tsx → UI rendering
 
 ### What Needs Attention
 
-| Issue | Severity | Location | Fix |
-|---|---|---|---|
-| `.env` file in repo with actual keys | 🔴 HIGH | `.env` | Remove from git, add to gitignore |
-| `applog.log` may contain transcript | ⚠️ MEDIUM | `applog.log` | Add transcript redaction |
-| No CORS configuration visible | ⚠️ MEDIUM | `ipcHandlers.ts` | Verify IPC is browser-bridge only |
-| No auth on local IPC | ⚠️ MEDIUM | `ipcHandlers.ts` | Electron contextBridge is secure by default |
-| No payment/license bypass — but no license check code found | ⚠️ MEDIUM | `premium/` | Verify license enforcement |
-| `natively_sk_josgls...` API key in research doc | 🔴 HIGH | This report / `cluelyresearch.md` | Rotate key immediately |
+| Issue                                                       | Severity  | Location                          | Fix                                         |
+| ----------------------------------------------------------- | --------- | --------------------------------- | ------------------------------------------- |
+| `.env` file in repo with actual keys                        | 🔴 HIGH   | `.env`                            | Remove from git, add to gitignore           |
+| `applog.log` may contain transcript                         | ⚠️ MEDIUM | `applog.log`                      | Add transcript redaction                    |
+| No CORS configuration visible                               | ⚠️ MEDIUM | `ipcHandlers.ts`                  | Verify IPC is browser-bridge only           |
+| No auth on local IPC                                        | ⚠️ MEDIUM | `ipcHandlers.ts`                  | Electron contextBridge is secure by default |
+| No payment/license bypass — but no license check code found | ⚠️ MEDIUM | `premium/`                        | Verify license enforcement                  |
+| `momor_sk_josgls...` API key in research doc                | 🔴 HIGH   | This report / `cluelyresearch.md` | Rotate key immediately                      |
 
 ### Secrets Exposure (IMMEDIATE ACTION)
 
-The API key `natively_sk_[REDACTED]` appears in research documentation. **Rotate this key immediately.**
+The API key `momor_sk_[REDACTED]` appears in research documentation. **Rotate this key immediately.**
 
 ---
 
@@ -669,55 +729,55 @@ The API key `natively_sk_[REDACTED]` appears in research documentation. **Rotate
 
 ## 14. Top 50 Concrete Issues
 
-| Rank | Issue | Severity | Evidence | User impact | Fix |
-|---|---|---|---|---|---|
-| P0 | No dynamic action cards UI | Breaks core product | `NativelyInterface.tsx` has no `DynamicActionCard` component, `PlannerDecision.ts` outputs only internal decisions | User can't see auto-detected opportunities | Create `DynamicActionCard` component, wire to `PlannerDecision` events |
-| P0 | No screen OCR in answer pipeline | Major competitive weakness | `ScreenshotHelper.ts` captures but not used in `WhatToAnswerLLM.generateStream()` | Coding questions with visible screen don't get answered | Integrate `imagePaths` into answer context |
-| P0 | `.env` file may contain real API keys | Security | `.env` in repo, `git status` shows it | Key exposure risk | Remove from git, rotate keys |
-| P0 | No pre-call briefs | Major feature gap | `CalendarManager.ts` exists but unused | No meeting preparation | Wire calendar → participant research → summary |
-| P0 | No CRM/ATS integrations | Enterprise blocker | Zero CRM code | Cannot compete in enterprise | Add Merge.dev or direct integrations |
-| P0 | API key in research docs | Security | `natively_sk_josgls...` in `cluelyresearch.md` | Key compromise | Rotate immediately |
-| P1 | Mode bleeding risk | Reliability | `setActiveMode()` no state clearing, `SessionTracker` context persists | Answer contamination between modes | Add `clearSessionContext()` on mode switch |
-| P1 | No post-call coaching | Major feature gap | No coaching module | No missed opportunity detection | Build coaching scoring module |
-| P1 | Telemetry is missing | Observability | `verboseLog` basic, no PostHog/Axiom | Can't debug production issues | Add PostHog + Axiom |
-| P1 | Negotiation engine is partial | Product gap | Only `negotiation_coaching` event, no dedicated mode | Limited negotiation support | Expand negotiation context + actions |
-| P1 | Mode reference files use keyword search, not vectors | RAG quality | `ModeContextRetriever` has no embedding call | Poor retrieval on semantic matches | Add vector search to mode file retrieval |
-| P1 | No follow-up email generation (production-grade) | Product gap | `FollowUpEmailModal.tsx` exists but basic | Can't send proper follow-ups | Enhance with template system |
-| P1 | IntentClassifier model lazy-loads on first use | Latency | `ZeroShotClassifier.ensureLoaded()` fires first time | 1-3s delay on first question | Warmup in `initializeLLMs()` |
-| P1 | Rate limiters created but not used | Reliability | `createProviderRateLimiters()` but no `acquire()` calls | Possible 429 errors | Wire rate limiters into LLM calls |
-| P1 | Natively Pro STT provider — status unclear | Reliability | `NativelyProSTT.ts` in code | May not be functional | Verify with live test |
-| P2 | No mode auto-detection | UX gap | Calendar/participant-based mode suggestion missing | User has to manually switch | Add calendar → mode inference |
-| P2 | `NativelyInterface.tsx` is 180K lines | Maintainability | Single component file too large | Hard to navigate/modify | Split into smaller components |
-| P2 | `main.ts` is 175K lines | Maintainability | Single file too large | Hard to maintain | Extract modules |
-| P2 | No meeting search | Product gap | No search across past meetings | Can't find historical context | Add full-text search |
-| P2 | No speaker identification in transcript | Product gap | `speaker` field in `TranscriptSegment` but no diarization | Can't tell who said what | Add speaker diarization |
-| P2 | Windows system audio may not work | Compatibility | `SystemAudioCapture.ts` may have platform issues | Windows users can't capture system audio | Test and fix Windows path |
-| P2 | Local Whisper integration is complex | Ease of use | `LocalWhisperSTT.ts` + `whisper/` dir + model download script | User setup is hard | Simplify onboarding |
-| P2 | No "Who am I talking to?" action | Feature gap | Cluely has this, Natively doesn't | Can't identify participants | Add participant lookup |
-| P2 | No fact-check action | Feature gap | Cluely has "Fact check", Natively doesn't | Can't verify claims | Add fact verification module |
-| P2 | Em-dash post-processor is partial | Polish | `reduceDashesInChunk` for streaming, but cross-chunk dashes slip through | AI tells still visible in streaming | Full post-process after stream completes |
-| P2 | No incremental RAG index update | Performance | Full rebuild on new files | Slow with large file sets | Add delta indexing |
-| P2 | No meeting export (PDF/Word) | Product gap | Notes exist but no export format | Can't share notes externally | Add export functionality |
-| P2 | No meeting sharing | Product gap | No shareable meeting links | Can't collaborate | Add share feature |
-| P2 | Mode templates not editable after creation | UX gap | Can edit name, not template sections | Can't customize post-call notes | Add section editor UI |
-| P2 | Reference file size limit is arbitrary | UX gap | 12K chars per file, 40K total | User doesn't understand limit | Better messaging, increase if justified |
-| P2 | No "recap this meeting" action | Feature gap | Recap exists but no explicit "recap meeting" button | Can't get meeting summary on demand | Add prominent recap button |
-| P3 | No dark mode toggle | Polish | Liquid glass theme has no dark mode variant | Aesthetic preference | Add dark mode |
-| P3 | No keyboard shortcut customization | UX gap | Shortcuts are hardcoded | Power users can't customize | Add keybind editor |
-| P3 | No meeting templates | UX gap | Starting a meeting is manual | Repetitive setup | Add meeting templates |
-| P3 | Settings window opens as separate window | UX | `SettingsWindowHelper.ts` creates new window | Multiple windows to manage | Consider in-overlay settings |
-| P3 | No mobile companion app | Future | No iOS/Android code | Can't use on mobile | Build React Native or wrap web |
-| P3 | No video recording integration | Future | No recording feature | Can't replay meetings | Add recording (if legal) |
-| P3 | No Slack/Teams integration | Future | No notifications to other apps | Can't share to Slack | Add integrations |
-| P3 | No Zapier/Make integration | Future | No automation | Can't automate workflows | Add webhook/API |
-| P3 | No multi-language support | i18n | All strings in English | Non-English users excluded | Add i18n system |
-| P3 | No accessibility (a11y) audit | Compliance | No a11y testing | Excludes disabled users | Run a11y audit |
-| P3 | No auto-update notification UI | Polish | `UpdateBanner.tsx` exists but minimal | User doesn't know when to update | Improve update UX |
-| P3 | No meeting notes version history | Product gap | Notes are overwritten | Can't see previous versions | Add version history |
-| P3 | No "pause listening" button | Privacy | Always listening when app is on | Privacy concern | Add pause/stop button |
-| P3 | No per-mode hotkey | UX gap | One global shortcut | Can't quickly trigger in specific mode | Add mode-specific shortcuts |
-| P3 | No meeting templates with roles | UX gap | No "sales call template" concept | Repetitive setup | Add meeting templates |
-| P3 | No inline answer editing | UX gap | Can't edit generated answer | Wrong answers can't be corrected | Add edit capability |
+| Rank | Issue                                                | Severity                   | Evidence                                                                                                        | User impact                                             | Fix                                                                    |
+| ---- | ---------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| P0   | No dynamic action cards UI                           | Breaks core product        | `momorInterface.tsx` has no `DynamicActionCard` component, `PlannerDecision.ts` outputs only internal decisions | User can't see auto-detected opportunities              | Create `DynamicActionCard` component, wire to `PlannerDecision` events |
+| P0   | No screen OCR in answer pipeline                     | Major competitive weakness | `ScreenshotHelper.ts` captures but not used in `WhatToAnswerLLM.generateStream()`                               | Coding questions with visible screen don't get answered | Integrate `imagePaths` into answer context                             |
+| P0   | `.env` file may contain real API keys                | Security                   | `.env` in repo, `git status` shows it                                                                           | Key exposure risk                                       | Remove from git, rotate keys                                           |
+| P0   | No pre-call briefs                                   | Major feature gap          | `CalendarManager.ts` exists but unused                                                                          | No meeting preparation                                  | Wire calendar → participant research → summary                         |
+| P0   | No CRM/ATS integrations                              | Enterprise blocker         | Zero CRM code                                                                                                   | Cannot compete in enterprise                            | Add Merge.dev or direct integrations                                   |
+| P0   | API key in research docs                             | Security                   | `momor_sk_josgls...` in `cluelyresearch.md`                                                                     | Key compromise                                          | Rotate immediately                                                     |
+| P1   | Mode bleeding risk                                   | Reliability                | `setActiveMode()` no state clearing, `SessionTracker` context persists                                          | Answer contamination between modes                      | Add `clearSessionContext()` on mode switch                             |
+| P1   | No post-call coaching                                | Major feature gap          | No coaching module                                                                                              | No missed opportunity detection                         | Build coaching scoring module                                          |
+| P1   | Telemetry is missing                                 | Observability              | `verboseLog` basic, no PostHog/Axiom                                                                            | Can't debug production issues                           | Add PostHog + Axiom                                                    |
+| P1   | Negotiation engine is partial                        | Product gap                | Only `negotiation_coaching` event, no dedicated mode                                                            | Limited negotiation support                             | Expand negotiation context + actions                                   |
+| P1   | Mode reference files use keyword search, not vectors | RAG quality                | `ModeContextRetriever` has no embedding call                                                                    | Poor retrieval on semantic matches                      | Add vector search to mode file retrieval                               |
+| P1   | No follow-up email generation (production-grade)     | Product gap                | `FollowUpEmailModal.tsx` exists but basic                                                                       | Can't send proper follow-ups                            | Enhance with template system                                           |
+| P1   | IntentClassifier model lazy-loads on first use       | Latency                    | `ZeroShotClassifier.ensureLoaded()` fires first time                                                            | 1-3s delay on first question                            | Warmup in `initializeLLMs()`                                           |
+| P1   | Rate limiters created but not used                   | Reliability                | `createProviderRateLimiters()` but no `acquire()` calls                                                         | Possible 429 errors                                     | Wire rate limiters into LLM calls                                      |
+| P1   | momor Pro STT provider — status unclear              | Reliability                | `momorProSTT.ts` in code                                                                                        | May not be functional                                   | Verify with live test                                                  |
+| P2   | No mode auto-detection                               | UX gap                     | Calendar/participant-based mode suggestion missing                                                              | User has to manually switch                             | Add calendar → mode inference                                          |
+| P2   | `momorInterface.tsx` is 180K lines                   | Maintainability            | Single component file too large                                                                                 | Hard to navigate/modify                                 | Split into smaller components                                          |
+| P2   | `main.ts` is 175K lines                              | Maintainability            | Single file too large                                                                                           | Hard to maintain                                        | Extract modules                                                        |
+| P2   | No meeting search                                    | Product gap                | No search across past meetings                                                                                  | Can't find historical context                           | Add full-text search                                                   |
+| P2   | No speaker identification in transcript              | Product gap                | `speaker` field in `TranscriptSegment` but no diarization                                                       | Can't tell who said what                                | Add speaker diarization                                                |
+| P2   | Windows system audio may not work                    | Compatibility              | `SystemAudioCapture.ts` may have platform issues                                                                | Windows users can't capture system audio                | Test and fix Windows path                                              |
+| P2   | Local Whisper integration is complex                 | Ease of use                | `LocalWhisperSTT.ts` + `whisper/` dir + model download script                                                   | User setup is hard                                      | Simplify onboarding                                                    |
+| P2   | No "Who am I talking to?" action                     | Feature gap                | Cluely has this, momor doesn't                                                                                  | Can't identify participants                             | Add participant lookup                                                 |
+| P2   | No fact-check action                                 | Feature gap                | Cluely has "Fact check", momor doesn't                                                                          | Can't verify claims                                     | Add fact verification module                                           |
+| P2   | Em-dash post-processor is partial                    | Polish                     | `reduceDashesInChunk` for streaming, but cross-chunk dashes slip through                                        | AI tells still visible in streaming                     | Full post-process after stream completes                               |
+| P2   | No incremental RAG index update                      | Performance                | Full rebuild on new files                                                                                       | Slow with large file sets                               | Add delta indexing                                                     |
+| P2   | No meeting export (PDF/Word)                         | Product gap                | Notes exist but no export format                                                                                | Can't share notes externally                            | Add export functionality                                               |
+| P2   | No meeting sharing                                   | Product gap                | No shareable meeting links                                                                                      | Can't collaborate                                       | Add share feature                                                      |
+| P2   | Mode templates not editable after creation           | UX gap                     | Can edit name, not template sections                                                                            | Can't customize post-call notes                         | Add section editor UI                                                  |
+| P2   | Reference file size limit is arbitrary               | UX gap                     | 12K chars per file, 40K total                                                                                   | User doesn't understand limit                           | Better messaging, increase if justified                                |
+| P2   | No "recap this meeting" action                       | Feature gap                | Recap exists but no explicit "recap meeting" button                                                             | Can't get meeting summary on demand                     | Add prominent recap button                                             |
+| P3   | No dark mode toggle                                  | Polish                     | Liquid glass theme has no dark mode variant                                                                     | Aesthetic preference                                    | Add dark mode                                                          |
+| P3   | No keyboard shortcut customization                   | UX gap                     | Shortcuts are hardcoded                                                                                         | Power users can't customize                             | Add keybind editor                                                     |
+| P3   | No meeting templates                                 | UX gap                     | Starting a meeting is manual                                                                                    | Repetitive setup                                        | Add meeting templates                                                  |
+| P3   | Settings window opens as separate window             | UX                         | `SettingsWindowHelper.ts` creates new window                                                                    | Multiple windows to manage                              | Consider in-overlay settings                                           |
+| P3   | No mobile companion app                              | Future                     | No iOS/Android code                                                                                             | Can't use on mobile                                     | Build React Native or wrap web                                         |
+| P3   | No video recording integration                       | Future                     | No recording feature                                                                                            | Can't replay meetings                                   | Add recording (if legal)                                               |
+| P3   | No Slack/Teams integration                           | Future                     | No notifications to other apps                                                                                  | Can't share to Slack                                    | Add integrations                                                       |
+| P3   | No Zapier/Make integration                           | Future                     | No automation                                                                                                   | Can't automate workflows                                | Add webhook/API                                                        |
+| P3   | No multi-language support                            | i18n                       | All strings in English                                                                                          | Non-English users excluded                              | Add i18n system                                                        |
+| P3   | No accessibility (a11y) audit                        | Compliance                 | No a11y testing                                                                                                 | Excludes disabled users                                 | Run a11y audit                                                         |
+| P3   | No auto-update notification UI                       | Polish                     | `UpdateBanner.tsx` exists but minimal                                                                           | User doesn't know when to update                        | Improve update UX                                                      |
+| P3   | No meeting notes version history                     | Product gap                | Notes are overwritten                                                                                           | Can't see previous versions                             | Add version history                                                    |
+| P3   | No "pause listening" button                          | Privacy                    | Always listening when app is on                                                                                 | Privacy concern                                         | Add pause/stop button                                                  |
+| P3   | No per-mode hotkey                                   | UX gap                     | One global shortcut                                                                                             | Can't quickly trigger in specific mode                  | Add mode-specific shortcuts                                            |
+| P3   | No meeting templates with roles                      | UX gap                     | No "sales call template" concept                                                                                | Repetitive setup                                        | Add meeting templates                                                  |
+| P3   | No inline answer editing                             | UX gap                     | Can't edit generated answer                                                                                     | Wrong answers can't be corrected                        | Add edit capability                                                    |
 
 ---
 
@@ -753,7 +813,7 @@ The API key `natively_sk_[REDACTED]` appears in research documentation. **Rotate
 7. **Build meeting export (PDF/Word)** — Structured export of meeting notes
 8. **Add meeting sharing** — Shareable links for meeting notes
 9. **Build enterprise team management** — Team prompts, role-based modes, shared KB
-10. **Performance: Split `NativelyInterface.tsx`** — Extract overlay, chat, settings into separate components
+10. **Performance: Split `momorInterface.tsx`** — Extract overlay, chat, settings into separate components
 
 ### Enterprise-Level Roadmap
 
@@ -773,10 +833,12 @@ The API key `natively_sk_[REDACTED]` appears in research documentation. **Rotate
 ### Priority 1: Fix Mode Bleeding
 
 **Files to edit:**
+
 - `electron/services/ModesManager.ts` — add `setActiveMode()` cleanup
 - `electron/SessionTracker.ts` — add `clearSessionState()` method
 
 **Changes:**
+
 ```typescript
 // ModesManager.ts:262-264
 public setActiveMode(id: string | null): void {
@@ -792,9 +854,11 @@ public setActiveMode(id: string | null): void {
 ### Priority 2: Wire Rate Limiters into LLM Calls
 
 **Files to edit:**
+
 - `electron/LLMHelper.ts` — add `acquire()` calls before each provider request
 
 **Changes:**
+
 ```typescript
 // Before each API call, e.g., in streamChat():
 await this.rateLimiters.groq.acquire();
@@ -804,35 +868,41 @@ await this.groqClient.chat.completions.create({...});
 ### Priority 3: Build Dynamic Action Card System
 
 **New files to create:**
+
 - `src/components/DynamicActionCard.tsx` — action card UI component
 - `src/components/DynamicActionBar.tsx` — container for action cards
 - `electron/services/DynamicActionEngine.ts` — trigger detection + card generation
 
 **Files to modify:**
-- `src/components/NativelyInterface.tsx` — add `DynamicActionBar` rendering
+
+- `src/components/momorInterface.tsx` — add `DynamicActionBar` rendering
 - `electron/IntelligenceEngine.ts` — emit `dynamic_action` events
 
 ### Priority 4: Integrate Screen Context into Answers
 
 **Files to modify:**
+
 - `electron/llm/WhatToAnswerLLM.ts` — add `imagePaths` to context building
 - `electron/LLMHelper.ts` — ensure `imagePaths` flows into `generateStream()`
 - `src/components/Cropper.tsx` — ensure screenshot path is passed to backend
 
 **Changes:**
+
 ```typescript
 // WhatToAnswerLLM.ts:108
 const enrichedTranscript = modeContextBlock
-    ? `${modeContextBlock}\n\nCONVERSATION:\n${workingTranscript}\n\n[SCREEN CONTEXT]\n${imagePaths ? await this.getScreenContext(imagePaths) : ''}`
-    : workingTranscript;
+  ? `${modeContextBlock}\n\nCONVERSATION:\n${workingTranscript}\n\n[SCREEN CONTEXT]\n${imagePaths ? await this.getScreenContext(imagePaths) : ""}`
+  : workingTranscript;
 ```
 
 ### Priority 5: Add Vector Search to Mode Files
 
 **Files to modify:**
+
 - `electron/services/ModeContextRetriever.ts` — replace keyword scoring with embedding similarity
 
 **Changes:**
+
 ```typescript
 // Replace scoreChunk() with embedding-based scoring
 async retrieve(mode: Mode, files: ModeReferenceFile[], options: RetrieveOptions): Promise<ModeRetrievedContext> {
@@ -850,24 +920,26 @@ async retrieve(mode: Mode, files: ModeReferenceFile[], options: RetrieveOptions)
 
 ### Mode Test Matrix
 
-| Mode | Test 1 | Test 2 | Test 3 | Test 4 | Test 5 |
-|---|---|---|---|---|---|
-| General | Meeting with no context | Meeting with reference files | Multi-speaker meeting | Long meeting (2hr) | Mode switch mid-meeting |
-| Sales | Pricing objection | Competitor mention | Discovery questions | Closing signals | Follow-up email generation |
-| Recruiting | Behavioral question | Technical question | Candidate concern (Visa) | Weak signal | Strong signal |
-| Team Meet | Decision point | Action item | Blocker mentioned | Team updates | Meeting recap |
-| Interview | Behavioral STAR | Technical concept | Resume contradiction | "Tell me about yourself" | Weakness question |
-| Technical | LeetCode visible | System design | Runtime question | Code explanation | Edge case |
-| Lecture | Key concept definition | Formula appears | Slide change | Student question | Summary request |
+| Mode       | Test 1                  | Test 2                       | Test 3                   | Test 4                   | Test 5                     |
+| ---------- | ----------------------- | ---------------------------- | ------------------------ | ------------------------ | -------------------------- |
+| General    | Meeting with no context | Meeting with reference files | Multi-speaker meeting    | Long meeting (2hr)       | Mode switch mid-meeting    |
+| Sales      | Pricing objection       | Competitor mention           | Discovery questions      | Closing signals          | Follow-up email generation |
+| Recruiting | Behavioral question     | Technical question           | Candidate concern (Visa) | Weak signal              | Strong signal              |
+| Team Meet  | Decision point          | Action item                  | Blocker mentioned        | Team updates             | Meeting recap              |
+| Interview  | Behavioral STAR         | Technical concept            | Resume contradiction     | "Tell me about yourself" | Weakness question          |
+| Technical  | LeetCode visible        | System design                | Runtime question         | Code explanation         | Edge case                  |
+| Lecture    | Key concept definition  | Formula appears              | Slide change             | Student question         | Summary request            |
 
 ### Bug Hunting Checklist
 
 **Mode Bleeding:**
+
 - [ ] Switch modes mid-meeting, verify no context leak
 - [ ] Upload resume to Interview mode, switch to Sales, verify no resume in answers
 - [ ] Clear meeting, start new meeting, verify old transcript doesn't persist
 
 **Dynamic Actions:**
+
 - [ ] Say "this is too expensive", verify pricing objection card appears
 - [ ] Mention competitor name, verify card appears
 - [ ] Ask a coding question, verify coding action card appears
@@ -875,24 +947,28 @@ async retrieve(mode: Mode, files: ModeReferenceFile[], options: RetrieveOptions)
 - [ ] Click action card, verify answer generates correctly
 
 **RAG:**
+
 - [ ] Upload 3 reference files, ask question that matches file 2, verify correct source
 - [ ] Upload malformed PDF, verify graceful error handling
 - [ ] Upload >12K char file, verify truncation with marker
 - [ ] Ask semantic question (not keyword match), verify vector search returns relevant result
 
 **Audio:**
+
 - [ ] Speak for 10 minutes, verify transcript buffer doesn't overflow
 - [ ] Disconnect/reconnect mic, verify STT reconnects
 - [ ] Test with system audio + mic simultaneously, verify both captured
 - [ ] Speak overlapping voices, verify diarization (if implemented)
 
 **Provider Failures:**
+
 - [ ] Disable Gemini key, verify Groq fallback works
 - [ ] Trigger rate limit, verify graceful error + retry
 - [ ] Network disconnect mid-stream, verify reconnect + resume
 - [ ] All cloud providers fail, verify local Whisper fallback
 
 **Latency:**
+
 - [ ] Measure time from question end to first answer token (target: <2s)
 - [ ] Measure time from Tab press to answer (target: <1s with speculative)
 - [ ] Measure streaming token rate (target: >20 tokens/s for cloud)
@@ -909,9 +985,10 @@ async retrieve(mode: Mode, files: ModeReferenceFile[], options: RetrieveOptions)
 
 ## 18. Final Verdict
 
-### Is Natively Currently Close to Cluely?
+### Is momor Currently Close to Cluely?
 
-**No, but closer than most open-source attempts.** Natively has:
+**No, but closer than most open-source attempts.** momor has:
+
 - Real multi-provider LLM routing ✅
 - Real streaming transcription ✅
 - Real modes with distinct prompts ✅
@@ -919,6 +996,7 @@ async retrieve(mode: Mode, files: ModeReferenceFile[], options: RetrieveOptions)
 - Basic RAG for meeting history ✅
 
 But missing:
+
 - Dynamic action cards (the signature feature) ❌
 - Screen OCR context ❌
 - CRM/ATS integrations ❌
@@ -927,31 +1005,31 @@ But missing:
 - Team/enterprise features ❌
 - Production telemetry ❌
 
-**Natively is a solid individual meeting assistant. It's not yet an enterprise revenue intelligence platform.**
+**momor is a solid individual meeting assistant. It's not yet an enterprise revenue intelligence platform.**
 
-### Top 5 Reasons Natively is Behind Cluely
+### Top 5 Reasons momor is Behind Cluely
 
-1. **No dynamic action card UI** — Cluely's signature is auto-detected answer opportunities surfaced as clickable cards. Natively's planner only makes internal decisions; nothing is shown to the user.
+1. **No dynamic action card UI** — Cluely's signature is auto-detected answer opportunities surfaced as clickable cards. momor's planner only makes internal decisions; nothing is shown to the user.
 
-2. **No enterprise integrations** — CRM (HubSpot, Salesforce), ATS (Greenhouse, Lever), calendar (Google Calendar) are Cluely's enterprise moat. Natively has zero of these.
+2. **No enterprise integrations** — CRM (HubSpot, Salesforce), ATS (Greenhouse, Lever), calendar (Google Calendar) are Cluely's enterprise moat. momor has zero of these.
 
-3. **No pre-call briefs** — Cluely generates meeting preparation from calendar events. Natively's `CalendarManager.ts` is dead code.
+3. **No pre-call briefs** — Cluely generates meeting preparation from calendar events. momor's `CalendarManager.ts` is dead code.
 
-4. **No coaching/post-call analytics** — Cluely's coaching tracks missed opportunities, scorecards, team-wide trends. Natively has no coaching module.
+4. **No coaching/post-call analytics** — Cluely's coaching tracks missed opportunities, scorecards, team-wide trends. momor has no coaching module.
 
-5. **No screen context in answers** — Cluely's "Get Answer" for coding/Excel/screens is a key differentiator. Natively captures screenshots but never feeds them into the answer pipeline.
+5. **No screen context in answers** — Cluely's "Get Answer" for coding/Excel/screens is a key differentiator. momor captures screenshots but never feeds them into the answer pipeline.
 
-### Top 5 Easiest Areas Where Natively Can Beat Cluely
+### Top 5 Easiest Areas Where momor Can Beat Cluely
 
-1. **Anti-AI-tell post-processing** — Natively's `reduceDashes()` and filler phrase stripping are better than Cluely's output quality. Make this a marketing point.
+1. **Anti-AI-tell post-processing** — momor's `reduceDashes()` and filler phrase stripping are better than Cluely's output quality. Make this a marketing point.
 
-2. **Local Whisper STT** — Natively's local Whisper integration works offline. Cluely is cloud-only. Market this for privacy-sensitive users.
+2. **Local Whisper STT** — momor's local Whisper integration works offline. Cluely is cloud-only. Market this for privacy-sensitive users.
 
-3. **Open-source transparency** — Cluely is closed. Natively can build trust through open development, something Cluely can't match.
+3. **Open-source transparency** — Cluely is closed. momor can build trust through open development, something Cluely can't match.
 
-4. **Multi-provider fallback** — Natively routes across Gemini/Groq/OpenAI/Claude/Ollama. Cluely is single-provider. Natively's resilience is architecturally superior.
+4. **Multi-provider fallback** — momor routes across Gemini/Groq/OpenAI/Claude/Ollama. Cluely is single-provider. momor's resilience is architecturally superior.
 
-5. **Mode prompt customization** — Natively lets users edit mode system prompts directly. Cluely's mode customization is more constrained. Power users will prefer Natively's flexibility.
+5. **Mode prompt customization** — momor lets users edit mode system prompts directly. Cluely's mode customization is more constrained. Power users will prefer momor's flexibility.
 
 ### What to Build Next, in Exact Order
 
@@ -979,6 +1057,6 @@ But missing:
 
 ## Appendix: Critical Security Note
 
-**API key `natively_sk_[REDACTED]` appears in research documentation (`cluelyresearch.md`). Rotate this key immediately.**
+**API key `momor_sk_[REDACTED]` appears in research documentation (`cluelyresearch.md`). Rotate this key immediately.**
 
 Additionally, the `.env` file in the repository root should be checked for actual credential content and removed from git tracking if it contains real keys.

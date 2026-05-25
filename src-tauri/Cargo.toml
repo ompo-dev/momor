@@ -1,0 +1,39 @@
+[package]
+name = "momor_tauri"
+version = "2.6.0"
+description = "momor desktop app migrated to Tauri"
+authors = ["momor"]
+license = "AGPL-3.0"
+repository = "https://github.com/momor-AI-assistant/momor-cluely-ai-assistant"
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "momor_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6.0"
+image = "0.25"
+parking_lot = "0.12"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+screenshots = "0.8"
+tauri = { version = "2.11.2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-log = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+uuid = { version = "1.18", features = ["v4"] }

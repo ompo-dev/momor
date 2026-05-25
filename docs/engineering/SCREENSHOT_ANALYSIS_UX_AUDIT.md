@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-05-15
 **Commit:** `43ae233d7148`
-**Surface inspected:** `src/components/NativelyInterface.tsx`,
+**Surface inspected:** `src/components/momorInterface.tsx`,
 `src/components/Queue/`, `src/_pages/`, `src/hooks/useShortcuts.ts`,
 `src/components/SettingsOverlay.tsx`, `src/components/SettingsPopup.tsx`.
 
@@ -13,7 +13,7 @@
 **No.** Grep across `src/` returns zero matches for "Use current screen",
 "Use Screen", `useScreen`, `UseScreen`, `currentScreen`. The user can:
 
-- Take a screenshot manually (`⌘+H` / tray menu) and *then* press an action
+- Take a screenshot manually (`⌘+H` / tray menu) and _then_ press an action
   button — that screenshot becomes the attachment.
 - Take a selective screenshot via the cropper (`⌘+Shift+H`).
 - Trigger `general:capture-and-process` (global shortcut, configurable) which
@@ -27,14 +27,14 @@ the live question" without a prior screenshot step.
 
 **Yes — partial.**
 
-`NativelyInterface.tsx:3101-3104` renders a `Monitor`-icon pill with four states:
+`momorInterface.tsx:3101-3104` renders a `Monitor`-icon pill with four states:
 
-| `screenContextStatus` | Visible label | Color tone |
-|---|---|---|
-| `not_available` (default) | "No screen context" | neutral |
-| `available` | "OCR attached" | ok (green) |
-| `failed` | "OCR unavailable" | warn (yellow) |
-| `attachedContext.length > 0` | "N screen context" | neutral |
+| `screenContextStatus`        | Visible label       | Color tone    |
+| ---------------------------- | ------------------- | ------------- |
+| `not_available` (default)    | "No screen context" | neutral       |
+| `available`                  | "OCR attached"      | ok (green)    |
+| `failed`                     | "OCR unavailable"   | warn (yellow) |
+| `attachedContext.length > 0` | "N screen context"  | neutral       |
 
 Tooltip text explains the state ("Attached screenshots will be OCR processed
 and sent as untrusted screen context when you send this turn"). Good. But
@@ -63,7 +63,7 @@ The `<screen_context>` block is purely backend evidence.
 
 **Yes — for one error class.**
 
-`NativelyInterface.tsx:3111-3143` shows a Screen Recording warning banner
+`momorInterface.tsx:3111-3143` shows a Screen Recording warning banner
 with an "Open Settings" button that deep-links to
 `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`.
 
@@ -91,6 +91,7 @@ bubble up as console errors and a generic system message in chat.
 **Yes — but it does nothing screen-related.**
 
 `DynamicActionDetector.ts:273-278` declares a trigger:
+
 ```ts
 {
   type: 'screen_coding_problem',
@@ -103,7 +104,8 @@ bubble up as console errors and a generic system message in chat.
 ```
 
 When this chip surfaces in `DynamicActionBar` and the user accepts it:
-- `NativelyInterface.tsx:3185` calls
+
+- `momorInterface.tsx:3185` calls
   `handleWhatToSay(action.promptInstruction)`.
 - `handleWhatToSay` runs **without any attached screenshot** (it consults
   `attachedContext`, which is empty unless the user already took one).
@@ -136,22 +138,22 @@ does not provide.
   "Brainstorm". None of them say "look at the screen". The cluely-style
   prompt "Solve what I'm looking at" doesn't exist.
 - The screenshot preview in the attachment area
-  (`NativelyInterface.tsx:3311-3329`) does communicate "yes, the AI will
+  (`momorInterface.tsx:3311-3329`) does communicate "yes, the AI will
   see this", but only once you have already taken a screenshot manually.
 
 ---
 
 ## UI gap list
 
-| # | Severity | Gap | Suggested fix |
-|---|---|---|---|
-| 1 | **P0** | "Answer from screen" dynamic chip does not capture the screen | When the chip is accepted, call `take-screenshot` first, then pass that path into `generateWhatToSay` |
-| 2 | **P0** | No visible "Use current screen" button | Add a top-level pill or icon button (icon: `Monitor`) that runs `take-screenshot` then `generateWhatToSay` with the resulting path |
-| 3 | P1 | Code Hint / Brainstorm don't update `screenContextStatus` | Surface OCR status (even when skipped) so the user understands which features used OCR |
-| 4 | P1 | Wrong-display capture is invisible (silently uses primary) | When `display_id` lookup falls back, emit a "Captured: <display name>" toast |
-| 5 | P1 | Provider has no vision → image dropped silently | Disable / dim the screenshot attach button + show "Active model doesn't support images — switch model" toast when a vision-incapable provider is active |
-| 6 | P1 | Screen-permission denied has no dedicated banner | Wire `assertScreenRecordingPermission` errors to a dedicated `screen-permission-denied` IPC event with its own banner |
-| 7 | P2 | "OCR attached" is jargon | Replace with "Screen text read ✓" / "Couldn't read screen" |
-| 8 | P2 | No staleness indicator | Show `${ageMinutes}m ago` under the attachment preview, color it amber if > 5 minutes |
-| 9 | P2 | No provenance in the answer body | When `screenContextStatus === 'available'`, prepend or annotate the AI message with a tiny "Saw your screen" badge |
-| 10 | P3 | Capture-and-process shortcut uses Gemini chat, not the OCR-aware pipeline | Re-route it through `generate-what-to-say` so it reuses the same `<screen_context>` block |
+| #   | Severity | Gap                                                                       | Suggested fix                                                                                                                                           |
+| --- | -------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **P0**   | "Answer from screen" dynamic chip does not capture the screen             | When the chip is accepted, call `take-screenshot` first, then pass that path into `generateWhatToSay`                                                   |
+| 2   | **P0**   | No visible "Use current screen" button                                    | Add a top-level pill or icon button (icon: `Monitor`) that runs `take-screenshot` then `generateWhatToSay` with the resulting path                      |
+| 3   | P1       | Code Hint / Brainstorm don't update `screenContextStatus`                 | Surface OCR status (even when skipped) so the user understands which features used OCR                                                                  |
+| 4   | P1       | Wrong-display capture is invisible (silently uses primary)                | When `display_id` lookup falls back, emit a "Captured: <display name>" toast                                                                            |
+| 5   | P1       | Provider has no vision → image dropped silently                           | Disable / dim the screenshot attach button + show "Active model doesn't support images — switch model" toast when a vision-incapable provider is active |
+| 6   | P1       | Screen-permission denied has no dedicated banner                          | Wire `assertScreenRecordingPermission` errors to a dedicated `screen-permission-denied` IPC event with its own banner                                   |
+| 7   | P2       | "OCR attached" is jargon                                                  | Replace with "Screen text read ✓" / "Couldn't read screen"                                                                                              |
+| 8   | P2       | No staleness indicator                                                    | Show `${ageMinutes}m ago` under the attachment preview, color it amber if > 5 minutes                                                                   |
+| 9   | P2       | No provenance in the answer body                                          | When `screenContextStatus === 'available'`, prepend or annotate the AI message with a tiny "Saw your screen" badge                                      |
+| 10  | P3       | Capture-and-process shortcut uses Gemini chat, not the OCR-aware pipeline | Re-route it through `generate-what-to-say` so it reuses the same `<screen_context>` block                                                               |

@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface ReleaseNoteSection {
     title: string;
@@ -27,6 +28,7 @@ interface UpdateModalProps {
 }
 
 const CopyBlock = ({ command }: { command: string }) => {
+    const { t } = useTranslation();
     const [copied, setCopied] = React.useState(false);
     const handleCopy = () => {
         navigator.clipboard.writeText(command);
@@ -41,12 +43,12 @@ const CopyBlock = ({ command }: { command: string }) => {
             <button
                 onClick={handleCopy}
                 className="h-6 px-2.5 rounded-md bg-white/5 hover:bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors border border-white/5 flex-shrink-0"
-                title="Copy to clipboard"
+                title={t('overlay.copyToClipboard')}
             >
                 {copied ? (
-                    <span className="text-[10px] font-semibold text-green-400">Copied</span>
+                    <span className="text-[10px] font-semibold text-green-400">{t('update.copiedLabel', 'Copied')}</span>
                 ) : (
-                    <span className="text-[10px] font-medium text-white/50 group-hover:text-white/80">Copy</span>
+                    <span className="text-[10px] font-medium text-white/50 group-hover:text-white/80">{t('update.copyLabel', 'Copy')}</span>
                 )}
             </button>
         </div>
@@ -64,6 +66,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
     errorMessage,
     instructionsArch
 }) => {
+    const { t } = useTranslation();
     // Helper to format version string
     const formatVersion = (v: string) => {
         if (!v) return 'Unknown';
@@ -84,7 +87,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
     };
 
     const handleCopyCommand = () => {
-        navigator.clipboard.writeText('xattr -cr /Applications/Natively.app');
+        navigator.clipboard.writeText('xattr -cr /Applications/Momor.app');
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -160,7 +163,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                             <div className="p-8 flex flex-col items-center justify-center h-full text-center">
                                 <div className="space-y-2 mb-6">
                                     <h2 className="text-[17px] font-semibold text-white tracking-tight">
-                                        Update Failed
+                                        {t('update.updateFailed')}
                                     </h2>
                                     {errorMessage && (
                                         <p className="text-[13px] text-red-400 font-medium">
@@ -168,37 +171,37 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         </p>
                                     )}
                                     <p className="text-[13px] text-white/40">
-                                        Check your internet connection or download the update manually from GitHub.
+                                        {t('update.checkConnection')}
                                     </p>
                                 </div>
                                 <button
                                     onClick={onDismiss}
                                     className="px-5 py-[6px] bg-white/10 hover:bg-white/20 text-white text-[13px] font-medium rounded-lg transition-colors"
                                 >
-                                    Close
+                                    {t('update.close')}
                                 </button>
                             </div>
                         ) : status === 'instructions' ? (
                             <div className="p-8 flex flex-col h-full relative text-left w-full max-w-full">
                                 <div className="space-y-1.5 mb-5 text-center mt-2">
                                     <h2 className="text-[17px] font-semibold text-white tracking-tight">
-                                        Manual Update Required
+                                        {t('update.manualUpdateRequired')}
                                     </h2>
                                     <p className="text-[13px] text-white/40 font-medium leading-relaxed">
-                                        The download has started in your browser. Follow these steps to install the update:
+                                        {t('update.downloadStarted')}
                                     </p>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-2 w-full">
                                     <div className="space-y-1 w-full">
-                                        <p className="text-[12px] font-medium text-white/80">1. Clear quarantine on the downloaded file:</p>
-                                        <CopyBlock command={`xattr -cr ~/Downloads/Natively-${displayVersion.replace('v', '')}-${instructionsArch || 'arm64'}.dmg`} />
+                                        <p className="text-[12px] font-medium text-white/80">{t('update.clearQuarantine')}</p>
+                                        <CopyBlock command={`xattr -cr ~/Downloads/Momor-${displayVersion.replace('v', '')}-${instructionsArch || 'arm64'}.dmg`} />
                                     </div>
                                     <div className="space-y-1 mt-1 pl-0.5">
-                                        <p className="text-[12px] font-medium text-white/80">2. Open the file and install Natively.</p>
+                                        <p className="text-[12px] font-medium text-white/80">{t('update.openInstall')}</p>
                                     </div>
                                     <div className="space-y-1 mt-3 w-full">
-                                        <p className="text-[12px] font-medium text-white/80">3. Clear quarantine on the installed app:</p>
-                                        <CopyBlock command="xattr -cr /Applications/Natively.app" />
+                                        <p className="text-[12px] font-medium text-white/80">{t('update.clearQuarantineInstalled')}</p>
+                                        <CopyBlock command="xattr -cr /Applications/Momor.app" />
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-center mt-auto w-full">
@@ -206,7 +209,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         onClick={onDismiss}
                                         className="px-6 py-[6px] bg-white/10 hover:bg-white/20 text-white text-[13px] font-medium rounded-lg transition-colors w-[200px]"
                                     >
-                                        Done
+                                        {t('update.done')}
                                     </button>
                                 </div>
                             </div>
@@ -216,10 +219,10 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                 {/* 1. Header Text */}
                                 <div className="space-y-1.5 mb-8">
                                     <h2 className="text-[17px] font-semibold text-white tracking-tight">
-                                        Downloading Update...
+                                        {t('update.downloadingUpdate')}
                                     </h2>
                                     <p className="text-[13px] text-white/40 font-medium">
-                                        {downloadProgress < 100 ? 'Please wait while we prepare the update.' : 'Finalizing package...'}
+                                        {downloadProgress < 100 ? t('update.pleaseWait') : t('update.finalizing')}
                                     </p>
                                 </div>
 
@@ -234,10 +237,10 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         </div>
                                         <div className="space-y-0.5">
                                             <p className="text-[12px] font-medium text-white/80 leading-tight">
-                                                If macOS says "App is damaged"
+                                                {t('update.appDamaged')}
                                             </p>
                                             <p className="text-[11px] text-white/40 leading-snug">
-                                                Move app to Applications folder, then run:
+                                                {t('update.moveToApplications')}
                                             </p>
                                         </div>
                                     </div>
@@ -245,17 +248,17 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                     {/* Code Block with Copy */}
                                     <div className="flex items-center justify-between bg-black/20 rounded-lg pl-3 pr-1.5 py-1.5 border border-white/[0.03] group hover:border-white/10 transition-colors">
                                         <code className="text-[10px] font-mono text-blue-400 truncate mr-2 select-all">
-                                            xattr -cr /Applications/Natively.app
+                                            xattr -cr /Applications/Momor.app
                                         </code>
                                         <button
                                             onClick={handleCopyCommand}
                                             className="h-6 px-2.5 rounded-md bg-white/5 hover:bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors border border-white/5"
-                                            title="Copy to clipboard"
+                                            title={t('overlay.copyToClipboard')}
                                         >
                                             {copied ? (
-                                                <span className="text-[10px] font-semibold text-green-400">Copied</span>
+                                                <span className="text-[10px] font-semibold text-green-400">{t('update.copiedLabel', 'Copied')}</span>
                                             ) : (
-                                                <span className="text-[10px] font-medium text-white/50 group-hover:text-white/80">Copy</span>
+                                                <span className="text-[10px] font-medium text-white/50 group-hover:text-white/80">{t('update.copyLabel', 'Copy')}</span>
                                             )}
                                         </button>
                                     </div>
@@ -272,7 +275,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         />
                                     </div>
                                     <p className="text-[11px] font-medium text-white/30 tabular-nums">
-                                        {Math.round(downloadProgress)}% Complete
+                                        {t('update.percentComplete', { percent: Math.round(downloadProgress) })}
                                     </p>
                                 </div>
 
@@ -280,7 +283,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                     onClick={onDismiss}
                                     className="text-[13px] font-medium text-white/30 hover:text-white/60 transition-colors mt-auto mb-1"
                                 >
-                                    Hide
+                                    {t('update.hide')}
                                 </button>
                             </div>
                         ) : (
@@ -288,10 +291,10 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                 {/* Header Group */}
                                 <div className="flex flex-col gap-0.5 text-center relative flex-shrink-0 pt-1">
                                     <h2 className="text-[19px] font-semibold text-white tracking-tight">
-                                        Update Available
+                                        {t('update.updateAvailable')}
                                     </h2>
                                     <p className="text-[13px] text-white/50 font-medium tracking-wide">
-                                        Version {displayVersion} is ready to install.
+                                        {t('update.versionReady', { version: displayVersion })}
                                     </p>
                                 </div>
 
@@ -305,7 +308,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                 >
                                     {showFallback ? (
                                         <p className="text-[13px] text-white/60 text-center leading-relaxed mt-8">
-                                            Includes performance improvements and bug fixes.
+                                            {t('update.performanceImprovements')}
                                         </p>
                                     ) : (
                                         <div className="space-y-5 px-1">
@@ -343,7 +346,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         onClick={onDismiss}
                                         className="text-[13px] font-medium text-white/40 hover:text-white/70 transition-colors"
                                     >
-                                        Not Now
+                                        {t('update.notNow')}
                                     </button>
 
                                     {/* Primary Action - Right Aligned, System Blue */}
@@ -352,14 +355,14 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                             onClick={() => window.electronAPI.restartAndInstall()}
                                             className="px-5 py-[6px] bg-[#007AFF] hover:bg-[#0062CC] text-white text-[13px] font-medium rounded-lg shadow-sm transition-colors"
                                         >
-                                            Restart & Install
+                                            {t('update.restartInstall')}
                                         </button>
                                     ) : (
                                         <button
                                             onClick={handleUpdateClick}
                                             className="px-5 py-[6px] bg-[#007AFF] hover:bg-[#0062CC] text-white text-[13px] font-medium rounded-lg shadow-sm transition-colors"
                                         >
-                                            Update Now
+                                            {t('update.updateNow')}
                                         </button>
                                     )}
                                 </div>

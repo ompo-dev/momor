@@ -4,6 +4,7 @@
 
 import Database from 'better-sqlite3';
 import { Worker } from 'worker_threads';
+import fs from 'fs';
 import path from 'path';
 import { Chunk } from './SemanticChunker';
 import { DatabaseManager } from '../db/DatabaseManager';
@@ -44,13 +45,37 @@ export class VectorStore {
     }
 
     /**
+     * Resolve compiled worker script path (dist-electron output).
+     */
+    private resolveWorkerPath(): string {
+        // Prefer paths relative to the Electron entry (main.js), not __dirname of an inlined module.
+        const electronRoot = path.dirname(require.main?.filename ?? __filename);
+        const candidates = [
+            path.join(electronRoot, 'rag', 'vectorSearchWorker.js'),
+            path.join(__dirname, 'rag', 'vectorSearchWorker.js'),
+            path.join(__dirname, 'vectorSearchWorker.js'),
+            path.join(process.cwd(), 'dist-electron', 'electron', 'rag', 'vectorSearchWorker.js'),
+        ];
+
+        for (const candidate of candidates) {
+            if (fs.existsSync(candidate)) {
+                console.log('[VectorStore] Using vector search worker:', candidate);
+                return candidate;
+            }
+        }
+
+        throw new Error(
+            `[VectorStore] vectorSearchWorker.js not found (tried ${candidates.join(', ')})`
+        );
+    }
+
+    /**
      * Lazily initialize the worker thread for JS fallback searches.
      * The worker is reused across all search calls.
      */
     private getWorker(): Worker {
         if (!this.worker) {
-            // Resolve the compiled worker script path (dist-electron output)
-            const workerPath = path.join(__dirname, 'vectorSearchWorker.js');
+            const workerPath = this.resolveWorkerPath();
             this.worker = new Worker(workerPath);
 
             this.worker.on('message', (msg: { type: string; requestId: number; data?: any; error?: string }) => {

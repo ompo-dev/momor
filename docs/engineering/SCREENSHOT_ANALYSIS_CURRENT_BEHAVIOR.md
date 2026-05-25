@@ -13,6 +13,7 @@ of `validateImagePath` (output captured in
 **Answer: yes — but only on one path.**
 
 Evidence:
+
 - `electron/services/screen/ScreenContextService.ts:117-134` —
   ```
   private async runOCR(imagePath: string): Promise<string> {
@@ -42,6 +43,7 @@ which is gated by the validation bug below.
 **Answer: no.**
 
 Evidence:
+
 - The only OCR engine called by name in production code is `tesseract.js`
   (`ScreenContextService.ts:118`).
 - `LLMHelper.extractProblemFromImages` (`LLMHelper.ts:782-794`) and
@@ -58,6 +60,7 @@ Evidence:
 **Answer: yes.**
 
 Evidence:
+
 - `IntelligenceEngine.runWhatShouldISay` forwards `imagePaths` into
   `whatToAnswerLLM.generateStream(..., imagePaths, screenContext, …)`
   (`IntelligenceEngine.ts:614`).
@@ -66,7 +69,7 @@ Evidence:
   (`WhatToAnswerLLM.ts:163`).
 - `LLMHelper.streamChat` dispatches to provider-specific multimodal builders
   (e.g. `streamWithOpenaiMultimodal` `LLMHelper.ts:2519`,
-  `streamWithClaudeMultimodal` `:2526`, `streamWithNatively` `:2513`,
+  `streamWithClaudeMultimodal` `:2526`, `streamWithmomor` `:2513`,
   `callOllama` with `imagePaths?.[0]` `:2484`).
 - For `runCodeHint` and `runBrainstorm`, `imagePaths` are forwarded the same
   way **but without** a `screenContext` — so it is image-only, not
@@ -77,12 +80,13 @@ Evidence:
 **Answer: partial.**
 
 Evidence:
+
 - The `ScreenContext` shape (`ScreenContextService.ts:7-13`):
   ```ts
   interface ScreenContext {
     ocrText: string;
     imagePath: string;
-    activeWindowTitle?: string;   // declared but never populated
+    activeWindowTitle?: string; // declared but never populated
     timestamp: number;
     hash: string;
   }
@@ -99,12 +103,12 @@ Evidence:
 
 The product is **option 5: partial — multiple paths**.
 
-| Trigger | Pipeline | Status |
-|---|---|---|
-| "What should I say" with attachment | Screenshot → Tesseract OCR (cached) → `<screen_context>` block + raw image to LLM | **wired but blocked by validateImagePath bug on macOS** |
-| "Code hint" / "Brainstorm" with attachment or queue | Screenshot → raw image to LLM (no OCR, no screen-context block) | works on queue fallback; renderer-supplied paths blocked by same validation bug |
-| `general:capture-and-process` shortcut | Screenshot → Gemini chat with "analyze this image" prompt | works; uses the standalone `gemini-chat-stream` IPC, **does not touch `ScreenContextService`** |
-| Dynamic action "Answer from screen" | Adds promptInstruction text only; **no screenshot, no OCR** | label is misleading; chip claims to read the screen but no screen capture happens |
+| Trigger                                             | Pipeline                                                                          | Status                                                                                         |
+| --------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| "What should I say" with attachment                 | Screenshot → Tesseract OCR (cached) → `<screen_context>` block + raw image to LLM | **wired but blocked by validateImagePath bug on macOS**                                        |
+| "Code hint" / "Brainstorm" with attachment or queue | Screenshot → raw image to LLM (no OCR, no screen-context block)                   | works on queue fallback; renderer-supplied paths blocked by same validation bug                |
+| `general:capture-and-process` shortcut              | Screenshot → Gemini chat with "analyze this image" prompt                         | works; uses the standalone `gemini-chat-stream` IPC, **does not touch `ScreenContextService`** |
+| Dynamic action "Answer from screen"                 | Adds promptInstruction text only; **no screenshot, no OCR**                       | label is misleading; chip claims to read the screen but no screen capture happens              |
 
 **Bottom line:** Tesseract OCR + structured screen-context block exists and is
 wired into the highest-trust answer path, but a `/Users/` prefix bug in

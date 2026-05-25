@@ -10,14 +10,14 @@ UI affordances called out below remain unfinished.
 
 ## What runs today (passing in this pass)
 
-| Test | What it proves | Result |
-|------|----------------|--------|
-| `OcrRealFixtures.test.mjs` (6 tests) | `OcrProviderManager.recognize()` runs the live `tesseract.js` engine; recovered text contains expected words; timeout path rejects; missing-file path rejects. | PASS (latencies p50 ~180–290 ms / fixture) |
-| `ScreenUnderstandingMode.test.mjs` (13 tests) | Routing for `auto / vision_only / ocr_only / private`. OCR is never called in `vision_only`; vision is never requested in `ocr_only`; cloud vision is never requested in `private`; `allowScreenshots:false` blocks every path. | PASS |
-| `ScreenUnderstandingService.test.mjs` (4 tests) | Hash cache reuse, invalid-path rejection, table/error extraction, technical direct-vision routing. | PASS |
-| `ScreenContextService.test.mjs` (7 tests) | Provider-manager interface, cache isolation, cache-hit path safety. | PASS |
-| `ImagePathValidation.test.mjs` (6 tests) | IPC answer / code-hint / brainstorm image-path validation, malformed payload rejection. | PASS |
-| `suggestionPromptAssembly.test.mjs` (12 tests) | Direct image-input instruction, non-vision model refusal, prompt trust boundary. | PASS |
+| Test                                            | What it proves                                                                                                                                                                                                                  | Result                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `OcrRealFixtures.test.mjs` (6 tests)            | `OcrProviderManager.recognize()` runs the live `tesseract.js` engine; recovered text contains expected words; timeout path rejects; missing-file path rejects.                                                                  | PASS (latencies p50 ~180–290 ms / fixture) |
+| `ScreenUnderstandingMode.test.mjs` (13 tests)   | Routing for `auto / vision_only / ocr_only / private`. OCR is never called in `vision_only`; vision is never requested in `ocr_only`; cloud vision is never requested in `private`; `allowScreenshots:false` blocks every path. | PASS                                       |
+| `ScreenUnderstandingService.test.mjs` (4 tests) | Hash cache reuse, invalid-path rejection, table/error extraction, technical direct-vision routing.                                                                                                                              | PASS                                       |
+| `ScreenContextService.test.mjs` (7 tests)       | Provider-manager interface, cache isolation, cache-hit path safety.                                                                                                                                                             | PASS                                       |
+| `ImagePathValidation.test.mjs` (6 tests)        | IPC answer / code-hint / brainstorm image-path validation, malformed payload rejection.                                                                                                                                         | PASS                                       |
+| `suggestionPromptAssembly.test.mjs` (12 tests)  | Direct image-input instruction, non-vision model refusal, prompt trust boundary.                                                                                                                                                | PASS                                       |
 
 ## What is not proven
 
@@ -30,7 +30,7 @@ UI affordances called out below remain unfinished.
 - **Native OCR adapters.** Apple Vision and Windows OCR are stubs; all macOS
   OCR currently lands on Tesseract.
 - **`npm run test:e2e:screen-understanding`.** The script exists but runs a
-  Node-only harness against the Natively API, not the Electron app.
+  Node-only harness against the momor API, not the Electron app.
 
 ## How to reproduce
 

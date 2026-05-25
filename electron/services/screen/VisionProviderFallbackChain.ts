@@ -8,7 +8,7 @@
 // telemetry. The first provider that returns non-empty output wins.
 //
 // Provider order (vision_first / vision_only):
-//   1. Natively API (if configured)
+//   1. momor API (if configured)
 //   2. OpenAI vision (if configured)
 //   3. Gemini Flash vision (if configured)
 //   4. Claude vision (if configured)
@@ -27,36 +27,41 @@
 //   - Errors are classified into safe buckets (timeout, rate_limited, no_vision,
 //     provider_error, network, auth_error).
 
-import fs from 'node:fs/promises';
-import { ImageOptimizer, OptimizedImage, ProviderHint, getImageOptimizer } from './ImageOptimizer';
+import fs from "node:fs/promises";
+import {
+  ImageOptimizer,
+  OptimizedImage,
+  ProviderHint,
+  getImageOptimizer,
+} from "./ImageOptimizer";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
-export type VisionMode = 'vision_first' | 'vision_only' | 'private_vision';
+export type VisionMode = "vision_first" | "vision_only" | "private_vision";
 
 export type VisionFailureReason =
-  | 'no_vision_provider'
-  | 'all_vision_failed'
-  | 'privacy_blocked'
-  | 'scope_blocked'
-  | 'provider_timeout';
+  | "no_vision_provider"
+  | "all_vision_failed"
+  | "privacy_blocked"
+  | "scope_blocked"
+  | "provider_timeout";
 
 export type VisionSkipReason =
-  | 'not_configured'
-  | 'no_vision'
-  | 'privacy_blocked'
-  | 'scope_blocked'
-  | 'rate_limited';
+  | "not_configured"
+  | "no_vision"
+  | "privacy_blocked"
+  | "scope_blocked"
+  | "rate_limited";
 
 export type VisionErrorClass =
-  | 'timeout'
-  | 'rate_limited'
-  | 'auth_error'
-  | 'network'
-  | 'provider_error'
-  | 'no_vision'
-  | 'invalid_payload'
-  | 'unknown';
+  | "timeout"
+  | "rate_limited"
+  | "auth_error"
+  | "network"
+  | "provider_error"
+  | "no_vision"
+  | "invalid_payload"
+  | "unknown";
 
 export interface VisionProviderAttempt {
   provider: string;
@@ -82,15 +87,15 @@ export interface VisionFallbackResult {
 // decoupled from LLMHelper — callers inject this configuration so tests can
 // substitute fake providers without bringing up the whole LLM stack.
 export interface VisionProviderConfig {
-  id: string;                                     // unique provider id, used in telemetry
-  displayName: string;                            // e.g. "Natively API"
-  modelId?: string;                               // resolved model id for telemetry
-  isLocal: boolean;                               // true for ollama / codex local / approved-local-custom
-  isConfigured: boolean;                          // API key / runtime available
-  supportsVision: boolean;                        // selected model is vision-capable
-  scopeAllowsScreenshots: boolean;                // per-provider data scope check
-  timeoutMs?: number;                             // override default 12s
-  hint: ProviderHint;                             // used by ImageOptimizer
+  id: string; // unique provider id, used in telemetry
+  displayName: string; // e.g. "momor API"
+  modelId?: string; // resolved model id for telemetry
+  isLocal: boolean; // true for ollama / codex local / approved-local-custom
+  isConfigured: boolean; // API key / runtime available
+  supportsVision: boolean; // selected model is vision-capable
+  scopeAllowsScreenshots: boolean; // per-provider data scope check
+  timeoutMs?: number; // override default 12s
+  hint: ProviderHint; // used by ImageOptimizer
   /**
    * Provider-specific invocation. Receives an optimized image and the prompt.
    * Returns the raw model output text. Should throw on failure with a message
@@ -108,24 +113,34 @@ export interface VisionInvocationParams {
 
 export interface RunFallbackParams {
   imagePath: string;
-  cacheKey?: string;                              // typically perceptual hash for optimizer cache
+  cacheKey?: string; // typically perceptual hash for optimizer cache
   mode: VisionMode;
-  providers: VisionProviderConfig[];              // order matters — callers preorder
+  providers: VisionProviderConfig[]; // order matters — callers preorder
   systemPrompt: string;
   userPrompt: string;
   optimizer?: ImageOptimizer;
-  optimizationProfile?: 'fast' | 'balanced' | 'technical' | 'best';
-  perProviderTimeoutMs?: number;                  // default 12_000
-  totalDeadlineMs?: number;                       // optional ceiling across all attempts
+  optimizationProfile?: "fast" | "balanced" | "technical" | "best";
+  perProviderTimeoutMs?: number; // default 12_000
+  totalDeadlineMs?: number; // optional ceiling across all attempts
   telemetry?: (event: VisionTelemetryEvent) => void;
 }
 
 export type VisionTelemetryEvent =
-  | { type: 'vision_attempt'; provider: string; model?: string }
-  | { type: 'vision_success'; provider: string; model?: string; durationMs: number }
-  | { type: 'vision_fallback'; from: string; to: string }
-  | { type: 'vision_skipped'; provider: string; reason: VisionSkipReason }
-  | { type: 'vision_failed'; provider: string; errorClass: VisionErrorClass; durationMs: number };
+  | { type: "vision_attempt"; provider: string; model?: string }
+  | {
+      type: "vision_success";
+      provider: string;
+      model?: string;
+      durationMs: number;
+    }
+  | { type: "vision_fallback"; from: string; to: string }
+  | { type: "vision_skipped"; provider: string; reason: VisionSkipReason }
+  | {
+      type: "vision_failed";
+      provider: string;
+      errorClass: VisionErrorClass;
+      durationMs: number;
+    };
 
 const DEFAULT_PER_PROVIDER_TIMEOUT_MS = 12_000;
 
@@ -148,10 +163,13 @@ const DEFAULT_PER_PROVIDER_TIMEOUT_MS = 12_000;
  *     (or 'privacy_blocked' / 'scope_blocked' when those reasons dominate).
  *   - If providers were attempted but none succeeded, returns 'all_vision_failed'.
  */
-export async function runVisionFallback(params: RunFallbackParams): Promise<VisionFallbackResult> {
+export async function runVisionFallback(
+  params: RunFallbackParams,
+): Promise<VisionFallbackResult> {
   const started = Date.now();
   const optimizer = params.optimizer ?? getImageOptimizer();
-  const perProviderTimeoutMs = params.perProviderTimeoutMs ?? DEFAULT_PER_PROVIDER_TIMEOUT_MS;
+  const perProviderTimeoutMs =
+    params.perProviderTimeoutMs ?? DEFAULT_PER_PROVIDER_TIMEOUT_MS;
   const totalDeadlineMs = params.totalDeadlineMs;
   const attempts: VisionProviderAttempt[] = [];
 
@@ -162,7 +180,7 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
     return {
       ok: false,
       attempts: [],
-      failureReason: 'all_vision_failed',
+      failureReason: "all_vision_failed",
       durationMs: Date.now() - started,
     };
   }
@@ -182,10 +200,14 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         model: provider.modelId,
         ok: false,
         skipped: true,
-        skipReason: 'not_configured',
+        skipReason: "not_configured",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_skipped', provider: provider.id, reason: 'not_configured' });
+      params.telemetry?.({
+        type: "vision_skipped",
+        provider: provider.id,
+        reason: "not_configured",
+      });
       continue;
     }
 
@@ -196,10 +218,14 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         model: provider.modelId,
         ok: false,
         skipped: true,
-        skipReason: 'no_vision',
+        skipReason: "no_vision",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_skipped', provider: provider.id, reason: 'no_vision' });
+      params.telemetry?.({
+        type: "vision_skipped",
+        provider: provider.id,
+        reason: "no_vision",
+      });
       continue;
     }
 
@@ -210,25 +236,33 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         model: provider.modelId,
         ok: false,
         skipped: true,
-        skipReason: 'scope_blocked',
+        skipReason: "scope_blocked",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_skipped', provider: provider.id, reason: 'scope_blocked' });
+      params.telemetry?.({
+        type: "vision_skipped",
+        provider: provider.id,
+        reason: "scope_blocked",
+      });
       sawScopeBlocked = true;
       continue;
     }
 
     // 4. privacy check: private_vision forbids any non-local provider
-    if (params.mode === 'private_vision' && !provider.isLocal) {
+    if (params.mode === "private_vision" && !provider.isLocal) {
       attempts.push({
         provider: provider.id,
         model: provider.modelId,
         ok: false,
         skipped: true,
-        skipReason: 'privacy_blocked',
+        skipReason: "privacy_blocked",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_skipped', provider: provider.id, reason: 'privacy_blocked' });
+      params.telemetry?.({
+        type: "vision_skipped",
+        provider: provider.id,
+        reason: "privacy_blocked",
+      });
       sawPrivacyBlocked = true;
       continue;
     }
@@ -239,10 +273,15 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         provider: provider.id,
         model: provider.modelId,
         ok: false,
-        errorClass: 'timeout',
+        errorClass: "timeout",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_failed', provider: provider.id, errorClass: 'timeout', durationMs: 0 });
+      params.telemetry?.({
+        type: "vision_failed",
+        provider: provider.id,
+        errorClass: "timeout",
+        durationMs: 0,
+      });
       break;
     }
 
@@ -250,7 +289,7 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
     let optimized: OptimizedImage;
     try {
       optimized = await optimizer.optimize(params.imagePath, {
-        profile: params.optimizationProfile || 'balanced',
+        profile: params.optimizationProfile || "balanced",
         provider: provider.hint,
         cacheKey: params.cacheKey,
       });
@@ -259,21 +298,33 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         provider: provider.id,
         model: provider.modelId,
         ok: false,
-        errorClass: 'invalid_payload',
+        errorClass: "invalid_payload",
         durationMs: 0,
       });
-      params.telemetry?.({ type: 'vision_failed', provider: provider.id, errorClass: 'invalid_payload', durationMs: 0 });
+      params.telemetry?.({
+        type: "vision_failed",
+        provider: provider.id,
+        errorClass: "invalid_payload",
+        durationMs: 0,
+      });
       continue;
     }
 
     // 7. invoke with timeout
     sawAtLeastOneAttempt = true;
-    params.telemetry?.({ type: 'vision_attempt', provider: provider.id, model: provider.modelId });
+    params.telemetry?.({
+      type: "vision_attempt",
+      provider: provider.id,
+      model: provider.modelId,
+    });
 
     const providerStarted = Date.now();
     const controller = new AbortController();
     const timeoutMs = provider.timeoutMs ?? perProviderTimeoutMs;
-    const timer = setTimeout(() => controller.abort(new Error('per-provider-timeout')), timeoutMs);
+    const timer = setTimeout(
+      () => controller.abort(new Error("per-provider-timeout")),
+      timeoutMs,
+    );
 
     try {
       const output = await provider.invoke({
@@ -285,14 +336,19 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
       clearTimeout(timer);
       const durationMs = Date.now() - providerStarted;
 
-      if (typeof output === 'string' && output.trim().length > 0) {
+      if (typeof output === "string" && output.trim().length > 0) {
         attempts.push({
           provider: provider.id,
           model: provider.modelId,
           ok: true,
           durationMs,
         });
-        params.telemetry?.({ type: 'vision_success', provider: provider.id, model: provider.modelId, durationMs });
+        params.telemetry?.({
+          type: "vision_success",
+          provider: provider.id,
+          model: provider.modelId,
+          durationMs,
+        });
         return {
           ok: true,
           providerUsed: provider.id,
@@ -308,13 +364,22 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         provider: provider.id,
         model: provider.modelId,
         ok: false,
-        errorClass: 'provider_error',
+        errorClass: "provider_error",
         durationMs,
       });
-      params.telemetry?.({ type: 'vision_failed', provider: provider.id, errorClass: 'provider_error', durationMs });
+      params.telemetry?.({
+        type: "vision_failed",
+        provider: provider.id,
+        errorClass: "provider_error",
+        durationMs,
+      });
       if (i < params.providers.length - 1) {
         const next = params.providers[i + 1];
-        params.telemetry?.({ type: 'vision_fallback', from: provider.id, to: next.id });
+        params.telemetry?.({
+          type: "vision_fallback",
+          from: provider.id,
+          to: next.id,
+        });
       }
     } catch (err: any) {
       clearTimeout(timer);
@@ -327,10 +392,19 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
         errorClass,
         durationMs,
       });
-      params.telemetry?.({ type: 'vision_failed', provider: provider.id, errorClass, durationMs });
+      params.telemetry?.({
+        type: "vision_failed",
+        provider: provider.id,
+        errorClass,
+        durationMs,
+      });
       if (i < params.providers.length - 1) {
         const next = params.providers[i + 1];
-        params.telemetry?.({ type: 'vision_fallback', from: provider.id, to: next.id });
+        params.telemetry?.({
+          type: "vision_fallback",
+          from: provider.id,
+          to: next.id,
+        });
       }
     }
   }
@@ -338,13 +412,17 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
   // No provider succeeded. Pick the most specific failure reason.
   let failureReason: VisionFailureReason;
   if (sawAtLeastOneAttempt) {
-    failureReason = 'all_vision_failed';
-  } else if (params.mode === 'private_vision' && sawPrivacyBlocked && !sawScopeBlocked) {
-    failureReason = 'privacy_blocked';
+    failureReason = "all_vision_failed";
+  } else if (
+    params.mode === "private_vision" &&
+    sawPrivacyBlocked &&
+    !sawScopeBlocked
+  ) {
+    failureReason = "privacy_blocked";
   } else if (sawScopeBlocked && !sawPrivacyBlocked) {
-    failureReason = 'scope_blocked';
+    failureReason = "scope_blocked";
   } else {
-    failureReason = 'no_vision_provider';
+    failureReason = "no_vision_provider";
   }
 
   return {
@@ -358,14 +436,50 @@ export async function runVisionFallback(params: RunFallbackParams): Promise<Visi
 // Map a raw error onto one of our redacted error classes. No message bodies are
 // exposed to telemetry — only the class.
 function classifyError(err: any, aborted: boolean): VisionErrorClass {
-  if (aborted) return 'timeout';
-  const msg = String(err?.message || err || '').toLowerCase();
-  if (msg.includes('timeout') || msg.includes('aborted') || msg.includes('etimedout')) return 'timeout';
-  if (msg.includes('429') || msg.includes('rate') || msg.includes('quota')) return 'rate_limited';
-  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('api key') || msg.includes('invalid_api')) return 'auth_error';
-  if (msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('network') || msg.includes('fetch failed')) return 'network';
-  if (msg.includes('does not support') || msg.includes('no vision') || msg.includes('image not supported')) return 'no_vision';
-  if (msg.includes('payload') || msg.includes('too large') || msg.includes('413')) return 'invalid_payload';
-  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) return 'provider_error';
-  return 'unknown';
+  if (aborted) return "timeout";
+  const msg = String(err?.message || err || "").toLowerCase();
+  if (
+    msg.includes("timeout") ||
+    msg.includes("aborted") ||
+    msg.includes("etimedout")
+  )
+    return "timeout";
+  if (msg.includes("429") || msg.includes("rate") || msg.includes("quota"))
+    return "rate_limited";
+  if (
+    msg.includes("401") ||
+    msg.includes("403") ||
+    msg.includes("unauthorized") ||
+    msg.includes("forbidden") ||
+    msg.includes("api key") ||
+    msg.includes("invalid_api")
+  )
+    return "auth_error";
+  if (
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("network") ||
+    msg.includes("fetch failed")
+  )
+    return "network";
+  if (
+    msg.includes("does not support") ||
+    msg.includes("no vision") ||
+    msg.includes("image not supported")
+  )
+    return "no_vision";
+  if (
+    msg.includes("payload") ||
+    msg.includes("too large") ||
+    msg.includes("413")
+  )
+    return "invalid_payload";
+  if (
+    msg.includes("500") ||
+    msg.includes("502") ||
+    msg.includes("503") ||
+    msg.includes("504")
+  )
+    return "provider_error";
+  return "unknown";
 }

@@ -33,21 +33,21 @@ If you see "App is damaged":
 
 - **For .zip downloads:**
   1. Move the app to your Applications folder.
-  2. Open Terminal and run: `xattr -cr /Applications/Natively.app`
+  2. Open Terminal and run: `xattr -cr /Applications/momor.app`
 
 - **For .dmg downloads:**
   1. Open Terminal and run:
      ```bash
-     xattr -cr ~/Downloads/Natively-2.0.2-arm64.dmg
+     xattr -cr ~/Downloads/momor-2.0.2-arm64.dmg
      # Or for Intel Macs:
-     xattr -cr ~/Downloads/Natively-2.0.2-x64.dmg
+     xattr -cr ~/Downloads/momor-2.0.2-x64.dmg
      ```
-  2. Install the natively.dmg
-  3. Open Terminal and run: `xattr -cr /Applications/Natively.app`
+  2. Install the momor.dmg
+  3. Open Terminal and run: `xattr -cr /Applications/momor.app`
 
 ## ⚠️Windows Installation (Unsigned Build)
 
-When running the installer on Windows, you might see a "Windows protected your PC" warning from Microsoft Defender SmartScreen saying it prevented an unrecognized app from starting. 
+When running the installer on Windows, you might see a "Windows protected your PC" warning from Microsoft Defender SmartScreen saying it prevented an unrecognized app from starting.
 
 Since this is an unsigned build, this is expected. You can safely ignore it by clicking **More info** and then **Run anyway**.
 

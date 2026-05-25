@@ -1,0 +1,32 @@
+.{
+    .id ="dev.zero_native.zero-native-poc",
+    .name ="zero-native-poc",
+    .display_name ="Zero Native Poc",
+    .version = "0.1.0",
+    .icons = .{ "assets/icon.ico", "assets/icon.icns" },
+    .platforms = .{ "macos", "linux", "windows" },
+    .permissions = .{},
+    .capabilities = .{ "webview" },
+    .frontend = .{
+        .dist ="frontend/dist",
+        .entry = "index.html",
+        .spa_fallback = true,
+        .dev = .{
+            .url ="http://127.0.0.1:5173/",
+            .command = .{ "npx", "vite", "--host", "127.0.0.1" },
+            .ready_path = "/",
+            .timeout_ms = 30000,
+        },
+    },
+    .security = .{
+        .navigation = .{
+            .allowed_origins = .{ "zero://app", "zero://inline", "http://127.0.0.1:5173" },
+            .external_links = .{ .action = "deny" },
+        },
+    },
+    .web_engine = "chromium",
+    .cef = .{ .dir = "third_party/cef/windows", .auto_install = false },
+    .windows = .{
+        .{ .label = "main", .title ="Zero Native Poc", .width = 720, .height = 480, .restore_state = true },
+    },
+}

@@ -92,6 +92,12 @@ export class IntelligenceManager extends EventEmitter {
         this.session.setMeetingMetadata(metadata);
     }
 
+    /** Clear prior meeting transcript/context and mark a new session start time. */
+    beginMeeting(): void {
+        this.session.beginMeeting();
+        this.engine.reset();
+    }
+
     addTranscript(segment: import('./SessionTracker').TranscriptSegment, skipRefinementCheck: boolean = false): void {
         if (skipRefinementCheck) {
             // Direct add without refinement detection
@@ -116,6 +122,21 @@ export class IntelligenceManager extends EventEmitter {
 
     getFormattedContext(lastSeconds: number = 120): string {
         return this.session.getFormattedContext(lastSeconds);
+    }
+
+    getFullSessionContext(): string {
+        return this.session.getFullSessionContext();
+    }
+
+    /** Full session transcript when available; otherwise recent rolling window. */
+    getLiveMeetingTranscriptForChat(): string {
+        const full = this.session.getFullSessionContext().trim();
+        if (full) return full;
+        return this.session.getFormattedContext(180);
+    }
+
+    setActiveListeningMode(enabled: boolean): void {
+        this.session.setActiveListeningMode(enabled);
     }
 
     getLastInterviewerTurn(): string | null {

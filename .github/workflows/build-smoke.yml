@@ -32,13 +32,13 @@ jobs:
 
   api-smoke:
     # Runs weekly (Monday 09:00 UTC) and on demand via workflow_dispatch.
-    # Requires secrets: NATIVELY_API_KEY (or NATIVELY_TRIAL_TOKEN) set in repo.
+    # Requires secrets: momor_API_KEY (or momor_TRIAL_TOKEN) set in repo.
     # Without credentials the suite is skipped cleanly via the env gate.
     name: API Smoke (weekly)
     runs-on: macos-latest
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     schedule:
-      - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+      - cron: "0 9 * * 1" # Every Monday at 09:00 UTC
 
     steps:
       - name: Checkout
@@ -57,9 +57,9 @@ jobs:
         run: npm run build:electron
 
       - name: Run API smoke tests
-        run: npm test -- --test-name-pattern 'Natively API'
+        run: npm test -- --test-name-pattern 'momor API'
         env:
-          RUN_NATIVELY_API_E2E: ${{ secrets.RUN_NATIVELY_API_E2E }}
-          NATIVELY_API_KEY: ${{ secrets.NATIVELY_API_KEY }}
-          NATIVELY_TRIAL_TOKEN: ${{ secrets.NATIVELY_TRIAL_TOKEN }}
-          NATIVELY_API_BASE: ${{ secrets.NATIVELY_API_BASE }}
+          RUN_momor_API_E2E: ${{ secrets.RUN_momor_API_E2E }}
+          momor_API_KEY: ${{ secrets.momor_API_KEY }}
+          momor_TRIAL_TOKEN: ${{ secrets.momor_TRIAL_TOKEN }}
+          momor_API_BASE: ${{ secrets.momor_API_BASE }}

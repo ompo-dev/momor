@@ -120,7 +120,7 @@ export class CodexCliService {
   // Returns the resolved path on success so callers can persist it.
   public static async validateExecutable(input: string, timeoutMs = 10_000): Promise<{ success: boolean; error?: string; resolvedPath?: string }> {
     const tryOne = (binPath: string): Promise<{ success: boolean; error?: string }> => new Promise((resolve) => {
-      const child = spawn(binPath, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(binPath, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
       let stderr = '';
       const timer = setTimeout(() => {
         child.kill('SIGTERM');
@@ -165,7 +165,7 @@ export class CodexCliService {
     if (options.signal?.aborted) throw new Error('Codex CLI request aborted before start.');
 
     const args = this.buildArgs(options.model, options.imagePaths, options.sandboxMode);
-    const child = spawn(path, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(path, args, { stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32' });
     let stdout = '';
     let stderr = '';
     let lineBuffer = '';
@@ -279,7 +279,7 @@ export class CodexCliService {
     if (options.signal?.aborted) throw new Error('Codex CLI request aborted before start.');
 
     return new Promise((resolve, reject) => {
-      const child = spawn(path, this.buildArgs(options.model, options.imagePaths, options.sandboxMode), { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(path, this.buildArgs(options.model, options.imagePaths, options.sandboxMode), { stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32' });
       let stdout = '';
       let stderr = '';
       let settled = false;

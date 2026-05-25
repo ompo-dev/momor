@@ -13,6 +13,9 @@ interface ChannelStatus {
 interface RollingTranscriptProps {
     text: string;
     isActive?: boolean;
+    /** User microphone transcript shown below system audio */
+    userText?: string;
+    isUserActive?: boolean;
     surfaceStyle?: React.CSSProperties;
     /** System audio (interviewer) channel */
     interviewerChannel?: ChannelStatus;
@@ -22,11 +25,12 @@ interface RollingTranscriptProps {
 }
 
 const RollingTranscript: React.FC<RollingTranscriptProps> = ({
-    text, isActive = true, surfaceStyle,
+    text, isActive = true, userText = '', isUserActive = false, surfaceStyle,
     interviewerChannel, microphoneChannel,
     onCopyDiagnostics
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const userContainerRef = useRef<HTMLDivElement>(null);
     const [copied, setCopied] = useState(false);
     const [expanded, setExpanded] = useState(false);
 
@@ -60,6 +64,21 @@ const RollingTranscript: React.FC<RollingTranscriptProps> = ({
         }
     }, [text, isNormal]);
 
+    useEffect(() => {
+        if (userContainerRef.current && isNormal && userText) {
+            userContainerRef.current.scrollLeft = userContainerRef.current.scrollWidth;
+        }
+    }, [userText, isNormal]);
+
+    const showUserRow =
+        (Boolean(userText) || isUserActive) && micStatus !== 'failed';
+    const outerMaskStyle: React.CSSProperties = showUserRow
+        ? {}
+        : {
+            maskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
+        };
+
     const handleCopy = () => {
         if (onCopyDiagnostics) {
             onCopyDiagnostics();
@@ -81,14 +100,13 @@ const RollingTranscript: React.FC<RollingTranscriptProps> = ({
                 className="relative w-full overflow-hidden"
                 style={{
                     ...stateSurface,
-                    maskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
-                    WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
+                    ...outerMaskStyle,
                 }}
             >
                 {anyFailed && <div className="absolute inset-0 bg-red-500/10 stt-pulse-red" />}
                 {anyReconnecting && !anyFailed && <div className="absolute inset-0 bg-amber-500/10 stt-pulse-amber" />}
                 {/* 90% centered content */}
-                <div className="w-[90%] mx-auto pt-2">
+                <div className={`w-[90%] mx-auto pt-2 ${showUserRow ? 'pb-1.5' : ''}`}>
                     <div
                         ref={containerRef}
                         className="overflow-hidden whitespace-nowrap scroll-smooth overlay-transcript-surface transition-all duration-500 text-right"
@@ -117,6 +135,25 @@ const RollingTranscript: React.FC<RollingTranscriptProps> = ({
                         )}
 
                         </div>
+
+                    {showUserRow && (
+                        <div
+                            ref={userContainerRef}
+                            className="overflow-hidden whitespace-nowrap scroll-smooth transition-all duration-500 text-right mt-1"
+                            style={{
+                                maskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
+                            }}
+                        >
+                            <span className="inline-flex items-center text-[13px] italic leading-7 text-emerald-400 transition-all duration-300 drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]">
+                                {userText}
+                                {isUserActive && (
+                                    <span className="inline-flex items-center ml-2">
+                                        <span className="w-[3px] h-[3px] bg-emerald-400 rounded-full animate-pulse" />
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Error chips row — both channels visible */}

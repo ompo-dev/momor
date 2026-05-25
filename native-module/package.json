@@ -1,10 +1,12 @@
 {
-    "name": "natively-audio",
-    "version": "0.1.0",
-    "main": "index.js",
-    "types": "index.d.ts",
-    "napi": {
-        "binaryName": "index",
-        "targets": ["defaults"]
-    }
+  "name": "momor-audio",
+  "version": "0.1.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "index",
+    "targets": [
+      "defaults"
+    ]
+  }
 }

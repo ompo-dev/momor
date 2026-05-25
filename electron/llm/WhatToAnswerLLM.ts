@@ -6,6 +6,7 @@ import { TemporalContext } from "./TemporalContextBuilder";
 import { IntentResult } from "./IntentClassifier";
 import { ScreenContext } from "../services/screen/ScreenContextService";
 import { PromptAssembler } from "../services/context/PromptAssembler";
+import { UserSessionContextService } from "../services/UserSessionContextService";
 import { checkAnswerForCodeBugs } from "./CodeSanityCheck";
 
 // Dynamically imported to avoid circular dependency at module load time
@@ -130,8 +131,12 @@ ANSWER SHAPE: ${intentResult.answerShape}
                 console.warn('[WhatToAnswerLLM] ModesManager unavailable:', _err?.message);
             }
 
+            const userSessionBlock =
+                UserSessionContextService.getInstance().buildContextBlock();
+
             const assemblerBudget = 2000
                 + estimateTokens(intentContext || '')
+                + estimateTokens(userSessionBlock)
                 + estimateTokens(modeContextBlock)
                 + estimateTokens(screenContext?.ocrText || '')
                 + estimateTokens((temporalContext?.previousResponses || []).join('\n'));
@@ -172,6 +177,7 @@ ANSWER SHAPE: ${intentResult.answerShape}
                 screenContext,
                 priorResponses: temporalContext?.hasRecentResponses ? temporalContext.previousResponses : undefined,
                 intentContext,
+                userSessionContext: userSessionBlock || undefined,
                 retrievedModeContext: modeContextBlock || undefined,
                 tokenBudget: Math.max(1000, assemblerBudget),
                 systemPrompt: finalPromptOverride,

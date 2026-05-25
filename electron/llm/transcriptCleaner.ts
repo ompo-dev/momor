@@ -23,6 +23,11 @@ const ACKNOWLEDGEMENTS = new Set([
     'cool', 'great', 'nice', 'perfect', 'alright', 'all right'
 ]);
 
+/** Spoken numbers and short numeric phrases must survive cleaning (e.g. "7 9 1"). */
+function hasNumericContent(text: string): boolean {
+    return /\d/.test(text);
+}
+
 /**
  * Clean a single turn's text
  * Removes fillers, acknowledgements, and cleans up formatting
@@ -56,19 +61,31 @@ function cleanText(text: string): string {
  * Check if a turn is meaningful enough to keep
  */
 function isMeaningfulTurn(turn: TranscriptTurn, cleanedText: string): boolean {
-    // Always keep interviewer speech (priority)
-    if (turn.role === 'interviewer' && cleanedText.length >= 5) {
+    const trimmed = cleanedText.trim();
+    if (!trimmed) return false;
+
+    // Never drop spoken numbers — critical for recall / repeat-back requests.
+    if (hasNumericContent(trimmed) && trimmed.length >= 2) {
         return true;
     }
 
-    // Minimum 3 words for other roles
-    const wordCount = cleanedText.split(/\s+/).filter(w => w.length > 0).length;
+    // Always keep interviewer speech (priority)
+    if (turn.role === 'interviewer' && trimmed.length >= 3) {
+        return true;
+    }
+
+    // Keep candidate (user) speech more aggressively than filler filtering.
+    if (turn.role === 'user' && trimmed.length >= 3) {
+        return true;
+    }
+
+    // Minimum 3 words for assistant / other roles
+    const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
     if (wordCount < 3) {
         return false;
     }
 
-    // Skip pure filler turns
-    if (cleanedText.length < 10) {
+    if (trimmed.length < 10) {
         return false;
     }
 
@@ -111,22 +128,20 @@ export function sparsifyTranscript(
         return [...turns].sort((a, b) => a.timestamp - b.timestamp);
     }
 
-    // Separate by role
+    const userTurns = turns.filter(t => t.role === 'user');
     const interviewerTurns = turns.filter(t => t.role === 'interviewer');
-    const otherTurns = turns.filter(t => t.role !== 'interviewer');
+    const assistantTurns = turns.filter(t => t.role === 'assistant');
 
-    // Keep all interviewer turns if under limit
-    const result: TranscriptTurn[] = [];
-
-    // Prioritize recent interviewer turns (last 6)
+    // Always keep all candidate (ME) turns — losing them breaks recall questions.
+    const keptUser = userTurns;
     const recentInterviewer = interviewerTurns.slice(-6);
+    const remainingSlots = Math.max(
+        0,
+        maxTurns - keptUser.length - recentInterviewer.length,
+    );
+    const recentAssistant = assistantTurns.slice(-remainingSlots);
 
-    // Fill remaining with recent other turns
-    const remainingSlots = maxTurns - recentInterviewer.length;
-    const recentOther = otherTurns.slice(-remainingSlots);
-
-    // Merge and sort by timestamp
-    result.push(...recentInterviewer, ...recentOther);
+    const result = [...keptUser, ...recentInterviewer, ...recentAssistant];
     result.sort((a, b) => a.timestamp - b.timestamp);
 
     return result;
@@ -148,9 +163,29 @@ export function formatTranscriptForLLM(turns: TranscriptTurn[]): string {
  */
 export function prepareTranscriptForWhatToAnswer(
     turns: TranscriptTurn[],
-    maxTurns: number = 12
+    maxTurns: number = 16
 ): string {
     const cleaned = cleanTranscript(turns);
     const sparsified = sparsifyTranscript(cleaned, maxTurns);
     return formatTranscriptForLLM(sparsified);
+}
+
+/**
+ * Prefer the richer transcript source so short spoken numbers are not lost.
+ */
+export function resolveTranscriptForWhatToAnswer(
+    rawFormatted: string,
+    preparedFormatted: string,
+): string {
+    const raw = rawFormatted.trim();
+    const prepared = preparedFormatted.trim();
+    if (!prepared) return raw;
+    if (!raw) return prepared;
+
+    const rawDigitCount = (raw.match(/\d/g) || []).length;
+    const preparedDigitCount = (prepared.match(/\d/g) || []).length;
+    if (rawDigitCount > preparedDigitCount) return raw;
+
+    if (raw.length > prepared.length * 1.15) return raw;
+    return prepared;
 }

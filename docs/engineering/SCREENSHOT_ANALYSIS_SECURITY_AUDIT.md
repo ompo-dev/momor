@@ -30,10 +30,10 @@ userData path:
 ```
 node -e "
 const { validateImagePath } = require('./dist-electron/electron/utils/curlUtils.js');
-const userData = '/Users/evin/Library/Application Support/Natively';
+const userData = '/Users/evin/Library/Application Support/momor';
 [
-  '/Users/evin/Library/Application Support/Natively/screenshots/abc.png',
-  '/Users/evin/Library/Application Support/Natively/extra_screenshots/sel.png',
+  '/Users/evin/Library/Application Support/momor/screenshots/abc.png',
+  '/Users/evin/Library/Application Support/momor/extra_screenshots/sel.png',
   '/Users/evin/Desktop/screenshots/img.png',
   '/etc/passwd',
   'C:\\Users\\v\\evil.png',
@@ -44,9 +44,9 @@ const userData = '/Users/evin/Library/Application Support/Natively';
 Output:
 
 ```
-/Users/evin/Library/Application Support/Natively/screenshots/abc.png
+/Users/evin/Library/Application Support/momor/screenshots/abc.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
-/Users/evin/Library/Application Support/Natively/extra_screenshots/sel.png
+/Users/evin/Library/Application Support/momor/extra_screenshots/sel.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
 /Users/evin/Desktop/screenshots/img.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
@@ -59,22 +59,29 @@ C:\Users\v\evil.png
 The macOS-legitimate userData path is rejected.
 
 Root cause: `curlUtils.ts:272-278`
+
 ```ts
-if (normalizedPath.startsWith('/etc/') ||
-    normalizedPath.startsWith('/home/') ||
-    normalizedPath.startsWith('/Users/') ||
-    normalizedPath.startsWith('/var/') ||
-    normalizedPath.startsWith('/tmp/') && !normalizedPath.includes(userDataPath)) {
-  return { isValid: false, reason: 'Paths outside app directory are not allowed' };
+if (
+  normalizedPath.startsWith("/etc/") ||
+  normalizedPath.startsWith("/home/") ||
+  normalizedPath.startsWith("/Users/") ||
+  normalizedPath.startsWith("/var/") ||
+  (normalizedPath.startsWith("/tmp/") && !normalizedPath.includes(userDataPath))
+) {
+  return {
+    isValid: false,
+    reason: "Paths outside app directory are not allowed",
+  };
 }
 ```
 
 `/Users/` is rejected **unconditionally** — before the function reaches the
 `startsWith(userDataPath)` allow-list at line 285. macOS `userData` is
-`/Users/<user>/Library/Application Support/Natively`, which always starts with
+`/Users/<user>/Library/Application Support/momor`, which always starts with
 `/Users/`. The allow-list is unreachable on macOS for this prefix.
 
 The downstream user-visible effect:
+
 - When the user takes a screenshot, attaches it, and clicks "What should I say"
   with that attachment, the IPC handler rejects the path with
   `Invalid image path: Paths outside app directory are not allowed`.
@@ -83,11 +90,13 @@ The downstream user-visible effect:
 - Same for explicit-path code-hint / brainstorm calls.
 
 The fallback paths still work because they skip validation:
+
 - `generate-code-hint` and `generate-brainstorm` fall back to
   `appState.getScreenshotQueue()` (server-side state, no renderer input) and
   call the engine without revalidating (`ipcHandlers.ts:2610-2613, 2648-2651`).
 
 **Fix needed:**
+
 1. Allow paths that `path.resolve(p).startsWith(path.resolve(userDataPath) + sep)`.
    This single check supersedes the brittle `/etc/`-`/home/`-`/Users/`-`/var/`
    denylist.
@@ -132,7 +141,7 @@ the file path only (`ScreenshotHelper.ts:564, 658, 703`).
 **Status: risky.**
 
 - Paths are logged at INFO level (`ScreenshotHelper.ts:158, 461, 510, 524,
-  564, 612, 635, 658, 703, 781`).
+564, 612, 635, 658, 703, 781`).
 - Paths contain `<uuid>.png` only — no PII. But the path also encodes the
   macOS user account name (`/Users/<user>/Library/…`), which is
   pseudo-identifying.
@@ -152,7 +161,7 @@ the file path only (`ScreenshotHelper.ts:564, 658, 703`).
   cloud screenshot upload per provider; `setProviderDataScopes`
   (`ipcHandlers.ts:763`) persists the policy.
 - **Bypass:** `LLMHelper.streamChat → streamChatWithGemini` calls
-  `streamWithNatively`, `streamWithCodexCli`, `streamWithOpenaiMultimodal`,
+  `streamWithmomor`, `streamWithCodexCli`, `streamWithOpenaiMultimodal`,
   etc. with `imagePaths` directly. For Ollama the only path
   (`LLMHelper.ts:2484`) passes `imagePaths?.[0]` without any per-image scope
   check; this is safe because Ollama is local, but verify if the user
@@ -228,7 +237,7 @@ referencing the System Settings path. `desktopCapturer.getSources` errors
 
 **Status: risky.**
 
-- For Natively API uploads, images are downscaled with Sharp to ≤768 px on
+- For momor API uploads, images are downscaled with Sharp to ≤768 px on
   the long edge (`LLMHelper.ts:900-905`, "Compress before sending"). Good.
 - For OpenAI / Claude / Gemini / Ollama / cURL, the image bytes go straight
   in. No client-side size cap. A 5 MB Retina PNG triples in base64 and can
@@ -250,13 +259,13 @@ referencing the System Settings path. `desktopCapturer.getSources` errors
 
 ## Priority fix list
 
-| # | Severity | Issue | Fix |
-|---|---|---|---|
-| 1 | **P0** | `validateImagePath` rejects every macOS userData path because `/Users/` is in the prefix denylist | Replace prefix denylist with positive `path.resolve(p).startsWith(path.resolve(userDataPath)+sep)` check |
-| 2 | P0 | The "filename contains 'screenshot'" allow-list (`curlUtils.ts:290-298`) is a denylist bypass for any externally-named path | Delete the substring fallback entirely once #1 is fixed |
-| 3 | P1 | No symlink resolution — any symlink under `userData/screenshots/` is followed | Add `fs.realpath` and reject if `realpath` escapes `userData` |
-| 4 | P1 | Custom cURL provider receives screenshots without scope-policy gate | Run `assertOutboundScopes('custom', ...)` in `chatWithCurl` |
-| 5 | P2 | OCR text is XML-escaped but not run through `escapePromptInjection` | Apply the same escape used for reference files in `buildScreenContextBlock` |
-| 6 | P2 | Wrong-display capture falls back silently to `sources[0]` | Emit a UI warning when display_id lookup falls back |
-| 7 | P2 | No image-size cap before sending to Claude/OpenAI/Gemini | Reuse the Sharp resize already used for Natively for every cloud path |
-| 8 | P3 | Screenshots persist on disk if app exits without `clearQueues()` | Schedule a startup sweep of `userData/screenshots/` older than N days |
+| #   | Severity | Issue                                                                                                                       | Fix                                                                                                      |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 1   | **P0**   | `validateImagePath` rejects every macOS userData path because `/Users/` is in the prefix denylist                           | Replace prefix denylist with positive `path.resolve(p).startsWith(path.resolve(userDataPath)+sep)` check |
+| 2   | P0       | The "filename contains 'screenshot'" allow-list (`curlUtils.ts:290-298`) is a denylist bypass for any externally-named path | Delete the substring fallback entirely once #1 is fixed                                                  |
+| 3   | P1       | No symlink resolution — any symlink under `userData/screenshots/` is followed                                               | Add `fs.realpath` and reject if `realpath` escapes `userData`                                            |
+| 4   | P1       | Custom cURL provider receives screenshots without scope-policy gate                                                         | Run `assertOutboundScopes('custom', ...)` in `chatWithCurl`                                              |
+| 5   | P2       | OCR text is XML-escaped but not run through `escapePromptInjection`                                                         | Apply the same escape used for reference files in `buildScreenContextBlock`                              |
+| 6   | P2       | Wrong-display capture falls back silently to `sources[0]`                                                                   | Emit a UI warning when display_id lookup falls back                                                      |
+| 7   | P2       | No image-size cap before sending to Claude/OpenAI/Gemini                                                                    | Reuse the Sharp resize already used for momor for every cloud path                                       |
+| 8   | P3       | Screenshots persist on disk if app exits without `clearQueues()`                                                            | Schedule a startup sweep of `userData/screenshots/` older than N days                                    |

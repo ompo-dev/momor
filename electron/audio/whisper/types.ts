@@ -20,7 +20,12 @@ export type WhisperModelId =
   // reuse → ~100× lower latency than Whisper Large v3 at comparable WER.
   // English-only. MIT licensed.
   | 'onnx-community/moonshine-tiny-ONNX'
-  | 'onnx-community/moonshine-base-ONNX';
+  | 'onnx-community/moonshine-base-ONNX'
+  // Whisper Large v3 / v2 full — highest accuracy, multilingual.
+  | 'onnx-community/whisper-large-v3-ONNX'
+  | 'onnx-community/whisper-large-v2-ONNX'
+  // Whisper Small v3 — compact multilingual model.
+  | 'onnx-community/whisper-small-ONNX';
 
 export type WhisperModelStatus = 'available' | 'missing' | 'downloading' | 'error';
 
@@ -41,6 +46,9 @@ export interface WhisperModelInfo {
   // Moonshine: streaming-native architecture, ~100× lower perceived latency
   // than Whisper. Highest priority recommendation for English live use.
   streaming?: boolean;
+  // Models that use static KV-cache (cache_position input) which requires a
+  // newer @huggingface/transformers version. Disabled in the current runtime.
+  staticKV?: boolean;
 }
 
 export interface WorkerInitMessage {
