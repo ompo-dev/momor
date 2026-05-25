@@ -131,24 +131,6 @@ async function main() {
     console.log("[generate-icons] Wrote", path.relative(ROOT, dest));
   }
 
-  // Tauri icon set (optional but keeps parity)
-  const tauriDir = path.join(ROOT, "src-tauri", "icons");
-  if (fs.existsSync(tauriDir)) {
-    const tauriMap = [
-      [32, "32x32.png"],
-      [128, "128x128.png"],
-      [256, "128x128@2x.png"],
-      [512, "icon.png"],
-    ];
-    for (const [size, name] of tauriMap) {
-      const buf = rendered.get(size) ?? (await renderPng(size));
-      fs.writeFileSync(path.join(tauriDir, name), buf);
-    }
-    fs.copyFileSync(WIN_OUT, path.join(tauriDir, "icon.ico"));
-    fs.copyFileSync(MAC_OUT, path.join(tauriDir, "icon.icns"));
-    console.log("[generate-icons] Updated src-tauri/icons");
-  }
-
   console.log("[generate-icons] Done.");
 }
 

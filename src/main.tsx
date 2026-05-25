@@ -3,9 +3,6 @@ import ReactDOM from "react-dom/client";
 import "./i18n/index";
 import App from "./App";
 import "./index.css";
-import { installTauriElectronShim } from "./desktop/tauriElectronShim";
-
-installTauriElectronShim();
 
 const THEME_CACHE_KEY = "momor_resolved_theme";
 const fallbackPlatform = (): string => {

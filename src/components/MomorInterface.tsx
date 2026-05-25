@@ -413,9 +413,6 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
   const { shortcuts, isShortcutPressed } = useShortcuts();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const isTauriRuntime =
-    typeof window !== "undefined" &&
-    Boolean((window as any).__TAURI_INTERNALS__);
   const [sttUserStatus, setSttUserStatus] = useState<
     "connected" | "reconnecting" | "failed"
   >("connected");
@@ -434,12 +431,6 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
   const isRecordingRef = useRef(false); // Ref to track recording state (avoids stale closure)
   const [manualTranscript, setManualTranscript] = useState("");
   const manualTranscriptRef = useRef<string>("");
-  const browserAnswerNowRecorderRef = useRef<MediaRecorder | null>(null);
-  const browserAnswerNowStreamRef = useRef<MediaStream | null>(null);
-  const browserAnswerNowChunksRef = useRef<Blob[]>([]);
-  const browserAnswerNowMimeTypeRef = useRef<string>("audio/webm");
-  const browserAnswerNowActiveRef = useRef<boolean>(false);
-  const browserAnswerVadTeardownRef = useRef<(() => void) | null>(null);
   const answerSttLastActivityRef = useRef(0);
   const answerSttHadSpeechRef = useRef(false);
   const answerAutoFinishRef = useRef(false);
@@ -509,24 +500,6 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages, autoScroll]);
 
-  const teardownBrowserAnswerVad = useCallback(() => {
-    browserAnswerVadTeardownRef.current?.();
-    browserAnswerVadTeardownRef.current = null;
-  }, []);
-
-  const resetBrowserAnswerNowCapture = useCallback(() => {
-    teardownBrowserAnswerVad();
-    if (browserAnswerNowStreamRef.current) {
-      browserAnswerNowStreamRef.current
-        .getTracks()
-        .forEach((track) => track.stop());
-    }
-    browserAnswerNowRecorderRef.current = null;
-    browserAnswerNowStreamRef.current = null;
-    browserAnswerNowChunksRef.current = [];
-    browserAnswerNowActiveRef.current = false;
-  }, [teardownBrowserAnswerVad]);
-
   const syncAnswerCallSession = useCallback((active: boolean) => {
     answerCallSessionActiveRef.current = active;
     setAnswerCallSessionActive(active);
@@ -549,168 +522,6 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
     answerAutoFinishRef.current = true;
     void finishAnswerNowTurnRef.current?.(true);
   }, []);
-
-  const startBrowserAnswerNowCapture = useCallback(async (): Promise<{
-    success: boolean;
-    error?: string;
-  }> => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return { success: false, error: "getUserMedia_not_supported" };
-    }
-    if (typeof MediaRecorder === "undefined") {
-      return { success: false, error: "media_recorder_not_supported" };
-    }
-
-    resetBrowserAnswerNowCapture();
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredMimeTypes = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-      ];
-      const supportedMimeType = preferredMimeTypes.find((type) =>
-        MediaRecorder.isTypeSupported(type),
-      );
-      const recorder = supportedMimeType
-        ? new MediaRecorder(stream, { mimeType: supportedMimeType })
-        : new MediaRecorder(stream);
-
-      browserAnswerNowChunksRef.current = [];
-      browserAnswerNowMimeTypeRef.current =
-        supportedMimeType || recorder.mimeType || "audio/webm";
-      browserAnswerNowStreamRef.current = stream;
-      browserAnswerNowRecorderRef.current = recorder;
-      browserAnswerNowActiveRef.current = true;
-
-      recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data && event.data.size > 0) {
-          browserAnswerNowChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.start(250);
-
-      try {
-        const vad = new CallVadEndpoint(ANSWER_CALL_PAUSE_DEFAULTS);
-        const ctx = new AudioContext({ latencyHint: "interactive" });
-        const source = ctx.createMediaStreamSource(stream);
-        const processor = ctx.createScriptProcessor(2048, 1, 1);
-        const silent = ctx.createGain();
-        silent.gain.value = 0;
-
-        processor.onaudioprocess = (event) => {
-          if (!browserAnswerNowActiveRef.current) return;
-          const raw = event.inputBuffer.getChannelData(0);
-          let sum = 0;
-          let top = 0;
-          for (let i = 0; i < raw.length; i += 1) {
-            const v = Math.abs(raw[i] ?? 0);
-            top = Math.max(top, v);
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / Math.max(1, raw.length));
-          const chunk_ms = Math.round(
-            (raw.length / ctx.sampleRate) * 1000,
-          );
-          if (vad.processFrame({ peak: top, rms, chunk_ms })) {
-            triggerAnswerNowEndpoint();
-          }
-        };
-
-        source.connect(processor);
-        processor.connect(silent);
-        silent.connect(ctx.destination);
-        void ctx.resume();
-
-        browserAnswerVadTeardownRef.current = () => {
-          processor.disconnect();
-          silent.disconnect();
-          source.disconnect();
-          void ctx.close().catch(() => undefined);
-        };
-      } catch (vadErr) {
-        console.warn("[MomorInterface] Answer VAD setup failed:", vadErr);
-      }
-
-      return { success: true };
-    } catch (error) {
-      resetBrowserAnswerNowCapture();
-      return {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "failed_to_start_browser_recording",
-      };
-    }
-  }, [resetBrowserAnswerNowCapture, triggerAnswerNowEndpoint]);
-
-  const stopBrowserAnswerNowCapture = useCallback(async (): Promise<{
-    blob: Blob | null;
-    mimeType: string;
-    error?: string;
-  }> => {
-    const recorder = browserAnswerNowRecorderRef.current;
-    const mimeType = browserAnswerNowMimeTypeRef.current || "audio/webm";
-    const finalize = (error?: string) => {
-      const chunks = browserAnswerNowChunksRef.current;
-      const blob =
-        chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
-      resetBrowserAnswerNowCapture();
-      return { blob, mimeType, error };
-    };
-
-    if (!recorder) {
-      return finalize();
-    }
-
-    if (recorder.state === "inactive") {
-      return finalize();
-    }
-
-    return new Promise((resolve) => {
-      recorder.onstop = () => resolve(finalize());
-      recorder.onerror = () => resolve(finalize("browser_recording_error"));
-      try {
-        recorder.stop();
-      } catch (error) {
-        resolve(
-          finalize(
-            error instanceof Error
-              ? error.message
-              : "failed_to_stop_browser_recording",
-          ),
-        );
-      }
-    });
-  }, [resetBrowserAnswerNowCapture]);
-
-  const blobToBase64 = useCallback((blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result !== "string") {
-          reject(new Error("invalid_reader_result"));
-          return;
-        }
-        const commaIndex = reader.result.indexOf(",");
-        resolve(
-          commaIndex >= 0 ? reader.result.slice(commaIndex + 1) : reader.result,
-        );
-      };
-      reader.onerror = () =>
-        reject(reader.error || new Error("file_reader_error"));
-      reader.readAsDataURL(blob);
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      resetBrowserAnswerNowCapture();
-    };
-  }, [resetBrowserAnswerNowCapture]);
 
   // STT silence endpointing while Answer is recording (meeting mic pipeline).
   useEffect(() => {
@@ -2793,21 +2604,7 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
     manualTranscriptRef.current = "";
     isRecordingRef.current = true;
     setIsManualRecording(true);
-
-    if (isTauriRuntime && !isConnected) {
-      const browserStartResult = await startBrowserAnswerNowCapture();
-      if (!browserStartResult.success) {
-        isRecordingRef.current = false;
-        setIsManualRecording(false);
-        syncAnswerCallSession(false);
-      }
-    }
-  }, [
-    isConnected,
-    isTauriRuntime,
-    startBrowserAnswerNowCapture,
-    syncAnswerCallSession,
-  ]);
+  }, [syncAnswerCallSession]);
 
   const startAnswerNowListening = useCallback(async () => {
     setVoiceInput("");
@@ -2835,24 +2632,6 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
       return;
     }
 
-    if (isTauriRuntime && !isConnected) {
-      const browserStartResult = await startBrowserAnswerNowCapture();
-      if (!browserStartResult.success) {
-        isRecordingRef.current = false;
-        setIsManualRecording(false);
-        syncAnswerCallSession(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "system",
-            text: `⚠️ Could not start microphone capture: ${browserStartResult.error || "unknown_error"}`,
-          },
-        ]);
-      }
-      return;
-    }
-
     try {
       const startResult =
         await (window.electronAPI.startAnswerNowMic() as Promise<any>);
@@ -2873,16 +2652,12 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
         {
           id: Date.now().toString(),
           role: "system",
-          text: isTauriRuntime
-            ? "⚠️ Speech-to-text capture is not available in this Tauri build yet."
-            : "⚠️ Could not start microphone capture. Check your microphone permission and STT provider settings.",
+          text: "⚠️ Could not start microphone capture. Check your microphone permission and STT provider settings.",
         },
       ]);
     }
   }, [
     isConnected,
-    isTauriRuntime,
-    startBrowserAnswerNowCapture,
     sttNotConfigured,
     syncAnswerCallSession,
   ]);
@@ -2972,58 +2747,13 @@ const MomorInterface: React.FC<momorInterfaceProps> = ({
       voiceInputRef.current = "";
       setManualTranscript("");
       manualTranscriptRef.current = "";
-      let browserTranscriptionError = "";
-
-      if (isTauriRuntime && browserAnswerNowActiveRef.current) {
-        const browserCapture = await stopBrowserAnswerNowCapture();
-        if (browserCapture.error) {
-          browserTranscriptionError = browserCapture.error;
-        }
-
-        if (!question && browserCapture.blob && browserCapture.blob.size > 0) {
-          try {
-            const audioBase64 = await blobToBase64(browserCapture.blob);
-            const deepgramResult =
-              await window.electronAPI.deepgramTranscribeAnswerNow?.(
-                audioBase64,
-                browserCapture.mimeType,
-                "flux-general-multi",
-              );
-
-            if (
-              deepgramResult?.success &&
-              typeof deepgramResult.transcript === "string" &&
-              deepgramResult.transcript.trim()
-            ) {
-              question = deepgramResult.transcript.trim();
-            } else if (deepgramResult && deepgramResult.success === false) {
-              browserTranscriptionError =
-                deepgramResult.error || "failed_to_transcribe_audio";
-            }
-          } catch (error) {
-            browserTranscriptionError =
-              error instanceof Error
-                ? error.message
-                : "failed_to_transcribe_audio";
-          }
-        }
-      }
 
       if (!question && currentAttachments.length === 0) {
         if (resumeAfter) {
           await resumeAnswerCallListening();
           return;
         }
-        if (browserTranscriptionError) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "system",
-              text: `❌ STT Error: ${browserTranscriptionError}`,
-            },
-          ]);
-        } else if (!isConnected) {
+        if (!isConnected) {
           setMessages((prev) => [
             ...prev,
             {
@@ -3175,11 +2905,8 @@ Provide only the answer, nothing else.`;
     },
     [
       attachedContext,
-      blobToBase64,
       isConnected,
-      isTauriRuntime,
       resumeAnswerCallListening,
-      stopBrowserAnswerNowCapture,
       sttNotConfigured,
       sttUserError,
       sttUserStatus,
@@ -3201,7 +2928,6 @@ Provide only the answer, nothing else.`;
           window.electronAPI
             ?.stopAnswerNowMic?.()
             .catch(() => undefined);
-          resetBrowserAnswerNowCapture();
         }
         return;
       }

@@ -252,7 +252,3 @@ refactor_profile.py
 refactor.js
 skills-lock.json
 windowswork.md
-
-# CEF native binaries — exceed GitHub 100MB limit; download locally when needed
-zero-native-poc/third_party/cef/**/Debug/
-zero-native-poc/third_party/cef/**/Release/
