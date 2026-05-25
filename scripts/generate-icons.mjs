@@ -71,19 +71,6 @@ async function main() {
     }
   }
 
-  const rendererPublic = path.join(ROOT, "renderer", "public");
-  if (fs.existsSync(rendererPublic)) {
-    const toIcoMod = await import("to-ico");
-    const toIcoEarly = toIcoMod.default ?? toIcoMod;
-    const faviconBuf = await toIcoEarly([
-      await renderPng(16),
-      await renderPng(32),
-      await renderPng(48),
-    ]);
-    fs.writeFileSync(path.join(rendererPublic, "favicon.ico"), faviconBuf);
-    console.log("[generate-icons] Wrote renderer/public/favicon.ico");
-  }
-
   // macOS menu bar template (black glyph, transparent background)
   const templateBuf = await sharp(SVG_PATH, { density: 288 })
     .resize(44, 44, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
