@@ -1,16 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Trash2,
-  AlertCircle,
-  CheckCircle,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { ExternalLink, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -19,9 +10,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IntegrationCardShell } from "./IntegrationCardShell";
+import {
+  IntegrationCardDivider,
+  IntegrationCardSection,
+} from "./IntegrationCardSection";
 import { IntegrationStatusBadge } from "./IntegrationStatusBadge";
-import { BackupKeysEditor } from "./BackupKeysEditor";
-import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import {
+  IntegrationActionBar,
+  type IntegrationTestStatus,
+} from "./IntegrationActionBar";
+import { IntegrationTestResult } from "./IntegrationTestResult";
+import {
+  ApiKeysListEditor,
+  type ApiKeyTestRowStatus,
+} from "./ApiKeysListEditor";
+import { ProviderBrandIconBadge } from "./ProviderBrandIcon";
 
 interface FetchedModel {
   id: string;
@@ -31,80 +34,76 @@ interface FetchedModel {
 interface ProviderCardProps {
   providerId: "gemini" | "groq" | "openai" | "claude";
   providerName: string;
-  apiKey: string;
+  storedKeys: string[];
   preferredModel?: string;
-  hasStoredKey: boolean;
-  onKeyChange: (key: string) => void;
-  onSaveKey: () => Promise<void>;
-  onRemoveKey: () => void;
-  onTestConnection: () => void;
-  testStatus: "idle" | "testing" | "success" | "error";
+  onSaveKeys: (keys: string[]) => Promise<void>;
+  onRemoveAllKeys: () => void;
+  onTestConnection: (keys: string[]) => void;
+  testStatus: IntegrationTestStatus;
   testError?: string;
+  keyTestResults?: ApiKeyTestRowStatus[];
+  keyTestErrors?: string[];
   savingStatus: boolean;
   savedStatus: boolean;
-  keyPlaceholder: string;
   keyUrl: string;
   onPreferredModelChange?: (modelId: string) => void;
   oauthAlternativeNote?: string;
   onRemoveFromList?: () => void;
-  backupKeysMasked?: string[];
-  onSaveBackupKeys?: (keys: string[]) => Promise<void>;
 }
 
 export const ProviderCard: React.FC<ProviderCardProps> = ({
   providerId,
   providerName,
-  apiKey,
+  storedKeys,
   preferredModel,
-  hasStoredKey,
-  onKeyChange,
-  onSaveKey,
-  onRemoveKey,
+  onSaveKeys,
+  onRemoveAllKeys,
   onTestConnection,
   testStatus,
   testError,
+  keyTestResults,
+  keyTestErrors,
   savingStatus,
   savedStatus,
-  keyPlaceholder,
   keyUrl,
   onPreferredModelChange,
   oauthAlternativeNote,
   onRemoveFromList,
-  backupKeysMasked = [],
-  onSaveBackupKeys,
 }) => {
   const { t } = useTranslation();
-  const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([]);
-  const [isFetching, setIsFetching] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>(preferredModel || "");
+  const [fetchedModels, setFetchedModels] = React.useState<FetchedModel[]>([]);
+  const [isFetching, setIsFetching] = React.useState(false);
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = React.useState<string>(
+    preferredModel || "",
+  );
+  const [keysDraft, setKeysDraft] = React.useState<string[]>(storedKeys);
 
-  const savedRef = useRef(savedStatus);
-  const savingRef = useRef(savingStatus);
-  savedRef.current = savedStatus;
-  savingRef.current = savingStatus;
+  const hasStoredKeys = storedKeys.length > 0;
+  const hasDraftKeys = keysDraft.some((k) => k.trim().length > 0);
 
-  useEffect(() => {
-    if (!apiKey.trim()) return;
-    const timer = setTimeout(() => {
-      if (!savedRef.current && !savingRef.current) {
-        onSaveKey().catch(console.error);
-      }
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [apiKey, onSaveKey]);
+  React.useEffect(() => {
+    setKeysDraft(storedKeys);
+  }, [storedKeys]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (preferredModel) setSelectedModel(preferredModel);
   }, [preferredModel]);
+
+  const handleSaveAll = async () => {
+    const cleaned = keysDraft.map((k) => k.trim()).filter(Boolean);
+    await onSaveKeys(cleaned);
+  };
 
   const handleFetchModels = async () => {
     setIsFetching(true);
     setFetchError(null);
+    const activeKey =
+      keysDraft.map((k) => k.trim()).find(Boolean) || storedKeys[0] || "";
     try {
       const result = await window.electronAPI?.fetchProviderModels?.(
         providerId,
-        apiKey,
+        activeKey,
       );
       if (result?.success && result.models) {
         setFetchedModels(result.models);
@@ -151,148 +150,157 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
         ? [{ id: preferredModel, label: preferredModel }]
         : [];
 
-  const footer = (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onTestConnection}
-        disabled={(!apiKey.trim() && !hasStoredKey) || testStatus === "testing"}
-      >
-        {testStatus === "testing" ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-        ) : testStatus === "success" ? (
-          <CheckCircle className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
-        ) : testStatus === "error" ? (
-          <AlertCircle className="mr-1.5 h-3.5 w-3.5 text-destructive" />
-        ) : null}
-        {t("providers.testConnection")}
-      </Button>
-      <Button
-        size="sm"
-        onClick={onSaveKey}
-        disabled={savingStatus || !apiKey.trim()}
-        variant={savedStatus ? "secondary" : "default"}
-      >
-        {savingStatus ? t("common.saving") : savedStatus ? t("providers.saved") : t("common.save")}
-      </Button>
-      {hasStoredKey && (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleFetchModels}
-          disabled={isFetching}
-        >
-          {isFetching ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          {t("providers.fetchModels")}
-        </Button>
-      )}
-    </>
-  );
-
   return (
     <IntegrationCardShell
       title={providerName}
       subtitle={t("providers.categoryCloud")}
-      icon={<ProviderBrandIcon providerId={providerId} />}
-      defaultExpanded={!hasStoredKey}
+      category="cloud"
+      icon={<ProviderBrandIconBadge providerId={providerId} />}
+      defaultExpanded={!hasStoredKeys}
       badges={
         <IntegrationStatusBadge
-          variant={hasStoredKey ? "configured" : "notConfigured"}
+          variant={hasStoredKeys ? "configured" : "notConfigured"}
         />
       }
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={() => window.electronAPI?.openExternal?.(keyUrl)}
-          >
-            {t("providers.getKey")}
-            <ExternalLink className="ml-1 h-3 w-3" />
-          </Button>
-          {footer}
-          {onRemoveFromList && (
+        <IntegrationActionBar
+          lead={
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="ml-auto h-8 text-xs text-destructive hover:text-destructive"
-              onClick={onRemoveFromList}
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={() => window.electronAPI?.openExternal?.(keyUrl)}
             >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              {t("providers.removeFromList")}
+              {t("providers.getKey")}
+              <ExternalLink className="ml-1 h-3 w-3" />
             </Button>
-          )}
+          }
+          onTest={() =>
+            onTestConnection(keysDraft.map((k) => k.trim()).filter(Boolean))
+          }
+          testStatus={testStatus}
+          testDisabled={(!hasDraftKeys && !hasStoredKeys) || savingStatus}
+          extra={
+            hasStoredKeys ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={handleFetchModels}
+                  disabled={isFetching}
+                >
+                  {isFetching ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {t("providers.fetchModels")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-destructive hover:text-destructive"
+                  onClick={onRemoveAllKeys}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {t("providers.clearAllKeys")}
+                </Button>
+              </>
+            ) : undefined
+          }
+          save={
+            <Button
+              size="sm"
+              className="h-8 min-w-[5.5rem] text-xs"
+              onClick={() => void handleSaveAll()}
+              disabled={savingStatus || !hasDraftKeys}
+              variant={savedStatus ? "secondary" : "default"}
+            >
+              {savingStatus
+                ? t("common.saving")
+                : savedStatus
+                  ? t("providers.saved")
+                  : t("common.save")}
+            </Button>
+          }
+          destructive={
+            onRemoveFromList ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-destructive hover:text-destructive"
+                onClick={onRemoveFromList}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                {t("providers.removeFromList")}
+              </Button>
+            ) : undefined
+          }
+        />
+      }
+      feedback={
+        <>
+          <IntegrationTestResult
+            status={
+              testStatus === "success"
+                ? "success"
+                : testStatus === "error"
+                  ? "error"
+                  : "idle"
+            }
+            message={
+              testStatus === "success"
+                ? t("providers.allKeysConnectionSuccessful", {
+                    count: keysDraft.filter((k) => k.trim()).length || storedKeys.length,
+                    defaultValue: "Todas as chaves OK",
+                  })
+                : testError
+            }
+          />
+          {fetchError ? (
+            <p className="text-[11px] text-destructive">{fetchError}</p>
+          ) : null}
         </>
       }
     >
       {oauthAlternativeNote && (
-        <p className="rounded-md border border-border/50 bg-muted/25 px-2.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="rounded-lg bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
           {oauthAlternativeNote}
         </p>
       )}
 
-      <div className="space-y-1.5">
-        <Label className="text-xs">{t("providers.apiKeyLabel")}</Label>
-        <div className="flex gap-2">
-          <Input
-            type="password"
-            value={apiKey}
-            onChange={(e) => onKeyChange(e.target.value)}
-            placeholder={hasStoredKey ? t("providers.keySavedPlaceholder") : keyPlaceholder}
-            className="h-9 flex-1 text-xs"
-          />
-          {hasStoredKey && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 shrink-0 text-destructive"
-              onClick={onRemoveKey}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {onSaveBackupKeys && (
-        <BackupKeysEditor
-          maskedKeys={backupKeysMasked}
-          onSave={onSaveBackupKeys}
+      <IntegrationCardSection>
+        <ApiKeysListEditor
+          keys={storedKeys}
+          onChange={setKeysDraft}
+          disabled={savingStatus}
+          testResults={keyTestResults}
+          testErrors={keyTestErrors}
         />
-      )}
+      </IntegrationCardSection>
 
       {modelOptions.length > 0 && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">{t("providers.modelLabel")}</Label>
-          <Select value={selectedModel} onValueChange={handleSelectModel}>
-            <SelectTrigger className="h-9 w-full text-xs">
-              <SelectValue placeholder={t("providers.selectModel")} />
-            </SelectTrigger>
-            <SelectContent>
-              {modelOptions.map((model) => (
-                <SelectItem key={model.id} value={model.id} className="text-xs">
-                  {model.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {testError && (
-        <p className="text-xs text-destructive">{testError}</p>
-      )}
-      {fetchError && (
-        <p className="text-xs text-destructive">{fetchError}</p>
+        <>
+          <IntegrationCardDivider />
+          <IntegrationCardSection title={t("providers.modelLabel")}>
+            <Select value={selectedModel} onValueChange={handleSelectModel}>
+              <SelectTrigger className="h-9 w-full text-xs">
+                <SelectValue placeholder={t("providers.selectModel")} />
+              </SelectTrigger>
+              <SelectContent>
+                {modelOptions.map((model) => (
+                  <SelectItem key={model.id} value={model.id} className="text-xs">
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </IntegrationCardSection>
+        </>
       )}
     </IntegrationCardShell>
   );

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
-import packageJson from "../../../package.json";
 import {
   Ghost,
   PointerOff,
@@ -16,9 +15,6 @@ import {
   Sun,
   Moon,
   Globe,
-  BadgeCheck,
-  RefreshCw,
-  Check,
   X,
   Eye,
   Settings,
@@ -62,7 +58,6 @@ export interface GeneralSettingsTabProps {
 
 export function GeneralSettingsTab({
   isOpen,
-  onClose,
   onPreviewActiveChange,
 }: GeneralSettingsTabProps) {
   const { t } = useTranslation();
@@ -100,9 +95,6 @@ export function GeneralSettingsTab({
   >("vision_first");
   const [technicalInterviewVisionFirst, setTechnicalInterviewVisionFirst] =
     useState(true);
-  const [updateStatus, setUpdateStatus] = useState<
-    "idle" | "checking" | "available" | "uptodate" | "error"
-  >("idle");
 
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => {
     const stored = localStorage.getItem("momor_overlay_opacity");
@@ -156,19 +148,8 @@ export function GeneralSettingsTab({
 
   useEffect(() => {
     if (!isOpen) return;
-    const unsubs = [
-      window.electronAPI.onUpdateChecking(() => setUpdateStatus("checking")),
-      window.electronAPI.onUpdateAvailable(() => setUpdateStatus("available")),
-      window.electronAPI.onUpdateNotAvailable(() => {
-        setUpdateStatus("uptodate");
-        setTimeout(() => setUpdateStatus("idle"), 3000);
-      }),
-      window.electronAPI.onUpdateError(() => {
-        setUpdateStatus("error");
-        setTimeout(() => setUpdateStatus("idle"), 3000);
-      }),
-    ];
-    return () => unsubs.forEach((u) => u?.());
+    // update events intentionally not surfaced in the UI
+    return;
   }, [isOpen]);
 
   useEffect(() => {
@@ -190,7 +171,8 @@ export function GeneralSettingsTab({
   }, []);
 
   const handleOpacityChange = (vals: number[]) => {
-    const val = vals[0] ?? overlayOpacity;
+    const val = clampOverlayOpacity(vals[0] ?? overlayOpacity);
+    setOverlayOpacity(val);
     document
       .querySelectorAll(".opacity-percent-label")
       .forEach((el) => (el.textContent = `${Math.round(val * 100)}%`));
@@ -284,23 +266,11 @@ export function GeneralSettingsTab({
     }
   };
 
-  const handleCheckForUpdates = async () => {
-    if (updateStatus === "checking") return;
-    setUpdateStatus("checking");
-    try {
-      await window.electronAPI.checkForUpdates();
-    } catch {
-      setUpdateStatus("error");
-      setTimeout(() => setUpdateStatus("idle"), 3000);
-    }
-  };
-
   const scopeItems = [
     { key: "transcript", label: t("settings.general.scopes.transcript") },
     { key: "screenshots", label: t("settings.general.scopes.screenshots") },
     { key: "reference_files", label: t("settings.general.scopes.referenceFiles") },
     { key: "profile_history", label: t("settings.general.scopes.profileHistory") },
-    { key: "embeddings", label: t("settings.general.scopes.embeddings") },
     { key: "post_call_summary", label: t("settings.general.scopes.postCallSummary") },
   ] as const;
 
@@ -456,48 +426,6 @@ export function GeneralSettingsTab({
                   ))}
                 </SelectContent>
               </Select>
-            }
-          />
-          <SettingsListRow
-            icon={<BadgeCheck size={18} />}
-            title={t("settings.general.checkForUpdates")}
-            description={t("settings.general.versionText", {
-              version: packageJson.version,
-            })}
-            control={
-              <Button
-                size="sm"
-                variant={
-                  updateStatus === "available" ? "default" : "secondary"
-                }
-                disabled={updateStatus === "checking"}
-                onClick={async () => {
-                  if (updateStatus === "available") {
-                    await window.electronAPI.downloadUpdate();
-                    onClose();
-                  } else {
-                    void handleCheckForUpdates();
-                  }
-                }}
-              >
-                {updateStatus === "checking" ? (
-                  <>
-                    <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    {t("settings.general.checking")}
-                  </>
-                ) : updateStatus === "available" ? (
-                  t("settings.general.updateAvailable")
-                ) : updateStatus === "uptodate" ? (
-                  <>
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                    {t("settings.general.upToDate")}
-                  </>
-                ) : updateStatus === "error" ? (
-                  t("common.error")
-                ) : (
-                  t("settings.general.checkForUpdatesBtn")
-                )}
-              </Button>
             }
           />
         </SettingsList>

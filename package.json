@@ -1,12 +1,13 @@
 {
   "name": "momor",
-  "version": "2.6.0",
+  "version": "3.0.0",
   "main": "dist-electron/electron/main.js",
   "description": "Momor is an AI-powered meeting assistant.",
   "scripts": {
     "clean": "rimraf dist dist-electron",
+    "clean:web": "rimraf dist",
     "dev": "vite",
-    "build": "npm run clean && tsc && vite build",
+    "build": "npm run clean:web && tsc && vite build && npm run build:electron",
     "build:electron": "node scripts/build-electron.js",
     "icons:generate": "node scripts/generate-icons.mjs",
     "build:electron:tsc": "tsc -p electron/tsconfig.json",
@@ -64,7 +65,8 @@
     ],
     "asarUnpack": [
       "**/*.node",
-      "**/*.dylib"
+      "**/*.dylib",
+      "dist-electron/electron/rag/vectorSearchWorker.js"
     ],
     "directories": {
       "output": "release",

@@ -24,6 +24,8 @@ import { validateCurl } from "../../lib/curl-validator";
 import { ProviderCard } from "./ProviderCard";
 import { CliProviderCard } from "./CliProviderCard";
 import { DeepSeekProviderCard } from "./DeepSeekProviderCard";
+import { OllamaProviderCard } from "./OllamaProviderCard";
+import { CustomProviderCard } from "./CustomProviderCard";
 import { AddIntegrationDialog } from "./AddIntegrationDialog";
 import {
   readPinnedIntegrations,
@@ -189,11 +191,9 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   // --- Standard Providers ---
-  const [apiKey, setApiKey] = useState("");
-  const [groqApiKey, setGroqApiKey] = useState("");
-  const [openaiApiKey, setOpenaiApiKey] = useState("");
-  const [claudeApiKey, setClaudeApiKey] = useState("");
-  const [deepseekApiKey, setDeepseekApiKey] = useState("");
+  const [apiKeysStored, setApiKeysStored] = useState<
+    Record<string, string[]>
+  >({});
   const [deepseekModel, setDeepseekModel] = useState("deepseek-chat");
   const [deepseekSaved, setDeepseekSaved] = useState(false);
   const [deepseekSaving, setDeepseekSaving] = useState(false);
@@ -203,7 +203,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
   const [savedStatus, setSavedStatus] = useState<Record<string, boolean>>({});
   const [savingStatus, setSavingStatus] = useState<Record<string, boolean>>({});
   const [hasStoredKey, setHasStoredKey] = useState<Record<string, boolean>>({});
-  const [backupKeysMasked, setBackupKeysMasked] = useState<
+  const [keyTestResults, setKeyTestResults] = useState<
+    Record<string, import("./ApiKeysListEditor").ApiKeyTestRowStatus[]>
+  >({});
+  const [keyTestErrors, setKeyTestErrors] = useState<
     Record<string, string[]>
   >({});
   const [testStatus, setTestStatus] = useState<
@@ -242,6 +245,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     "idle" | "testing" | "success" | "error"
   >("idle");
   const [codexCliError, setCodexCliError] = useState("");
+  const [codexInferenceStatus, setCodexInferenceStatus] = useState<
+    "idle" | "testing" | "success" | "error"
+  >("idle");
+  const [codexInferenceError, setCodexInferenceError] = useState("");
 
   // --- OpenClaude ---
   const [openClaudeConfig, setOpenClaudeConfig] = useState({
@@ -304,31 +311,43 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       }
 
       const creds = await window.electronAPI?.getStoredCredentials?.();
-      const keys = creds
-        ? {
-            gemini: creds.hasGeminiKey,
-            groq: creds.hasGroqKey,
-            openai: creds.hasOpenaiKey,
-            claude: creds.hasClaudeKey,
-          }
-        : null;
-
-      if (keys) setHasStoredKey(keys);
 
       let deepseekConfigured = false;
-      try {
-        const ds = await window.electronAPI?.getDeepseekApiKey?.();
-        deepseekConfigured = !!ds;
+      let storedKeysForVisible: Record<string, string[]> = {};
+      if (creds) {
+        const pm: Record<string, string> = {};
+        if (creds.geminiPreferredModel) pm.gemini = creds.geminiPreferredModel;
+        if (creds.groqPreferredModel) pm.groq = creds.groqPreferredModel;
+        if (creds.openaiPreferredModel) pm.openai = creds.openaiPreferredModel;
+        if (creds.claudePreferredModel) pm.claude = creds.claudePreferredModel;
+        setPreferredModels(pm);
+
+        const stored: Record<string, string[]> = {
+          gemini: creds.geminiApiKeys ?? [],
+          groq: creds.groqApiKeys ?? [],
+          openai: creds.openaiApiKeys ?? [],
+          claude: creds.claudeApiKeys ?? [],
+          deepseek: creds.deepseekApiKeys ?? [],
+        };
+        storedKeysForVisible = stored;
+        setApiKeysStored(stored);
+        deepseekConfigured = (stored.deepseek?.length ?? 0) > 0;
         setDeepseekHasKey(deepseekConfigured);
-      } catch {
+        setHasStoredKey({
+          gemini: (stored.gemini?.length ?? 0) > 0,
+          groq: (stored.groq?.length ?? 0) > 0,
+          openai: (stored.openai?.length ?? 0) > 0,
+          claude: (stored.claude?.length ?? 0) > 0,
+        });
+      } else {
         setDeepseekHasKey(false);
       }
 
       const autoVisible: IntegrationId[] = [];
-      if (keys?.gemini) autoVisible.push("gemini");
-      if (keys?.groq) autoVisible.push("groq");
-      if (keys?.openai) autoVisible.push("openai");
-      if (keys?.claude) autoVisible.push("claude");
+      if ((storedKeysForVisible.gemini?.length ?? 0) > 0) autoVisible.push("gemini");
+      if ((storedKeysForVisible.groq?.length ?? 0) > 0) autoVisible.push("groq");
+      if ((storedKeysForVisible.openai?.length ?? 0) > 0) autoVisible.push("openai");
+      if ((storedKeysForVisible.claude?.length ?? 0) > 0) autoVisible.push("claude");
       if (deepseekConfigured) autoVisible.push("deepseek");
       if (cliConfig?.enabled) autoVisible.push("codex-cli");
       if (ocConfig?.enabled) autoVisible.push("openclaude");
@@ -343,21 +362,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         setVisibleIntegrations([]);
       }
 
-      if (creds) {
-        const pm: Record<string, string> = {};
-        if (creds.geminiPreferredModel) pm.gemini = creds.geminiPreferredModel;
-        if (creds.groqPreferredModel) pm.groq = creds.groqPreferredModel;
-        if (creds.openaiPreferredModel) pm.openai = creds.openaiPreferredModel;
-        if (creds.claudePreferredModel) pm.claude = creds.claudePreferredModel;
-        setPreferredModels(pm);
-        setBackupKeysMasked({
-          gemini: creds.geminiBackupKeys ?? [],
-          groq: creds.groqBackupKeys ?? [],
-          openai: creds.openaiBackupKeys ?? [],
-          claude: creds.claudeBackupKeys ?? [],
-          deepseek: creds.deepseekBackupKeys ?? [],
-        });
-      }
 
       const custom = await window.electronAPI?.getCustomProviders?.();
       if (custom) setCustomProviders(custom);
@@ -717,126 +721,158 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       const configToTest = saveResult?.config || codexCliConfig;
       const result = await window.electronAPI?.testCodexCli?.(configToTest);
       if (result?.success) {
-        // If the main process auto-detected an install, reflect the
-        // resolved path in the form so the user sees what got picked.
         if (result.config) setCodexCliConfig(result.config);
         setCodexCliStatus("success");
         setTimeout(() => setCodexCliStatus("idle"), 3000);
       } else {
         setCodexCliStatus("error");
-        setCodexCliError(result?.error || "Codex CLI test failed");
+        setCodexCliError(result?.error || "Codex CLI validation failed");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setCodexCliStatus("error");
-      setCodexCliError(e.message || "Codex CLI test failed");
+      setCodexCliError(
+        e instanceof Error ? e.message : "Codex CLI validation failed",
+      );
     }
   };
 
-  const saveBackupKeys = async (
+  const handleTestCodexInference = async () => {
+    setCodexInferenceStatus("testing");
+    setCodexInferenceError("");
+    try {
+      const saveResult = await saveCodexCliConfig();
+      const configToTest = saveResult?.config || codexCliConfig;
+      const result = await window.electronAPI?.testCodexInference?.(
+        configToTest,
+      );
+      if (result?.success) {
+        setCodexInferenceStatus("success");
+        setTimeout(() => setCodexInferenceStatus("idle"), 3000);
+      } else {
+        setCodexInferenceStatus("error");
+        setCodexInferenceError(result?.error || "Codex inference test failed");
+      }
+    } catch (e: unknown) {
+      setCodexInferenceStatus("error");
+      setCodexInferenceError(
+        e instanceof Error ? e.message : "Codex inference test failed",
+      );
+    }
+  };
+
+  const saveProviderKeys = async (
     provider: "gemini" | "groq" | "openai" | "claude" | "deepseek",
     keys: string[],
   ) => {
-    await window.electronAPI?.setLlmBackupKeys?.(provider, keys);
-    await loadCredentials();
-  };
-
-  const handleSaveKey = async (
-    provider: string,
-    key: string,
-    setter: (val: string) => void,
-  ) => {
-    if (!key.trim()) return;
     setSavingStatus((prev) => ({ ...prev, [provider]: true }));
     try {
-      let result;
-      // @ts-ignore
-      if (provider === "gemini")
-        result = await window.electronAPI.setGeminiApiKey(key);
-      // @ts-ignore
-      if (provider === "groq")
-        result = await window.electronAPI.setGroqApiKey(key);
-      // @ts-ignore
-      if (provider === "openai")
-        result = await window.electronAPI.setOpenaiApiKey(key);
-      // @ts-ignore
-      if (provider === "claude")
-        result = await window.electronAPI.setClaudeApiKey(key);
-
-      if (result && result.success) {
-        setSavedStatus((prev) => ({ ...prev, [provider]: true }));
-        setHasStoredKey((prev) => ({ ...prev, [provider]: true }));
-        setter("");
-        setTimeout(
-          () => setSavedStatus((prev) => ({ ...prev, [provider]: false })),
-          2000,
-        );
-      }
+      await window.electronAPI?.setLlmApiKeys?.(provider, keys);
+      setApiKeysStored((prev) => ({ ...prev, [provider]: keys }));
+      setHasStoredKey((prev) => ({ ...prev, [provider]: keys.length > 0 }));
+      if (provider === "deepseek") setDeepseekHasKey(keys.length > 0);
+      setSavedStatus((prev) => ({ ...prev, [provider]: true }));
+      setTimeout(
+        () => setSavedStatus((prev) => ({ ...prev, [provider]: false })),
+        2000,
+      );
     } catch (e) {
-      console.error(`Failed to save ${provider} key:`, e);
+      console.error(`Failed to save ${provider} keys:`, e);
     } finally {
       setSavingStatus((prev) => ({ ...prev, [provider]: false }));
     }
   };
 
-  const handleRemoveKey = async (
-    provider: string,
-    setter: (val: string) => void,
+  const clearProviderKeys = async (
+    provider: "gemini" | "groq" | "openai" | "claude" | "deepseek",
   ) => {
-    if (!confirm(t('providers.removeKeyConfirm', { provider })))
-      return;
-    try {
-      let result;
-      // @ts-ignore
-      if (provider === "gemini")
-        result = await window.electronAPI.setGeminiApiKey("");
-      // @ts-ignore
-      if (provider === "groq")
-        result = await window.electronAPI.setGroqApiKey("");
-      // @ts-ignore
-      if (provider === "openai")
-        result = await window.electronAPI.setOpenaiApiKey("");
-      // @ts-ignore
-      if (provider === "claude")
-        result = await window.electronAPI.setClaudeApiKey("");
-
-      if (result && result.success) {
-        setHasStoredKey((prev) => ({ ...prev, [provider]: false }));
-        setter("");
-      }
-    } catch (e) {
-      console.error(`Failed to remove ${provider} key:`, e);
-    }
+    if (!confirm(t("providers.removeKeyConfirm", { provider }))) return;
+    await saveProviderKeys(provider, []);
   };
 
-  const handleTestConnection = async (provider: string, key: string) => {
-    // Allow testing if key is provided OR if we have a stored key
-    if (!key.trim() && !hasStoredKey[provider]) {
+  const handleTestConnection = async (
+    provider: string,
+    keys: string[],
+    customProviderId?: string,
+  ) => {
+    const statusKey = customProviderId ? `custom:${customProviderId}` : provider;
+    if (provider === "custom" && !customProviderId) return;
+    if (
+      !keys.length &&
+      !hasStoredKey[provider] &&
+      provider !== "ollama" &&
+      provider !== "custom" &&
+      !(provider === "deepseek" && deepseekHasKey)
+    ) {
       return;
     }
-    setTestStatus((prev) => ({ ...prev, [provider]: "testing" }));
-    setTestError((prev) => ({ ...prev, [provider]: "" }));
+
+    const keysToTest =
+      keys.length > 0
+        ? keys
+        : apiKeysStored[provider] ?? [];
+
+    setTestStatus((prev) => ({ ...prev, [statusKey]: "testing" }));
+    setTestError((prev) => ({ ...prev, [statusKey]: "" }));
+    if (keysToTest.length) {
+      setKeyTestResults((prev) => ({
+        ...prev,
+        [provider]: keysToTest.map(() => "testing" as const),
+      }));
+      setKeyTestErrors((prev) => ({ ...prev, [provider]: keysToTest.map(() => "") }));
+    }
 
     try {
-      // @ts-ignore
-      const result = await window.electronAPI.testLlmConnection(provider, key);
-      if (result.success) {
-        setTestStatus((prev) => ({ ...prev, [provider]: "success" }));
-        setTimeout(
-          () => setTestStatus((prev) => ({ ...prev, [provider]: "idle" })),
-          3000,
-        );
-      } else {
-        setTestStatus((prev) => ({ ...prev, [provider]: "error" }));
-        setTestError((prev) => ({
+      const result = await window.electronAPI?.testLlmConnection?.(
+        provider as
+          | "gemini"
+          | "groq"
+          | "openai"
+          | "claude"
+          | "deepseek"
+          | "ollama"
+          | "custom",
+        keysToTest.length ? keysToTest : undefined,
+        customProviderId,
+      );
+
+      if (result?.keyResults?.length) {
+        setKeyTestResults((prev) => ({
           ...prev,
-          [provider]: result.error || "Connection failed",
+          [provider]: result.keyResults!.map((r) =>
+            r.success ? "success" : "error",
+          ),
+        }));
+        setKeyTestErrors((prev) => ({
+          ...prev,
+          [provider]: result.keyResults!.map((r) => r.error ?? ""),
+        }));
+      } else if (result?.success && keysToTest.length) {
+        setKeyTestResults((prev) => ({
+          ...prev,
+          [provider]: keysToTest.map(() => "success" as const),
         }));
       }
-    } catch (e: any) {
-      setTestStatus((prev) => ({ ...prev, [provider]: "error" }));
+
+      if (result?.success) {
+        setTestStatus((prev) => ({ ...prev, [statusKey]: "success" }));
+        setTimeout(() => {
+          setTestStatus((prev) => ({ ...prev, [statusKey]: "idle" }));
+          setKeyTestResults((prev) => ({ ...prev, [provider]: [] }));
+          setKeyTestErrors((prev) => ({ ...prev, [provider]: [] }));
+        }, 3000);
+      } else {
+        setTestStatus((prev) => ({ ...prev, [statusKey]: "error" }));
+        setTestError((prev) => ({
+          ...prev,
+          [statusKey]: result?.error || "Connection failed",
+        }));
+      }
+    } catch (e: unknown) {
+      setTestStatus((prev) => ({ ...prev, [statusKey]: "error" }));
       setTestError((prev) => ({
         ...prev,
-        [provider]: e.message || "Connection failed",
+        [statusKey]:
+          e instanceof Error ? e.message : "Connection failed",
       }));
     }
   };
@@ -1032,32 +1068,27 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             </CardContent>
           </Card>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
           {isVisible("gemini") && (
           <ProviderCard
             providerId="gemini"
             providerName="Gemini"
-            apiKey={apiKey}
+            storedKeys={apiKeysStored.gemini ?? []}
             preferredModel={preferredModels.gemini}
-            hasStoredKey={!!hasStoredKey.gemini}
-            onKeyChange={setApiKey}
-            onSaveKey={async () => {
-              await handleSaveKey("gemini", apiKey, setApiKey);
-            }}
-            onRemoveKey={() => handleRemoveKey("gemini", setApiKey)}
-            onTestConnection={() => handleTestConnection("gemini", apiKey)}
+            onSaveKeys={(keys) => saveProviderKeys("gemini", keys)}
+            onRemoveAllKeys={() => void clearProviderKeys("gemini")}
+            onTestConnection={(keys) => handleTestConnection("gemini", keys)}
             testStatus={testStatus.gemini || "idle"}
             testError={testError.gemini}
+            keyTestResults={keyTestResults.gemini}
+            keyTestErrors={keyTestErrors.gemini}
             savingStatus={!!savingStatus.gemini}
             savedStatus={!!savedStatus.gemini}
-            keyPlaceholder="AIzaSy..."
             keyUrl="https://aistudio.google.com/app/apikey"
             onPreferredModelChange={(model) =>
               setPreferredModels((prev) => ({ ...prev, gemini: model }))
             }
             onRemoveFromList={() => unpinIntegration("gemini")}
-            backupKeysMasked={backupKeysMasked.gemini ?? []}
-            onSaveBackupKeys={(keys) => saveBackupKeys("gemini", keys)}
           />
           )}
 
@@ -1065,27 +1096,22 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="groq"
             providerName="Groq"
-            apiKey={groqApiKey}
+            storedKeys={apiKeysStored.groq ?? []}
             preferredModel={preferredModels.groq}
-            hasStoredKey={!!hasStoredKey.groq}
-            onKeyChange={setGroqApiKey}
-            onSaveKey={async () => {
-              await handleSaveKey("groq", groqApiKey, setGroqApiKey);
-            }}
-            onRemoveKey={() => handleRemoveKey("groq", setGroqApiKey)}
-            onTestConnection={() => handleTestConnection("groq", groqApiKey)}
+            onSaveKeys={(keys) => saveProviderKeys("groq", keys)}
+            onRemoveAllKeys={() => void clearProviderKeys("groq")}
+            onTestConnection={(keys) => handleTestConnection("groq", keys)}
             testStatus={testStatus.groq || "idle"}
             testError={testError.groq}
+            keyTestResults={keyTestResults.groq}
+            keyTestErrors={keyTestErrors.groq}
             savingStatus={!!savingStatus.groq}
             savedStatus={!!savedStatus.groq}
-            keyPlaceholder="gsk_..."
             keyUrl="https://console.groq.com/keys"
             onPreferredModelChange={(model) =>
               setPreferredModels((prev) => ({ ...prev, groq: model }))
             }
             onRemoveFromList={() => unpinIntegration("groq")}
-            backupKeysMasked={backupKeysMasked.groq ?? []}
-            onSaveBackupKeys={(keys) => saveBackupKeys("groq", keys)}
           />
           )}
 
@@ -1093,29 +1119,22 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="openai"
             providerName="OpenAI"
-            apiKey={openaiApiKey}
+            storedKeys={apiKeysStored.openai ?? []}
             preferredModel={preferredModels.openai}
-            hasStoredKey={!!hasStoredKey.openai}
-            onKeyChange={setOpenaiApiKey}
-            onSaveKey={async () => {
-              await handleSaveKey("openai", openaiApiKey, setOpenaiApiKey);
-            }}
-            onRemoveKey={() => handleRemoveKey("openai", setOpenaiApiKey)}
-            onTestConnection={() =>
-              handleTestConnection("openai", openaiApiKey)
-            }
+            onSaveKeys={(keys) => saveProviderKeys("openai", keys)}
+            onRemoveAllKeys={() => void clearProviderKeys("openai")}
+            onTestConnection={(keys) => handleTestConnection("openai", keys)}
             testStatus={testStatus.openai || "idle"}
             testError={testError.openai}
+            keyTestResults={keyTestResults.openai}
+            keyTestErrors={keyTestErrors.openai}
             savingStatus={!!savingStatus.openai}
             savedStatus={!!savedStatus.openai}
-            keyPlaceholder="sk-..."
             keyUrl="https://platform.openai.com/api-keys"
             onPreferredModelChange={(model) =>
               setPreferredModels((prev) => ({ ...prev, openai: model }))
             }
             onRemoveFromList={() => unpinIntegration("openai")}
-            backupKeysMasked={backupKeysMasked.openai ?? []}
-            onSaveBackupKeys={(keys) => saveBackupKeys("openai", keys)}
           />
           )}
 
@@ -1123,55 +1142,38 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="claude"
             providerName="Claude"
-            apiKey={claudeApiKey}
+            storedKeys={apiKeysStored.claude ?? []}
             preferredModel={preferredModels.claude}
-            hasStoredKey={!!hasStoredKey.claude}
-            onKeyChange={setClaudeApiKey}
-            onSaveKey={async () => {
-              await handleSaveKey("claude", claudeApiKey, setClaudeApiKey);
-            }}
-            onRemoveKey={() => handleRemoveKey("claude", setClaudeApiKey)}
-            onTestConnection={() =>
-              handleTestConnection("claude", claudeApiKey)
-            }
+            onSaveKeys={(keys) => saveProviderKeys("claude", keys)}
+            onRemoveAllKeys={() => void clearProviderKeys("claude")}
+            onTestConnection={(keys) => handleTestConnection("claude", keys)}
             testStatus={testStatus.claude || "idle"}
             testError={testError.claude}
+            keyTestResults={keyTestResults.claude}
+            keyTestErrors={keyTestErrors.claude}
             savingStatus={!!savingStatus.claude}
             savedStatus={!!savedStatus.claude}
-            keyPlaceholder="sk-ant-..."
             keyUrl="https://console.anthropic.com/settings/keys"
             oauthAlternativeNote={t("providers.claudeApiOptional")}
             onPreferredModelChange={(model) =>
               setPreferredModels((prev) => ({ ...prev, claude: model }))
             }
             onRemoveFromList={() => unpinIntegration("claude")}
-            backupKeysMasked={backupKeysMasked.claude ?? []}
-            onSaveBackupKeys={(keys) => saveBackupKeys("claude", keys)}
           />
           )}
 
           {isVisible("deepseek") && (
           <DeepSeekProviderCard
-            apiKey={deepseekApiKey}
+            storedKeys={apiKeysStored.deepseek ?? []}
             model={deepseekModel}
-            hasStoredKey={deepseekHasKey}
             saving={deepseekSaving}
             saved={deepseekSaved}
-            onKeyChange={(k) => {
-              setDeepseekApiKey(k);
-              setDeepseekSaved(false);
-            }}
             onModelChange={setDeepseekModel}
-            onSave={async () => {
+            onSaveKeys={async (keys) => {
               setDeepseekSaving(true);
               try {
-                if (deepseekApiKey.trim()) {
-                  await window.electronAPI?.setDeepseekApiKey?.(
-                    deepseekApiKey.trim(),
-                  );
-                }
+                await saveProviderKeys("deepseek", keys);
                 await window.electronAPI?.setDeepseekModel?.(deepseekModel);
-                setDeepseekHasKey(deepseekHasKey || !!deepseekApiKey.trim());
                 setDeepseekSaved(true);
                 setTimeout(() => setDeepseekSaved(false), 2000);
               } catch (e) {
@@ -1180,15 +1182,18 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                 setDeepseekSaving(false);
               }
             }}
-            onRemove={async () => {
-              await window.electronAPI?.setDeepseekApiKey?.("");
-              setDeepseekApiKey("");
-              setDeepseekHasKey(false);
+            onRemoveAllKeys={async () => {
+              await clearProviderKeys("deepseek");
               setDeepseekSaved(false);
             }}
+            onTestConnection={(keys) =>
+              void handleTestConnection("deepseek", keys)
+            }
+            testStatus={testStatus.deepseek || "idle"}
+            testError={testError.deepseek}
+            keyTestResults={keyTestResults.deepseek}
+            keyTestErrors={keyTestErrors.deepseek}
             onRemoveFromList={() => unpinIntegration("deepseek")}
-            backupKeysMasked={backupKeysMasked.deepseek ?? []}
-            onSaveBackupKeys={(keys) => saveBackupKeys("deepseek", keys)}
           />
           )}
 
@@ -1348,6 +1353,11 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               await saveCodexCliConfig();
             }}
             onTest={handleTestCodexCli}
+            testLabel={t("providers.validateExecutable")}
+            onSecondaryTest={handleTestCodexInference}
+            secondaryTestLabel={t("providers.testConnection")}
+            secondaryTestStatus={codexInferenceStatus}
+            secondaryTestError={codexInferenceError}
             onLogin={() => void handleCliOAuthLogin("codex")}
             testStatus={codexCliStatus}
             testError={codexCliError}
@@ -1359,101 +1369,21 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       </SettingsSection>
 
       {isVisible("ollama") && (
-      <SettingsSection
-        title={t("providers.ollama")}
-        description={t("providers.ollamaDesc")}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h3 className="text-sm font-bold text-text-primary mb-1">
-              {t('providers.ollama')}
-            </h3>
-            <p className="text-xs text-text-secondary">
-              {t('providers.ollamaDesc')}
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              setIsRefreshingOllama(true);
-              await checkOllama(false);
-              // Add a small delay for visual feedback if the check is too fast
-              setTimeout(() => setIsRefreshingOllama(false), 500);
-            }}
-            className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors"
-            title="Refresh Ollama"
-            disabled={isRefreshingOllama}
-          >
-            <RefreshCw
-              size={18}
-              className={isRefreshingOllama ? "animate-spin" : ""}
-            />
-          </button>
-        </div>
-
-        <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle">
-          {ollamaStatus === "checking" && (
-            <div className="flex items-center gap-2 text-xs text-text-secondary">
-              <span className="animate-spin">⏳</span> {t('providers.checkingOllama')}
-            </div>
-          )}
-
-          {ollamaStatus === "fixing" && (
-            <div className="flex items-center gap-2 text-xs text-text-secondary">
-              <span className="animate-spin">🔧</span> {t('providers.fixingOllama')}
-            </div>
-          )}
-
-          {ollamaStatus === "not-found" && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-xs text-red-400">
-                <AlertCircle size={14} />
-                <span>{t('providers.ollamaNotDetected')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-text-secondary">
-                  {t('providers.ollamaEnsureRunning')}
-                </p>
-                <button
-                  onClick={handleFixOllama}
-                  className="text-[10px] bg-bg-elevated hover:bg-bg-input px-2 py-1 rounded border border-border-subtle"
-                >
-                  {t('providers.ollamaAutoFix')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {ollamaStatus === "detected" && ollamaModels.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs text-green-400 mb-3">
-                <CheckCircle size={14} />
-                <span>{t('providers.ollamaConnected')}</span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                {ollamaModels.map((model) => (
-                  <div
-                    key={model}
-                    className="flex items-center justify-between p-2 bg-bg-input rounded-lg border border-border-subtle"
-                  >
-                    <span className="text-xs text-text-primary font-mono">
-                      {model}
-                    </span>
-                    <span className="text-[10px] text-bg-elevated bg-text-secondary px-1.5 py-0.5 rounded-full font-bold">
-                      LOCAL
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {ollamaStatus === "detected" && ollamaModels.length === 0 && (
-            <div className="text-xs text-text-secondary">
-              {t('providers.ollamaNoModels')}
-            </div>
-          )}
-        </div>
-      </SettingsSection>
+        <OllamaProviderCard
+          status={ollamaStatus}
+          models={ollamaModels}
+          isRefreshing={isRefreshingOllama}
+          onRefresh={async () => {
+            setIsRefreshingOllama(true);
+            await checkOllama(false);
+            setTimeout(() => setIsRefreshingOllama(false), 500);
+          }}
+          onAutoFix={handleFixOllama}
+          onTestConnection={() => void handleTestConnection("ollama", [])}
+          testStatus={testStatus.ollama || "idle"}
+          testError={testError.ollama}
+          onRemoveFromList={() => unpinIntegration("ollama")}
+        />
       )}
 
       {isVisible("custom") && (
@@ -1637,45 +1567,17 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               </div>
             ) : (
               customProviders.map((provider) => (
-                <div
+                <CustomProviderCard
                   key={provider.id}
-                  className="bg-bg-item-surface rounded-xl p-4 border border-border-subtle flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-bg-input flex items-center justify-center text-text-secondary font-mono text-xs font-bold">
-                      {provider.name.substring(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-text-primary">
-                        {provider.name}
-                      </h4>
-                      <p className="text-[10px] text-text-tertiary font-mono truncate max-w-[200px] opacity-60">
-                        {provider.curlCommand.substring(0, 30)}...
-                      </p>
-                      {provider.responsePath && (
-                        <p className="text-[9px] text-text-tertiary font-mono opacity-40 mt-0.5">
-                          path: {provider.responsePath}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleEditProvider(provider)}
-                      className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
-                      title="Edit"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCustom(provider.id)}
-                      className="p-1.5 rounded-lg text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
+                  provider={provider}
+                  onEdit={() => handleEditProvider(provider)}
+                  onDelete={() => handleDeleteCustom(provider.id)}
+                  onTest={() =>
+                    void handleTestConnection("custom", [], provider.id)
+                  }
+                  testStatus={testStatus[`custom:${provider.id}`] || "idle"}
+                  testError={testError[`custom:${provider.id}`]}
+                />
               ))
             )}
           </div>

@@ -160,6 +160,15 @@
       "sttAddFailed": "Could not add provider.",
       "sttRemoved": "Provider removed.",
       "sttEmptyHint": "No providers yet. Add Deepgram, Groq, local Whisper, or another.",
+      "sttKindDeepgramDesc": "Streaming, low latency",
+      "sttKindGroqDesc": "Groq cloud Whisper",
+      "sttKindOpenaiDesc": "Whisper / Realtime API",
+      "sttKindGoogleDesc": "Service account JSON",
+      "sttKindLocalWhisperDesc": "100% on device",
+      "sttKindElevenlabsDesc": "Scribe / streaming",
+      "sttKindAzureDesc": "Region + API key",
+      "sttKindSonioxDesc": "Multilingual streaming",
+      "sttKindIbmwatsonDesc": "IBM Speech to Text",
       "sttRestartRequired": "Restart the app (stop the terminal and run npm run electron:dev again) to load updates.",
       "serviceAccount": "Service account",
       "localWhisper": "Local Whisper",
@@ -303,6 +312,7 @@
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
+    "refresh": "Refresh",
     "none": "None",
     "enable": "Enable",
     "disable": "Disable",
@@ -414,9 +424,18 @@
     "cloudProvidersDesc": "Add API keys to unlock cloud AI models.",
     "getApiKey": "Get API key",
     "apiKeyLabel": "API Key",
+    "apiKeysList": {
+      "title": "API keys",
+      "hint": "Ordered list — key 1 is used first; on failure (rate limit/quota) the app rotates to key 2, and so on.",
+      "add": "Add key",
+      "placeholder": "Key {{index}}"
+    },
+    "clearAllKeys": "Clear all",
+    "allKeysConnectionSuccessful": "{{count}} key(s) validated successfully",
     "backupKeys": {
       "title": "Backup keys",
       "hint": "Used automatically when the primary key fails (limit, quota, auth error).",
+      "count": "{{count}} backup key(s)",
       "add": "Add backup",
       "placeholder": "Backup key {{index}}",
       "save": "Save backup keys",
@@ -483,10 +502,18 @@
     "selectModel": "Select model",
     "modelLabel": "Model",
     "testConnection": "Test Connection",
+    "validateExecutable": "Validate executable",
     "connectionSuccessful": "Connection successful",
     "noModelsAvailable": "No models available",
     "removeKeyConfirm": "Are you sure you want to remove the {{provider}} API key?",
     "deleteProviderConfirm": "Are you sure you want to delete this provider?"
+  },
+  "integrations": {
+    "testTranscription": "Test transcription",
+    "startRecording": "Start recording",
+    "stopRecording": "Stop",
+    "testTranscriptPlaceholder": "Speak into your microphone — the transcript will appear here.",
+    "testTranscriptHint": "Speak normally for a few seconds to validate STT."
   },
   "about": {
     "title": "About Momor",
@@ -495,27 +522,6 @@
     "phoneLink": {
       "title": "Phone Link Integration",
       "desc": "Connect your iOS or Android device to seamlessly use it as a wireless remote microphone or companion screen for your meeting notes."
-    },
-    "smartTask": {
-      "title": "Smart Task Sync",
-      "desc": "Action items are now auto-extracted with extreme precision and can be instantly exported to Jira, Linear, or Asana boards."
-    },
-    "speakerId": {
-      "title": "Speaker Identification",
-      "desc": "Advanced real-time speaker diarization automatically tags individual speakers by name throughout the meeting transcript."
-    },
-    "offlineMode": {
-      "title": "Expanded Offline Mode",
-      "desc": "Now featuring 100% offline transcription and intelligent note generation using specialized, lightning-fast on-device SLMs."
-    },
-    "howItWorks": "How Momor Works",
-    "hybridIntelligence": {
-      "title": "Hybrid Intelligence",
-      "desc": "Seamlessly routes queries between ultra-fast models for instant speed and reasoning models (Gemini, OpenAI, Claude) for complex tasks. Powered by enterprise-grade speech recognition from 7+ providers."
-    },
-    "localRag": {
-      "title": "Local RAG & Memory",
-      "desc": "A purely local vector memory system allows Momor to recall details from past meetings. Embeddings and retrieval happen on-device via SQLite for maximum privacy."
     },
     "privacy": "Privacy & Data",
     "stealthControl": {
@@ -559,6 +565,18 @@
     "selectSystemModel": "Select system model",
     "selectGlobalModel": "Select global STT model",
     "modelManager": "Model Manager",
+    "modelsCount": "{{shown}} of {{total}}",
+    "searchModels": "Search models...",
+    "filterAll": "All",
+    "filterInstalled": "Installed",
+    "filterNotInstalled": "Not installed",
+    "filterDownloading": "Downloading",
+    "filterLangAll": "All languages",
+    "filterEnglish": "English",
+    "filterMultilingual": "Multilingual",
+    "hideIncompatible": "Hide incompatible",
+    "clearFilters": "Clear filters",
+    "noModelsMatch": "No models match your search or filters",
     "recommendedFor": "Recommended for your {{device}}",
     "install": "Install",
     "downloading": "Downloading...",

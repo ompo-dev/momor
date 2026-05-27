@@ -470,13 +470,24 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 const VIRTUAL_IFACE_RE = /^(utun|awdl|llw|anpi|ap\d|bridge|vmnet|vboxnet|docker|veth|br-|gif|stf|tap)/i;
 
 function isPrivateLanIPv4(ip: string): boolean {
-  // RFC1918 — the only ranges a phone on the same Wi-Fi will share with the desktop.
+  // LAN-ish ranges a phone on the same Wi‑Fi may share with the desktop.
+  // Primary goal: generate a reachable URL for typical home/office networks,
+  // including CGNAT ranges some ISPs/routers use.
   if (ip.startsWith('10.')) return true;
   if (ip.startsWith('192.168.')) return true;
   if (ip.startsWith('172.')) {
     const second = parseInt(ip.split('.')[1] || '0', 10);
     return second >= 16 && second <= 31;
   }
+  // CGNAT (RFC6598) — some networks hand out 100.64.0.0/10 addresses that are
+  // still reachable within the same local network.
+  if (ip.startsWith('100.')) {
+    const second = parseInt(ip.split('.')[1] || '0', 10);
+    return second >= 64 && second <= 127;
+  }
+  // IPv4 link-local — can happen on ad-hoc / captive / misconfigured networks.
+  // If both devices share it, it can still be reachable.
+  if (ip.startsWith('169.254.')) return true;
   return false;
 }
 

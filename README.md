@@ -109,7 +109,7 @@ While other tools act as simple API wrappers, momor is a complete, native intell
 - **Local RAG Memory:** We embed your meetings locally using SQLite vector search so you can ask, "What did John say about the API last week?"
 - **Custom Personas & Reference Docs:** Switch between tailored AI roles (Tech, Sales, HR) and inject specific PDFs to give the AI your exact context.
 - **Rich Dashboard:** A full UI to manage, search, and export your history—not just a floating window.
-- **Fully Offline Capable:** Don't trust the cloud? Run momor 100% offline using local Ollama models with limited anonymous telemetry.
+- **Offline Options:** Offline transcription is supported via local Whisper. Local LLM support via Ollama is available for live assistance, and some post-meeting features may still require a configured cloud provider.
 
 ---
 
@@ -168,10 +168,7 @@ This demo shows **a complete live meeting scenario**:
 | **Custom Personas/Modes** | ✅ Pro                     | ✅ Yes               | ❌         | ❌               | ⚠️ Limited             |
 | **Phone Link Companion**  | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
 | **Auto-Calendar Sync**    | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
-| **Smart Task Sync**       | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
-| **Speaker Diarization**   | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
 | **Codex CLI Integration** | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
-| **Offline SLM Mode**      | ✅ Yes                     | ❌                   | ❌         | ❌               | ❌                     |
 | **Data breach history**   | ✅ None                    | ❌ 83k users exposed | ✅ None    | ✅ None          | ✅ None                |
 
 > **Legend:** ✅ Full support · ⚠️ Partial or limited · ❌ Not available
@@ -361,7 +358,6 @@ We've launched the official **$NAT token** on Printr! Holders who maintain a spe
 | **Custom Real-Time Context & Reference Files**      |     ❌     |    ✅     |
 | **Phone Link Companion App**                        |     ❌     |    ✅     |
 | **Auto-Calendar & Task Sync**                       |     ❌     |    ✅     |
-| **Speaker Diarization**                             |     ❌     |    ✅     |
 | **Priority Feature Access & Support**               |     ❌     |    ✅     |
 
 <p align="center">
@@ -383,9 +379,6 @@ Version 2.6.0 brings massive workflow and integration capabilities to make your 
 - **TinyPrompts™ Engine**: Highly optimized system prompts for local SLMs (Ollama, Qwen 2.5:4B, Llama 3.2), enabling premium intelligence on consumer-grade hardware.
 - **Codex CLI Integration**: Native support for the Codex automation system, allowing sandboxed code execution and local terminal tasks via `gpt-5.3-codex`.
 - **Auto-Calendar Sync**: momor now securely connects to Google Calendar and Outlook to automatically pull context and prepare for your upcoming meetings.
-- **Smart Task Sync**: Action items are now auto-extracted with extreme precision and can be instantly exported to Jira, Linear, or Asana boards.
-- **Speaker Identification**: Advanced real-time speaker diarization automatically tags individual speakers by name throughout the meeting transcript.
-- **Expanded Offline Mode**: 100% offline transcription and intelligent note generation using specialized, lightning-fast on-device SLMs.
 - **Advanced Stealth Features**: Hardened undetectable stealth mode with Activity Monitor evasion, process name disguising, and strict timeout management to prevent accidental discovery during OS-level events.
 - **Scroll & Layout Enhancements**: Added scroll keybinds for seamless mouse-free navigation and optimized the horizontal layout for more stable code line rendering.
 
@@ -691,8 +684,6 @@ This runs: Vite build → TypeScript compile → native module build → electro
 
 - **Phone Link:** Use your iOS/Android device as a wireless remote microphone or companion screen.
 - **Calendar Prep:** Auto-syncs with Google Calendar and Outlook to prepare context before meetings.
-- **Smart Task Export:** Send extracted action items directly to Jira, Linear, or Asana.
-- **Speaker Diarization:** Real-time speaker identification tags individual speakers by name automatically.
 - **Codex CLI:** Execute terminal tasks, manage workspace files, and run sandboxed code via native Codex integration.
 
 ### Dual-Channel Audio Intelligence
@@ -713,7 +704,7 @@ momor understands that _listening_ to a meeting and _talking_ to an AI are diffe
 
 ### Local RAG & Long-Term Memory
 
-- **Full Offline RAG:** All vector embeddings and retrieval happen locally (SQLite + `sqlite-vec`).
+- **Local RAG Storage:** Meeting chunks and vector search are stored locally (SQLite + `sqlite-vec`). Embeddings can be generated locally (e.g., MiniLM/Ollama) or via cloud providers depending on your configuration.
 - **Semantic Search:** innovative "Smart Scope" detects if you are asking about the current meeting or a past one.
 - **Sliding-Window RAG**: 50-token semantic overlap to prevent context loss across chunk boundaries.
 - **Epoch Summarization**: Smarter transcript memory management instead of hard truncation — no more losing early meeting context.
@@ -976,5 +967,6 @@ momor is a free, open-source alternative to:
 <sub>
 free-ai-interview-copilot · open-source-cluely · cluely-alternative · cluely-clone · interview-coder-alternative · final-round-ai-alternative · lockedin-ai-alternative · ai-interview-assistant · real-time-interview-ai · undetectable-interview-ai · stealth-mode · local-ai · ollama · byok · rag · electron · rust · privacy-first · meeting-assistant · interview-helper · open-source-interview-ai
 </sub>
-#   m o m o r  
+#   m o m o r 
+ 
  

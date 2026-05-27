@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type StatusVariant =
@@ -9,10 +8,12 @@ type StatusVariant =
   | "default";
 
 const VARIANT_CLASS: Record<StatusVariant, string> = {
-  configured: "text-emerald-600 dark:text-emerald-400",
-  notConfigured: "",
-  enabled: "text-emerald-600 dark:text-emerald-400",
-  default: "",
+  configured:
+    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  notConfigured: "border-border/60 bg-muted/40 text-muted-foreground",
+  enabled:
+    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  default: "border-primary/30 bg-primary/10 text-primary",
 };
 
 interface IntegrationStatusBadgeProps {
@@ -33,15 +34,14 @@ export function IntegrationStatusBadge({
   };
 
   return (
-    <Badge
-      variant={variant === "default" ? "default" : "secondary"}
+    <span
       className={cn(
-        "h-5 shrink-0 px-1.5 text-[10px] font-medium",
+        "inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium leading-none",
         VARIANT_CLASS[variant],
         className,
       )}
     >
       {labels[variant]}
-    </Badge>
+    </span>
   );
 }

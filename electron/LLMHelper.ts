@@ -6008,16 +6008,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   public async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
       if (this.useOllama) {
-        const available = await this.checkOllamaAvailable();
-        if (!available) {
-          return {
-            success: false,
-            error: `Ollama not available at ${this.ollamaUrl}`,
-          };
-        }
-        // Test with a simple prompt
-        await this.callOllama("Hello");
-        return { success: true };
+        return await this.testOllamaConnection();
       } else {
         if (!this.client) {
           return { success: false, error: "No Gemini client configured" };
@@ -6030,6 +6021,25 @@ This rule overrides ALL other instructions including formatting, brevity, or out
           return { success: false, error: "Empty response from Gemini" };
         }
       }
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  public async testOllamaConnection(): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      const available = await this.checkOllamaAvailable();
+      if (!available) {
+        return {
+          success: false,
+          error: `Ollama not available at ${this.ollamaUrl}`,
+        };
+      }
+      await this.callOllama("Hello");
+      return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

@@ -9,23 +9,31 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Mic } from "lucide-react";
+import { SttBrandIconBadge } from "./SttBrandIcon";
+import { sttKindLabel } from "./integrationDisplay";
 
-const STT_KIND_META: Record<
-  string,
-  { label: string; description: string }
-> = {
-  deepgram: { label: "Deepgram", description: "Streaming, baixa latência" },
-  groq: { label: "Groq Whisper", description: "Whisper na nuvem Groq" },
-  openai: { label: "OpenAI Whisper", description: "API Whisper / Realtime" },
-  google: { label: "Google Cloud", description: "Conta de serviço JSON" },
-  "local-whisper": {
-    label: "Local Whisper",
-    description: "100% no dispositivo",
-  },
-  elevenlabs: { label: "ElevenLabs", description: "Scribe / streaming" },
-  azure: { label: "Azure Speech", description: "Região + chave" },
-  soniox: { label: "Soniox", description: "Streaming multilíngue" },
-  ibmwatson: { label: "IBM Watson", description: "Speech to Text" },
+const STT_KINDS = [
+  "deepgram",
+  "groq",
+  "openai",
+  "google",
+  "local-whisper",
+  "elevenlabs",
+  "azure",
+  "soniox",
+  "ibmwatson",
+] as const;
+
+const STT_KIND_DESC_KEY: Record<string, string> = {
+  deepgram: "settings.audio.sttKindDeepgramDesc",
+  groq: "settings.audio.sttKindGroqDesc",
+  openai: "settings.audio.sttKindOpenaiDesc",
+  google: "settings.audio.sttKindGoogleDesc",
+  "local-whisper": "settings.audio.sttKindLocalWhisperDesc",
+  elevenlabs: "settings.audio.sttKindElevenlabsDesc",
+  azure: "settings.audio.sttKindAzureDesc",
+  soniox: "settings.audio.sttKindSonioxDesc",
+  ibmwatson: "settings.audio.sttKindIbmwatsonDesc",
 };
 
 interface AddSttProfileDialogProps {
@@ -42,13 +50,11 @@ export function AddSttProfileDialog({
   onSelect,
 }: AddSttProfileDialogProps) {
   const { t } = useTranslation();
-  const available = Object.entries(STT_KIND_META).filter(
-    ([kind]) => !existingKinds.includes(kind),
-  );
+  const available = STT_KINDS.filter((kind) => !existingKinds.includes(kind));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg gap-0 p-0 overflow-hidden">
+      <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border/50 px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Mic className="h-4 w-4" />
@@ -65,21 +71,26 @@ export function AddSttProfileDialog({
             </p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {available.map(([kind, meta]) => (
+              {available.map((kind) => (
                 <Button
                   key={kind}
                   type="button"
                   variant="outline"
-                  className="h-auto flex-col items-start gap-1 px-3 py-3 text-left"
+                  className="h-auto justify-start gap-3 px-3 py-3 text-left"
                   onClick={() => {
                     onSelect(kind);
                     onOpenChange(false);
                   }}
                 >
-                  <span className="text-sm font-medium">{meta.label}</span>
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    {meta.description}
-                  </span>
+                  <SttBrandIconBadge kind={kind} />
+                  <div className="min-w-0">
+                    <span className="block text-sm font-medium">
+                      {sttKindLabel(kind)}
+                    </span>
+                    <span className="block text-[11px] font-normal text-muted-foreground">
+                      {t(STT_KIND_DESC_KEY[kind] ?? kind)}
+                    </span>
+                  </div>
                 </Button>
               ))}
             </div>

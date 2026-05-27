@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { Worker } from 'worker_threads';
 import fs from 'fs';
 import path from 'path';
+import { app } from 'electron';
 import { Chunk } from './SemanticChunker';
 import { DatabaseManager } from '../db/DatabaseManager';
 
@@ -48,14 +49,30 @@ export class VectorStore {
      * Resolve compiled worker script path (dist-electron output).
      */
     private resolveWorkerPath(): string {
-        // Prefer paths relative to the Electron entry (main.js), not __dirname of an inlined module.
+        // Worker scripts must be real files on disk (not inside asar). esbuild emits
+        // dist-electron/electron/rag/vectorSearchWorker.js via `npm run build:electron`.
         const electronRoot = path.dirname(require.main?.filename ?? __filename);
+        const appPath = (() => {
+            try {
+                return app.getAppPath();
+            } catch {
+                return process.cwd();
+            }
+        })();
+        const unpackedAsar = process.resourcesPath
+            ? path.join(process.resourcesPath, 'app.asar.unpacked')
+            : '';
+
         const candidates = [
             path.join(electronRoot, 'rag', 'vectorSearchWorker.js'),
+            path.join(appPath, 'dist-electron', 'electron', 'rag', 'vectorSearchWorker.js'),
+            unpackedAsar
+                ? path.join(unpackedAsar, 'dist-electron', 'electron', 'rag', 'vectorSearchWorker.js')
+                : '',
             path.join(__dirname, 'rag', 'vectorSearchWorker.js'),
             path.join(__dirname, 'vectorSearchWorker.js'),
             path.join(process.cwd(), 'dist-electron', 'electron', 'rag', 'vectorSearchWorker.js'),
-        ];
+        ].filter(Boolean);
 
         for (const candidate of candidates) {
             if (fs.existsSync(candidate)) {
@@ -65,7 +82,8 @@ export class VectorStore {
         }
 
         throw new Error(
-            `[VectorStore] vectorSearchWorker.js not found (tried ${candidates.join(', ')})`
+            `[VectorStore] vectorSearchWorker.js not found (tried ${candidates.join(', ')}). ` +
+                'Run: npm run build:electron'
         );
     }
 

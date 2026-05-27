@@ -91,8 +91,8 @@ export function ProviderBrandIconBadge({
   providerId: IntegrationId | string;
 }) {
   return (
-    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
-      <ProviderBrandIcon providerId={providerId} />
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-background/80">
+      <ProviderBrandIcon providerId={providerId} size="md" />
     </div>
   );
 }

@@ -1257,6 +1257,46 @@ export function initializeIpcHandlers(appState: AppState): void {
   });
 
   safeHandle(
+    "set-llm-api-keys",
+    async (
+      _,
+      provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
+      keys: string[],
+    ) => {
+      try {
+        const { CredentialsManager } = require("./services/CredentialsManager");
+        const cm = CredentialsManager.getInstance();
+        cm.setLlmApiKeys(provider, Array.isArray(keys) ? keys : []);
+        cm.resetKeyRotation(`llm:${provider}`);
+
+        const llmHelper = appState.processingHelper.getLLMHelper();
+        const activeKey = cm.getLlmApiKeysList(provider)[0] ?? "";
+        if (provider === "gemini") llmHelper.setApiKey(activeKey);
+        else if (provider === "groq") llmHelper.setGroqApiKey(activeKey);
+        else if (provider === "openai") llmHelper.setOpenaiApiKey(activeKey);
+        else if (provider === "claude") llmHelper.setClaudeApiKey(activeKey);
+        else if (provider === "deepseek")
+          llmHelper.initDeepseek(
+            activeKey,
+            cm.getDeepseekPreferredModel() || "deepseek-chat",
+          );
+
+        if (provider !== "momor") {
+          appState.getIntelligenceManager().resetEngine();
+          appState.getIntelligenceManager().initializeLLMs();
+        }
+
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) win.webContents.send("credentials-changed");
+        });
+        return { success: true };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+  );
+
+  safeHandle(
     "set-llm-backup-keys",
     async (
       _,
@@ -1778,11 +1818,11 @@ export function initializeIpcHandlers(appState: AppState): void {
       const hasKey = (key?: string) => !!(key && key.trim().length > 0);
 
       return {
-        hasGeminiKey: hasKey(creds.geminiApiKey),
-        hasGroqKey: hasKey(creds.groqApiKey),
-        hasOpenaiKey: hasKey(creds.openaiApiKey),
-        hasClaudeKey: hasKey(creds.claudeApiKey),
-        hasmomorKey: hasKey(creds.momorApiKey),
+        hasGeminiKey: cm.getLlmApiKeysList("gemini").length > 0,
+        hasGroqKey: cm.getLlmApiKeysList("groq").length > 0,
+        hasOpenaiKey: cm.getLlmApiKeysList("openai").length > 0,
+        hasClaudeKey: cm.getLlmApiKeysList("claude").length > 0,
+        hasmomorKey: cm.getLlmApiKeysList("momor").length > 0,
         googleServiceAccountPath: creds.googleServiceAccountPath || null,
         sttProvider: creds.sttProvider || "none",
         groqSttModel: creds.groqSttModel || "whisper-large-v3-turbo",
@@ -1826,12 +1866,19 @@ export function initializeIpcHandlers(appState: AppState): void {
         groqPreferredModel: creds.groqPreferredModel || undefined,
         openaiPreferredModel: creds.openaiPreferredModel || undefined,
         claudePreferredModel: creds.claudePreferredModel || undefined,
-        geminiBackupKeys: cm.getMaskedLlmBackupApiKeys("gemini"),
-        groqBackupKeys: cm.getMaskedLlmBackupApiKeys("groq"),
-        openaiBackupKeys: cm.getMaskedLlmBackupApiKeys("openai"),
-        claudeBackupKeys: cm.getMaskedLlmBackupApiKeys("claude"),
-        deepseekBackupKeys: cm.getMaskedLlmBackupApiKeys("deepseek"),
-        momorBackupKeys: cm.getMaskedLlmBackupApiKeys("momor"),
+        geminiApiKeys: cm.getLlmApiKeysList("gemini"),
+        groqApiKeys: cm.getLlmApiKeysList("groq"),
+        openaiApiKeys: cm.getLlmApiKeysList("openai"),
+        claudeApiKeys: cm.getLlmApiKeysList("claude"),
+        deepseekApiKeys: cm.getLlmApiKeysList("deepseek"),
+        momorApiKeys: cm.getLlmApiKeysList("momor"),
+        // Legacy aliases — same ordered list (no primary/backup split)
+        geminiBackupKeys: cm.getLlmApiKeysList("gemini").slice(1),
+        groqBackupKeys: cm.getLlmApiKeysList("groq").slice(1),
+        openaiBackupKeys: cm.getLlmApiKeysList("openai").slice(1),
+        claudeBackupKeys: cm.getLlmApiKeysList("claude").slice(1),
+        deepseekBackupKeys: cm.getLlmApiKeysList("deepseek").slice(1),
+        momorBackupKeys: cm.getLlmApiKeysList("momor").slice(1),
       };
     } catch (error: any) {
       // SECURITY FIX (P0): Error fallback returns masked keys, not raw strings
@@ -2035,6 +2082,9 @@ export function initializeIpcHandlers(appState: AppState): void {
         model,
         backupApiKeys: Array.isArray(profile.backupApiKeys)
           ? (profile.backupApiKeys as string[])
+          : undefined,
+        apiKeys: Array.isArray(profile.apiKeys)
+          ? (profile.apiKeys as string[])
           : undefined,
       });
       if (kind === "local-whisper" && model) {
@@ -2299,49 +2349,92 @@ export function initializeIpcHandlers(appState: AppState): void {
     "test-stt-connection",
     async (
       _,
-      provider:
-        | "groq"
-        | "openai"
-        | "deepgram"
-        | "elevenlabs"
-        | "azure"
-        | "ibmwatson"
-        | "soniox",
-      apiKey: string,
-      region?: string,
+      profileId: string,
+      apiKeysArg?: string[] | string,
+      regionOverride?: string,
     ) => {
+      const cm = CredentialsManager.getInstance();
+      const profile = cm.getSttProfileById(profileId);
+      if (!profile) {
+        return { success: false, error: "STT profile not found" };
+      }
+      const provider = profile.kind;
       console.log(
-        `[IPC] Received test - stt - connection request for provider: ${provider} `,
+        `[IPC] test-stt-connection profile=${profileId} kind=${provider}`,
       );
-      try {
-        const cm = CredentialsManager.getInstance();
-        const trimmed = (apiKey || "").trim();
-        const looksMasked = !trimmed || trimmed.includes("...");
-        const resolveStoredKey = (): string => {
-          switch (provider) {
-            case "groq":
-              return cm.getGroqSttApiKey() || "";
-            case "openai":
-              return cm.getOpenAiSttApiKey() || "";
-            case "deepgram":
-              return cm.getDeepgramApiKey() || "";
-            case "elevenlabs":
-              return cm.getElevenLabsApiKey() || "";
-            case "azure":
-              return cm.getAzureApiKey() || "";
-            case "ibmwatson":
-              return cm.getIbmWatsonApiKey() || "";
-            case "soniox":
-              return cm.getSonioxApiKey() || "";
-            default:
-              return "";
-          }
-        };
-        const token = looksMasked ? resolveStoredKey() : trimmed;
-        if (!token) {
-          return { success: false, error: "No API key configured" };
-        }
 
+      if (provider === "google") {
+        const saPath =
+          profile.serviceAccountPath?.trim() ||
+          cm.getGoogleServiceAccountPath()?.trim();
+        if (!saPath) {
+          return { success: false, error: "No service account JSON configured" };
+        }
+        try {
+          const fs = require("fs");
+          if (!fs.existsSync(saPath)) {
+            return {
+              success: false,
+              error: "Service account file not found on disk",
+            };
+          }
+          JSON.parse(fs.readFileSync(saPath, "utf8"));
+          return { success: true };
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : "Invalid service account";
+          return { success: false, error: msg };
+        }
+      }
+
+      if (provider === "local-whisper") {
+        return { success: true };
+      }
+
+      if (
+        provider !== "groq" &&
+        provider !== "openai" &&
+        provider !== "deepgram" &&
+        provider !== "elevenlabs" &&
+        provider !== "azure" &&
+        provider !== "ibmwatson" &&
+        provider !== "soniox"
+      ) {
+        return {
+          success: false,
+          error: `Connection test not supported for ${provider}`,
+        };
+      }
+
+      const keysToTest = cm.resolveSttApiKeysForProfile(
+        profileId,
+        Array.isArray(apiKeysArg)
+          ? apiKeysArg
+          : typeof apiKeysArg === "string" && apiKeysArg.trim()
+            ? [apiKeysArg.trim()]
+            : undefined,
+      );
+      if (!keysToTest.length) {
+        return { success: false, error: "No API key configured" };
+      }
+
+      const region =
+        regionOverride?.trim() ||
+        profile.region?.trim() ||
+        (provider === "azure"
+          ? cm.getAzureRegion()
+          : provider === "ibmwatson"
+            ? cm.getIbmWatsonRegion()
+            : undefined);
+
+      const keyResults: Array<{
+        index: number;
+        success: boolean;
+        error?: string;
+      }> = [];
+
+      for (let keyIndex = 0; keyIndex < keysToTest.length; keyIndex++) {
+        const token = keysToTest[keyIndex];
+        try {
         if (provider === "deepgram") {
           try {
             const resp = await fetch("https://api.deepgram.com/v1/auth/token", {
@@ -2353,18 +2446,27 @@ export function initializeIpcHandlers(appState: AppState): void {
                 ? `${resp.status} ${body}`
                 : `${resp.status} Invalid credentials`;
               console.error(`[IPC] Deepgram test failed: ${errMsg}`);
-              return { success: false, error: errMsg };
+              keyResults.push({ index: keyIndex, success: false, error: errMsg });
+              return {
+                success: false,
+                error: `Key ${keyIndex + 1}: ${errMsg}`,
+                keyResults,
+                failedIndex: keyIndex,
+              };
             }
-            return { success: true };
           } catch (err: unknown) {
             const { extractErrorMessage } = require("./utils/extractErrorMessage");
             const errMsg = extractErrorMessage(err);
             console.error(`[IPC] Deepgram test error: ${errMsg}`);
-            return { success: false, error: errMsg };
+            keyResults.push({ index: keyIndex, success: false, error: errMsg });
+            return {
+              success: false,
+              error: `Key ${keyIndex + 1}: ${errMsg}`,
+              keyResults,
+              failedIndex: keyIndex,
+            };
           }
-        }
-
-        if (provider === "soniox") {
+        } else if (provider === "soniox") {
           // Test Soniox via WebSocket connection.
           // With a valid key, Soniox accepts the config and then silently waits for audio —
           // it never sends a response message. With an invalid key it immediately sends an
@@ -2373,7 +2475,7 @@ export function initializeIpcHandlers(appState: AppState): void {
           //   • If the connection errors at the WS level → fail
           //   • If 2.5 s pass after sending the config with no error → success
           const WebSocket = require("ws");
-          return await new Promise<{ success: boolean; error?: string }>(
+          const sonioxResult = await new Promise<{ success: boolean; error?: string }>(
             (resolve) => {
               let resolved = false;
               const done = (result: { success: boolean; error?: string }) => {
@@ -2443,31 +2545,42 @@ export function initializeIpcHandlers(appState: AppState): void {
               });
             },
           );
-        }
+          if (!sonioxResult.success) {
+            keyResults.push({
+              index: keyIndex,
+              success: false,
+              error: sonioxResult.error,
+            });
+            return {
+              success: false,
+              error: `Key ${keyIndex + 1}: ${sonioxResult.error || "Connection failed"}`,
+              keyResults,
+              failedIndex: keyIndex,
+            };
+          }
+        } else {
+          const axios = require("axios");
+          const FormData = require("form-data");
 
-        const axios = require("axios");
-        const FormData = require("form-data");
+          const numSamples = 8000;
+          const pcmData = Buffer.alloc(numSamples * 2);
+          const wavHeader = Buffer.alloc(44);
+          wavHeader.write("RIFF", 0);
+          wavHeader.writeUInt32LE(36 + pcmData.length, 4);
+          wavHeader.write("WAVE", 8);
+          wavHeader.write("fmt ", 12);
+          wavHeader.writeUInt32LE(16, 16);
+          wavHeader.writeUInt16LE(1, 20);
+          wavHeader.writeUInt16LE(1, 22);
+          wavHeader.writeUInt32LE(16000, 24);
+          wavHeader.writeUInt32LE(32000, 28);
+          wavHeader.writeUInt16LE(2, 32);
+          wavHeader.writeUInt16LE(16, 34);
+          wavHeader.write("data", 36);
+          wavHeader.writeUInt32LE(pcmData.length, 40);
+          const testWav = Buffer.concat([wavHeader, pcmData]);
 
-        // Generate a tiny silent WAV (0.5s of silence at 16kHz mono 16-bit)
-        const numSamples = 8000;
-        const pcmData = Buffer.alloc(numSamples * 2);
-        const wavHeader = Buffer.alloc(44);
-        wavHeader.write("RIFF", 0);
-        wavHeader.writeUInt32LE(36 + pcmData.length, 4);
-        wavHeader.write("WAVE", 8);
-        wavHeader.write("fmt ", 12);
-        wavHeader.writeUInt32LE(16, 16);
-        wavHeader.writeUInt16LE(1, 20);
-        wavHeader.writeUInt16LE(1, 22);
-        wavHeader.writeUInt32LE(16000, 24);
-        wavHeader.writeUInt32LE(32000, 28);
-        wavHeader.writeUInt16LE(2, 32);
-        wavHeader.writeUInt16LE(16, 34);
-        wavHeader.write("data", 36);
-        wavHeader.writeUInt32LE(pcmData.length, 40);
-        const testWav = Buffer.concat([wavHeader, pcmData]);
-
-        if (provider === "elevenlabs") {
+          if (provider === "elevenlabs") {
           // ElevenLabs: Use /v1/voices to validate the API key (minimal scope required).
           // Scoped keys may lack speech_to_text or user_read but still be usable once permissions are added.
           try {
@@ -2477,12 +2590,9 @@ export function initializeIpcHandlers(appState: AppState): void {
             });
           } catch (elErr: any) {
             const elStatus = elErr?.response?.data?.detail?.status;
-            // If the error is "invalid_api_key", the key itself is wrong — fail.
-            // Any other error (missing permission, etc.) means the key IS valid, just possibly scoped.
             if (elStatus === "invalid_api_key") {
               throw elErr;
             }
-            // Key is valid but scoped — pass with a warning
             console.log(
               "[IPC] ElevenLabs key is valid but may have restricted scopes. Saving key.",
             );
@@ -2538,7 +2648,9 @@ export function initializeIpcHandlers(appState: AppState): void {
               ? "https://api.groq.com/openai/v1/audio/transcriptions"
               : openAiEndpoint;
           const model =
-            provider === "groq" ? "whisper-large-v3-turbo" : "whisper-1";
+            provider === "groq"
+              ? profile.model || cm.getGroqSttModel() || "whisper-large-v3-turbo"
+              : "whisper-1";
 
           const form = new FormData();
           form.append("file", testWav, {
@@ -2555,9 +2667,10 @@ export function initializeIpcHandlers(appState: AppState): void {
             timeout: 15000,
           });
         }
+        }
 
-        return { success: true };
-      } catch (error: any) {
+        keyResults.push({ index: keyIndex, success: true });
+        } catch (error: any) {
         const respData = error?.response?.data;
         const rawMsg =
           respData?.error?.message ||
@@ -2567,8 +2680,17 @@ export function initializeIpcHandlers(appState: AppState): void {
           "Connection failed";
         const msg = sanitizeErrorMessage(rawMsg);
         console.error("STT connection test failed:", msg);
-        return { success: false, error: msg };
+        keyResults.push({ index: keyIndex, success: false, error: msg });
+        return {
+          success: false,
+          error: `Key ${keyIndex + 1}: ${msg}`,
+          keyResults,
+          failedIndex: keyIndex,
+        };
       }
+      }
+
+      return { success: true, keyResults };
     },
   );
 
@@ -2740,118 +2862,200 @@ export function initializeIpcHandlers(appState: AppState): void {
     "test-llm-connection",
     async (
       _,
-      provider: "gemini" | "groq" | "openai" | "claude",
-      apiKey?: string,
+      provider:
+        | "gemini"
+        | "groq"
+        | "openai"
+        | "claude"
+        | "deepseek"
+        | "ollama"
+        | "custom",
+      apiKeysArg?: string[] | string,
+      customProviderId?: string,
     ) => {
       console.log(
         `[IPC] Received test-llm-connection request for provider: ${provider}`,
       );
       try {
-        if (!apiKey || !apiKey.trim()) {
-          const {
-            CredentialsManager,
-          } = require("./services/CredentialsManager");
-          const creds = CredentialsManager.getInstance();
-          if (provider === "gemini") apiKey = creds.getGeminiApiKey();
-          else if (provider === "groq") apiKey = creds.getGroqApiKey();
-          else if (provider === "openai") apiKey = creds.getOpenaiApiKey();
-          else if (provider === "claude") apiKey = creds.getClaudeApiKey();
+        if (provider === "ollama") {
+          const llmHelper = appState.processingHelper.getLLMHelper();
+          return await llmHelper.testOllamaConnection();
         }
 
-        if (!apiKey || !apiKey.trim()) {
+        if (provider === "custom") {
+          if (!customProviderId) {
+            return { success: false, error: "Custom provider ID required" };
+          }
+          const { CredentialsManager } = require("./services/CredentialsManager");
+          const custom = CredentialsManager.getInstance()
+            .getCustomProviders()
+            .find((p: { id: string }) => p.id === customProviderId);
+          if (!custom) {
+            return { success: false, error: "Custom provider not found" };
+          }
+          const llmHelper = appState.processingHelper.getLLMHelper();
+          const response = await llmHelper.executeCustomProvider(
+            custom.curlCommand,
+            "Hello",
+            "",
+            "Hello",
+            "",
+          );
+          if (response && String(response).trim()) {
+            return { success: true };
+          }
+          return { success: false, error: "Empty response from custom provider" };
+        }
+
+        const { CredentialsManager } = require("./services/CredentialsManager");
+        const creds = CredentialsManager.getInstance();
+
+        let keysToTest: string[] = [];
+        if (Array.isArray(apiKeysArg)) {
+          keysToTest = apiKeysArg.map((k) => k.trim()).filter(Boolean);
+        } else if (typeof apiKeysArg === "string" && apiKeysArg.trim()) {
+          keysToTest = [apiKeysArg.trim()];
+        } else if (
+          provider === "gemini" ||
+          provider === "groq" ||
+          provider === "openai" ||
+          provider === "claude" ||
+          provider === "deepseek"
+        ) {
+          keysToTest = creds.getLlmApiKeysList(provider);
+        }
+
+        if (!keysToTest.length) {
           return { success: false, error: "No API key provided" };
         }
 
         const axios = require("axios");
-        let response;
+        const keyResults: Array<{
+          index: number;
+          success: boolean;
+          error?: string;
+        }> = [];
 
-        if (provider === "gemini") {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent`;
-          response = await axios.post(
-            url,
-            {
-              contents: [{ parts: [{ text: "Hello" }] }],
-            },
-            {
-              headers: { "x-goog-api-key": apiKey },
-              timeout: 15000,
-            },
-          );
-        } else if (provider === "groq") {
-          response = await axios.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-              model: "llama-3.3-70b-versatile",
-              messages: [{ role: "user", content: "Hello" }],
-            },
-            {
-              headers: { Authorization: `Bearer ${apiKey}` },
-              timeout: 15000,
-            },
-          );
-        } else if (provider === "openai") {
-          response = await axios.post(
-            "https://api.openai.com/v1/chat/completions",
-            {
-              model: "gpt-4o-mini",
-              messages: [{ role: "user", content: "Hello" }],
-            },
-            {
-              headers: { Authorization: `Bearer ${apiKey}` },
-              timeout: 15000,
-            },
-          );
-        } else if (provider === "claude") {
-          response = await axios.post(
-            "https://api.anthropic.com/v1/messages",
-            {
-              model: "claude-sonnet-4-6",
-              max_tokens: 10,
-              messages: [{ role: "user", content: "Hello" }],
-            },
-            {
-              headers: {
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-              },
-              timeout: 15000,
-            },
-          );
+        for (let keyIndex = 0; keyIndex < keysToTest.length; keyIndex++) {
+          const apiKey = keysToTest[keyIndex];
+          let response;
+          try {
+            if (provider === "deepseek") {
+              response = await axios.post(
+                "https://api.deepseek.com/chat/completions",
+                {
+                  model: "deepseek-chat",
+                  messages: [{ role: "user", content: "Hello" }],
+                  max_tokens: 5,
+                },
+                {
+                  headers: { Authorization: `Bearer ${apiKey}` },
+                  timeout: 15000,
+                },
+              );
+            } else if (provider === "gemini") {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent`;
+              response = await axios.post(
+                url,
+                {
+                  contents: [{ parts: [{ text: "Hello" }] }],
+                },
+                {
+                  headers: { "x-goog-api-key": apiKey },
+                  timeout: 15000,
+                },
+              );
+            } else if (provider === "groq") {
+              response = await axios.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                {
+                  model: "llama-3.3-70b-versatile",
+                  messages: [{ role: "user", content: "Hello" }],
+                },
+                {
+                  headers: { Authorization: `Bearer ${apiKey}` },
+                  timeout: 15000,
+                },
+              );
+            } else if (provider === "openai") {
+              response = await axios.post(
+                "https://api.openai.com/v1/chat/completions",
+                {
+                  model: "gpt-4o-mini",
+                  messages: [{ role: "user", content: "Hello" }],
+                },
+                {
+                  headers: { Authorization: `Bearer ${apiKey}` },
+                  timeout: 15000,
+                },
+              );
+            } else if (provider === "claude") {
+              response = await axios.post(
+                "https://api.anthropic.com/v1/messages",
+                {
+                  model: "claude-sonnet-4-6",
+                  max_tokens: 10,
+                  messages: [{ role: "user", content: "Hello" }],
+                },
+                {
+                  headers: {
+                    "x-api-key": apiKey,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                  },
+                  timeout: 15000,
+                },
+              );
+            }
+
+            if (response && (response.status === 200 || response.status === 201)) {
+              keyResults.push({ index: keyIndex, success: true });
+              continue;
+            }
+
+            const failMsg = "Request failed with status " + response?.status;
+            keyResults.push({ index: keyIndex, success: false, error: failMsg });
+            return {
+              success: false,
+              error: `Key ${keyIndex + 1}: ${failMsg}`,
+              keyResults,
+              failedIndex: keyIndex,
+            };
+          } catch (error: any) {
+            const safeInfo = {
+              provider,
+              keyIndex,
+              status: error?.response?.status,
+              statusText: error?.response?.statusText,
+              code: error?.code,
+              message: error?.message,
+              responseError:
+                error?.response?.data?.error?.message ||
+                error?.response?.data?.message,
+            };
+            console.error("LLM connection test failed:", safeInfo);
+            const rawMsg =
+              error?.response?.data?.error?.message ||
+              error?.response?.data?.message ||
+              (error.response?.data?.error?.type
+                ? `${error.response.data.error.type}: ${error.response.data.error.message}`
+                : error.message) ||
+              "Connection failed";
+            const msg = sanitizeErrorMessage(rawMsg);
+            keyResults.push({ index: keyIndex, success: false, error: msg });
+            return {
+              success: false,
+              error: `Key ${keyIndex + 1}: ${msg}`,
+              keyResults,
+              failedIndex: keyIndex,
+            };
+          }
         }
 
-        if (response && (response.status === 200 || response.status === 201)) {
-          return { success: true };
-        } else {
-          return {
-            success: false,
-            error: "Request failed with status " + response?.status,
-          };
-        }
+        return { success: true, keyResults };
       } catch (error: any) {
-        // CRITICAL: do NOT log the raw axios error — it includes the request config
-        // with the Authorization header (full API key) and is dumped verbatim by
-        // Node's util.inspect. Strip to a safe shape before logging.
-        const safeInfo = {
-          provider,
-          status: error?.response?.status,
-          statusText: error?.response?.statusText,
-          code: error?.code,
-          message: error?.message,
-          responseError:
-            error?.response?.data?.error?.message ||
-            error?.response?.data?.message,
-        };
-        console.error("LLM connection test failed:", safeInfo);
-        const rawMsg =
-          error?.response?.data?.error?.message ||
-          error?.response?.data?.message ||
-          (error.response?.data?.error?.type
-            ? `${error.response.data.error.type}: ${error.response.data.error.message}`
-            : error.message) ||
-          "Connection failed";
-        const msg = sanitizeErrorMessage(rawMsg);
-        return { success: false, error: msg };
+        console.error("LLM connection test failed:", error?.message);
+        return { success: false, error: error?.message || "Connection failed" };
       }
     },
   );
@@ -2944,6 +3148,34 @@ export function initializeIpcHandlers(appState: AppState): void {
       return result;
     } catch (error: any) {
       return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("test-codex-inference", async (_, config?: any) => {
+    try {
+      const current = appState.processingHelper
+        .getLLMHelper()
+        .getCodexCliConfig();
+      const normalized = CodexCliService.normalizeConfig({
+        ...current,
+        ...(config || {}),
+      });
+      const validation = await CodexCliService.validateExecutable(
+        normalized.path,
+      );
+      if (!validation.success) {
+        return validation;
+      }
+      const binPath = validation.resolvedPath || normalized.path;
+      const result = await CodexCliService.run(binPath, {
+        prompt: 'Say "OK" and nothing else.',
+        model: normalized.model,
+        timeoutMs: Math.min(normalized.timeoutMs, 30_000),
+        sandboxMode: normalized.sandboxMode,
+      });
+      return { success: true, message: result.slice(0, 100) };
+    } catch (error: any) {
+      return { success: false, error: error.message || "Codex inference failed" };
     }
   });
 
@@ -3107,6 +3339,15 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("stop-audio-test", async () => {
     appState.stopAudioTest();
+    return { success: true };
+  });
+
+  safeHandle("start-stt-live-test", async (_, profileId: string) => {
+    return appState.startSttLiveTest(profileId);
+  });
+
+  safeHandle("stop-stt-live-test", async () => {
+    appState.stopSttLiveTest();
     return { success: true };
   });
 

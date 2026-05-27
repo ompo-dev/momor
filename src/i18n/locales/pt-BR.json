@@ -160,6 +160,15 @@
       "sttAddFailed": "Não foi possível adicionar o provedor.",
       "sttRemoved": "Provedor removido.",
       "sttEmptyHint": "Nenhum provedor ainda. Adicione Deepgram, Groq, Whisper local ou outro.",
+      "sttKindDeepgramDesc": "Streaming, baixa latência",
+      "sttKindGroqDesc": "Whisper na nuvem Groq",
+      "sttKindOpenaiDesc": "API Whisper / Realtime",
+      "sttKindGoogleDesc": "Conta de serviço JSON",
+      "sttKindLocalWhisperDesc": "100% no dispositivo",
+      "sttKindElevenlabsDesc": "Scribe / streaming",
+      "sttKindAzureDesc": "Região + chave",
+      "sttKindSonioxDesc": "Streaming multilíngue",
+      "sttKindIbmwatsonDesc": "IBM Speech to Text",
       "sttRestartRequired": "Reinicie o app (pare o terminal e rode npm run electron:dev de novo) para carregar as atualizações.",
       "serviceAccount": "Conta de serviço",
       "localWhisper": "Whisper local",
@@ -303,6 +312,7 @@
     "delete": "Excluir",
     "edit": "Editar",
     "add": "Adicionar",
+    "refresh": "Atualizar",
     "none": "Nenhum",
     "enable": "Ativar",
     "disable": "Desativar",
@@ -414,9 +424,18 @@
     "cloudProvidersDesc": "Adicione chaves de API para desbloquear modelos de IA na nuvem.",
     "getApiKey": "Obter chave de API",
     "apiKeyLabel": "Chave de API",
+    "apiKeysList": {
+      "title": "Chaves de API",
+      "hint": "Lista ordenada — a chave 1 é usada primeiro; se falhar (limite/quota), passa para a 2, e assim por diante.",
+      "add": "Adicionar chave",
+      "placeholder": "Chave {{index}}"
+    },
+    "clearAllKeys": "Limpar todas",
+    "allKeysConnectionSuccessful": "{{count}} chave(s) validadas com sucesso",
     "backupKeys": {
       "title": "Chaves reserva",
       "hint": "Usadas automaticamente se a chave principal falhar (limite, quota, erro de autenticação).",
+      "count": "{{count}} chave(s) reserva",
       "add": "Adicionar reserva",
       "placeholder": "Chave reserva {{index}}",
       "save": "Salvar reservas",
@@ -483,10 +502,18 @@
     "selectModel": "Selecionar modelo",
     "modelLabel": "Modelo",
     "testConnection": "Testar Conexão",
+    "validateExecutable": "Validar executável",
     "connectionSuccessful": "Conexão bem-sucedida",
     "noModelsAvailable": "Nenhum modelo disponível",
     "removeKeyConfirm": "Tem certeza que deseja remover a chave de API do {{provider}}?",
     "deleteProviderConfirm": "Tem certeza que deseja excluir este provedor?"
+  },
+  "integrations": {
+    "testTranscription": "Testar transcrição",
+    "startRecording": "Iniciar gravação",
+    "stopRecording": "Parar",
+    "testTranscriptPlaceholder": "Fale no microfone — a transcrição aparecerá aqui.",
+    "testTranscriptHint": "Fale normalmente por alguns segundos para validar o STT."
   },
   "about": {
     "title": "Sobre o Momor",
@@ -495,27 +522,6 @@
     "phoneLink": {
       "title": "Integração com Celular",
       "desc": "Conecte seu dispositivo iOS ou Android para usá-lo como microfone remoto sem fio ou tela complementar para suas notas de reunião."
-    },
-    "smartTask": {
-      "title": "Sincronização Inteligente de Tarefas",
-      "desc": "Itens de ação são extraídos automaticamente com extrema precisão e podem ser exportados instantaneamente para Jira, Linear ou Asana."
-    },
-    "speakerId": {
-      "title": "Identificação de Falantes",
-      "desc": "Diarização avançada de falantes em tempo real identifica automaticamente os falantes pelo nome na transcrição da reunião."
-    },
-    "offlineMode": {
-      "title": "Modo Offline Expandido",
-      "desc": "Agora com transcrição 100% offline e geração inteligente de notas usando SLMs especializados e ultrarrápidos no dispositivo."
-    },
-    "howItWorks": "Como o Momor Funciona",
-    "hybridIntelligence": {
-      "title": "Inteligência Híbrida",
-      "desc": "Encaminha consultas entre modelos ultrarrápidos para velocidade instantânea e modelos de raciocínio (Gemini, OpenAI, Claude) para tarefas complexas."
-    },
-    "localRag": {
-      "title": "RAG Local e Memória",
-      "desc": "Um sistema de memória vetorial puramente local permite que o Momor recorde detalhes de reuniões anteriores. Embeddings e recuperação acontecem no dispositivo via SQLite para máxima privacidade."
     },
     "privacy": "Privacidade e Dados",
     "stealthControl": {
@@ -559,6 +565,18 @@
     "selectSystemModel": "Selecionar modelo do sistema",
     "selectGlobalModel": "Selecionar modelo STT global",
     "modelManager": "Gerenciador de Modelos",
+    "modelsCount": "{{shown}} de {{total}}",
+    "searchModels": "Buscar modelos...",
+    "filterAll": "Todos",
+    "filterInstalled": "Instalados",
+    "filterNotInstalled": "Não instalados",
+    "filterDownloading": "Baixando",
+    "filterLangAll": "Todos idiomas",
+    "filterEnglish": "Inglês",
+    "filterMultilingual": "Multilíngue",
+    "hideIncompatible": "Ocultar incompatíveis",
+    "clearFilters": "Limpar filtros",
+    "noModelsMatch": "Nenhum modelo corresponde à busca ou filtros",
     "recommendedFor": "Recomendado para seu {{device}}",
     "install": "Instalar",
     "downloading": "Baixando...",

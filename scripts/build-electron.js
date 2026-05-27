@@ -58,6 +58,11 @@ build({
   },
   logLevel: 'warning',
 }).then(() => {
+  const workerOut = path.join(outDir, 'electron', 'rag', 'vectorSearchWorker.js');
+  if (!fs.existsSync(workerOut)) {
+    console.error('[build-electron] Missing required output:', workerOut);
+    process.exit(1);
+  }
   console.log(`[build-electron] Done in ${Date.now() - start}ms`);
 }).catch((err) => {
   console.error('[build-electron] Build failed:', err.message);

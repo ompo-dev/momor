@@ -152,9 +152,22 @@ export interface ElectronAPI {
     modelId?: string,
   ) => Promise<{ success: boolean; error?: string }>;
   testLlmConnection: (
-    provider: "gemini" | "groq" | "openai" | "claude",
-    apiKey?: string,
-  ) => Promise<{ success: boolean; error?: string }>;
+    provider:
+      | "gemini"
+      | "groq"
+      | "openai"
+      | "claude"
+      | "deepseek"
+      | "ollama"
+      | "custom",
+    apiKeys?: string[],
+    customProviderId?: string,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    keyResults?: Array<{ index: number; success: boolean; error?: string }>;
+    failedIndex?: number;
+  }>;
   selectServiceAccount: () => Promise<{
     success: boolean;
     path?: string;
@@ -179,6 +192,10 @@ export interface ElectronAPI {
     apiKey: string,
   ) => Promise<{ success: boolean; error?: string }>;
   setDeepseekApiKey: (key: string) => Promise<{ success: boolean }>;
+  setLlmApiKeys: (
+    provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
+    keys: string[],
+  ) => Promise<{ success: boolean; error?: string }>;
   setLlmBackupKeys: (
     provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
     keys: string[],
@@ -287,6 +304,12 @@ export interface ElectronAPI {
     groqPreferredModel?: string;
     openaiPreferredModel?: string;
     claudePreferredModel?: string;
+    geminiApiKeys?: string[];
+    groqApiKeys?: string[];
+    openaiApiKeys?: string[];
+    claudeApiKeys?: string[];
+    deepseekApiKeys?: string[];
+    momorApiKeys?: string[];
     geminiBackupKeys?: string[];
     groqBackupKeys?: string[];
     openaiBackupKeys?: string[];
@@ -376,6 +399,7 @@ export interface ElectronAPI {
       enabled: boolean;
       configured: boolean;
       hasApiKey?: boolean;
+      apiKeys?: string[];
       apiKey?: string;
       region?: string;
       model?: string;
@@ -394,6 +418,7 @@ export interface ElectronAPI {
     name: string;
     kind: string;
     enabled?: boolean;
+    apiKeys?: string[];
     apiKey?: string;
     serviceAccountPath?: string;
     region?: string;
@@ -463,17 +488,24 @@ export interface ElectronAPI {
     region: string,
   ) => Promise<{ success: boolean; error?: string }>;
   testSttConnection: (
-    provider:
-      | "groq"
-      | "openai"
-      | "deepgram"
-      | "elevenlabs"
-      | "azure"
-      | "ibmwatson"
-      | "soniox",
-    apiKey: string,
+    profileId: string,
+    apiKeys?: string[],
     region?: string,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    keyResults?: Array<{ index: number; success: boolean; error?: string }>;
+    failedIndex?: number;
+  }>;
+  startSttLiveTest: (
+    profileId: string,
   ) => Promise<{ success: boolean; error?: string }>;
+  stopSttLiveTest: () => Promise<{ success: boolean }>;
+  onSttLiveTestLevel: (callback: (level: number) => void) => () => void;
+  onSttLiveTestTranscript: (
+    callback: (data: { text: string; final: boolean }) => void,
+  ) => () => void;
+  onSttLiveTestError: (callback: (error: string) => void) => () => void;
 
   // STT Config Events (fired when STT provider/key changes during a meeting)
   onSttConfigChanged: (
@@ -932,6 +964,13 @@ export interface ElectronAPI {
       timeoutMs: number;
     };
   }>;
+  testCodexInference: (config?: {
+    enabled?: boolean;
+    path?: string;
+    model?: string;
+    fastModel?: string;
+    timeoutMs?: number;
+  }) => Promise<{ success: boolean; error?: string; message?: string }>;
 
   // Demo
   seedDemo: () => Promise<{ success: boolean }>;

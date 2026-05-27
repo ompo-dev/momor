@@ -8,12 +8,16 @@ import fs from "fs";
 import path from "path";
 import {
   buildApiKeyPool,
+  mergeLegacyApiKeys,
   maskApiKeyList,
+  normalizeApiKeyList,
   type LlmProviderId,
 } from "./apiKeyRotation";
 import {
+  applySttProfileApiKeys,
+  getSttProfileApiKeys,
   migrateSttProfiles,
-  maskSttProfiles,
+  exposeSttProfilesForSettings,
   newSttProfileId,
   resolveActiveSttProfile,
   syncLegacySttFields,
@@ -39,14 +43,19 @@ export interface CurlProvider {
 
 export interface StoredCredentials {
   geminiApiKey?: string;
+  geminiApiKeys?: string[];
   geminiBackupApiKeys?: string[];
   groqApiKey?: string;
+  groqApiKeys?: string[];
   groqBackupApiKeys?: string[];
   openaiApiKey?: string;
+  openaiApiKeys?: string[];
   openaiBackupApiKeys?: string[];
   claudeApiKey?: string;
+  claudeApiKeys?: string[];
   claudeBackupApiKeys?: string[];
   deepseekApiKey?: string;
+  deepseekApiKeys?: string[];
   deepseekBackupApiKeys?: string[];
   deepseekPreferredModel?: string;
   googleServiceAccountPath?: string;
@@ -56,6 +65,7 @@ export interface StoredCredentials {
   /** Default model for screen/image understanding (falls back to defaultModel). */
   visionDefaultModel?: string;
   momorApiKey?: string;
+  momorApiKeys?: string[];
   momorBackupApiKeys?: string[];
   // STT Provider settings
   sttProvider?:
@@ -135,30 +145,52 @@ export class CredentialsManager {
     console.log("[CredentialsManager] Initialized");
   }
 
-  private activeFromPool(
-    primary?: string,
-    backups?: string[],
+  private activeFromList(
+    keys: string[],
     rotationKey?: string,
   ): string | undefined {
-    const pool = buildApiKeyPool(primary, backups);
+    const pool = normalizeApiKeyList(keys);
     if (!pool.length) return undefined;
     const idx = rotationKey ? (this.keyRotationIndex[rotationKey] ?? 0) : 0;
     return pool[Math.min(idx, pool.length - 1)];
   }
 
+  private rotateList(
+    rotationKey: string,
+    keys: string[],
+  ): string | undefined {
+    const pool = normalizeApiKeyList(keys);
+    const nextIdx = (this.keyRotationIndex[rotationKey] ?? 0) + 1;
+    if (nextIdx >= pool.length) return undefined;
+    this.keyRotationIndex[rotationKey] = nextIdx;
+    console.log(
+      `[CredentialsManager] Rotated ${rotationKey} to key #${nextIdx + 1}/${pool.length}`,
+    );
+    return pool[nextIdx];
+  }
+
+  /** @deprecated */
+  private activeFromPool(
+    primary?: string,
+    backups?: string[],
+    rotationKey?: string,
+  ): string | undefined {
+    return this.activeFromList(
+      mergeLegacyApiKeys(primary, backups),
+      rotationKey,
+    );
+  }
+
+  /** @deprecated */
   private rotatePool(
     rotationKey: string,
     primary?: string,
     backups?: string[],
   ): string | undefined {
-    const pool = buildApiKeyPool(primary, backups);
-    const nextIdx = (this.keyRotationIndex[rotationKey] ?? 0) + 1;
-    if (nextIdx >= pool.length) return undefined;
-    this.keyRotationIndex[rotationKey] = nextIdx;
-    console.log(
-      `[CredentialsManager] Rotated ${rotationKey} to backup key #${nextIdx}`,
+    return this.rotateList(
+      rotationKey,
+      mergeLegacyApiKeys(primary, backups),
     );
-    return pool[nextIdx];
   }
 
   public resetKeyRotation(scope?: string): void {
@@ -176,93 +208,119 @@ export class CredentialsManager {
   }
 
   public rotateLlmApiKey(provider: LlmProviderId): string | undefined {
+    return this.rotateList(`llm:${provider}`, this.getLlmApiKeysList(provider));
+  }
+
+  public getLlmApiKeysList(provider: LlmProviderId): string[] {
     switch (provider) {
       case "gemini":
-        return this.rotatePool(
-          "llm:gemini",
+        if (this.credentials.geminiApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.geminiApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.geminiApiKey,
           this.credentials.geminiBackupApiKeys,
         );
       case "groq":
-        return this.rotatePool(
-          "llm:groq",
+        if (this.credentials.groqApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.groqApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.groqApiKey,
           this.credentials.groqBackupApiKeys,
         );
       case "openai":
-        return this.rotatePool(
-          "llm:openai",
+        if (this.credentials.openaiApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.openaiApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.openaiApiKey,
           this.credentials.openaiBackupApiKeys,
         );
       case "claude":
-        return this.rotatePool(
-          "llm:claude",
+        if (this.credentials.claudeApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.claudeApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.claudeApiKey,
           this.credentials.claudeBackupApiKeys,
         );
       case "deepseek":
-        return this.rotatePool(
-          "llm:deepseek",
+        if (this.credentials.deepseekApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.deepseekApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.deepseekApiKey,
           this.credentials.deepseekBackupApiKeys,
         );
       case "momor":
-        return this.rotatePool(
-          "llm:momor",
+        if (this.credentials.momorApiKeys?.length) {
+          return normalizeApiKeyList(this.credentials.momorApiKeys);
+        }
+        return mergeLegacyApiKeys(
           this.credentials.momorApiKey,
           this.credentials.momorBackupApiKeys,
         );
       default:
-        return undefined;
+        return [];
     }
+  }
+
+  private syncLegacyLlmFields(provider: LlmProviderId, keys: string[]): void {
+    const normalized = normalizeApiKeyList(keys);
+    switch (provider) {
+      case "gemini":
+        this.credentials.geminiApiKeys = normalized;
+        this.credentials.geminiApiKey = normalized[0];
+        this.credentials.geminiBackupApiKeys = normalized.slice(1);
+        break;
+      case "groq":
+        this.credentials.groqApiKeys = normalized;
+        this.credentials.groqApiKey = normalized[0];
+        this.credentials.groqBackupApiKeys = normalized.slice(1);
+        break;
+      case "openai":
+        this.credentials.openaiApiKeys = normalized;
+        this.credentials.openaiApiKey = normalized[0];
+        this.credentials.openaiBackupApiKeys = normalized.slice(1);
+        break;
+      case "claude":
+        this.credentials.claudeApiKeys = normalized;
+        this.credentials.claudeApiKey = normalized[0];
+        this.credentials.claudeBackupApiKeys = normalized.slice(1);
+        break;
+      case "deepseek":
+        this.credentials.deepseekApiKeys = normalized;
+        this.credentials.deepseekApiKey = normalized[0];
+        this.credentials.deepseekBackupApiKeys = normalized.slice(1);
+        break;
+      case "momor":
+        this.credentials.momorApiKeys = normalized;
+        this.credentials.momorApiKey = normalized[0];
+        this.credentials.momorBackupApiKeys = normalized.slice(1);
+        break;
+    }
+  }
+
+  public setLlmApiKeys(provider: LlmProviderId, keys: string[]): void {
+    this.syncLegacyLlmFields(provider, keys);
+    this.saveCredentials();
   }
 
   public setLlmBackupApiKeys(
     provider: LlmProviderId,
     keys: string[],
   ): void {
-    const cleaned = keys.map((k) => k.trim()).filter(Boolean);
-    switch (provider) {
-      case "gemini":
-        this.credentials.geminiBackupApiKeys = cleaned;
-        break;
-      case "groq":
-        this.credentials.groqBackupApiKeys = cleaned;
-        break;
-      case "openai":
-        this.credentials.openaiBackupApiKeys = cleaned;
-        break;
-      case "claude":
-        this.credentials.claudeBackupApiKeys = cleaned;
-        break;
-      case "deepseek":
-        this.credentials.deepseekBackupApiKeys = cleaned;
-        break;
-      case "momor":
-        this.credentials.momorBackupApiKeys = cleaned;
-        break;
-    }
-    this.saveCredentials();
+    const primary = this.getLlmApiKeysList(provider)[0];
+    this.setLlmApiKeys(
+      provider,
+      primary ? [primary, ...keys] : keys,
+    );
   }
 
   public getLlmBackupApiKeys(provider: LlmProviderId): string[] {
-    switch (provider) {
-      case "gemini":
-        return [...(this.credentials.geminiBackupApiKeys ?? [])];
-      case "groq":
-        return [...(this.credentials.groqBackupApiKeys ?? [])];
-      case "openai":
-        return [...(this.credentials.openaiBackupApiKeys ?? [])];
-      case "claude":
-        return [...(this.credentials.claudeBackupApiKeys ?? [])];
-      case "deepseek":
-        return [...(this.credentials.deepseekBackupApiKeys ?? [])];
-      case "momor":
-        return [...(this.credentials.momorBackupApiKeys ?? [])];
-      default:
-        return [];
-    }
+    const list = this.getLlmApiKeysList(provider);
+    return list.slice(1);
   }
 
   public getMaskedLlmBackupApiKeys(provider: LlmProviderId): string[] {
@@ -270,17 +328,16 @@ export class CredentialsManager {
   }
 
   public getActiveSttApiKeyForProfile(profile: SttProfile): string | undefined {
-    const primary = profile.apiKey?.trim();
-    if (primary && !primary.includes("...")) {
-      return primary;
-    }
-    return undefined;
+    return this.activeFromList(
+      getSttProfileApiKeys(profile),
+      `stt:${profile.id}`,
+    );
   }
 
   public rotateSttApiKeyForProfile(profileId: string): string | undefined {
     const profile = this.credentials.sttProfiles?.find((p) => p.id === profileId);
     if (!profile) return undefined;
-    return this.rotatePool(`stt:${profile.id}`, profile.apiKey, profile.backupApiKeys);
+    return this.rotateList(`stt:${profile.id}`, getSttProfileApiKeys(profile));
   }
 
   public rotateActiveSttApiKey(sessionProfileId?: string | null): string | undefined {
@@ -294,41 +351,24 @@ export class CredentialsManager {
   // =========================================================================
 
   public getGeminiApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.geminiApiKey,
-      this.credentials.geminiBackupApiKeys,
-      "llm:gemini",
-    );
+    return this.activeFromList(this.getLlmApiKeysList("gemini"), "llm:gemini");
   }
 
   public getGroqApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.groqApiKey,
-      this.credentials.groqBackupApiKeys,
-      "llm:groq",
-    );
+    return this.activeFromList(this.getLlmApiKeysList("groq"), "llm:groq");
   }
 
   public getOpenaiApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.openaiApiKey,
-      this.credentials.openaiBackupApiKeys,
-      "llm:openai",
-    );
+    return this.activeFromList(this.getLlmApiKeysList("openai"), "llm:openai");
   }
 
   public getClaudeApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.claudeApiKey,
-      this.credentials.claudeBackupApiKeys,
-      "llm:claude",
-    );
+    return this.activeFromList(this.getLlmApiKeysList("claude"), "llm:claude");
   }
 
   public getDeepseekApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.deepseekApiKey,
-      this.credentials.deepseekBackupApiKeys,
+    return this.activeFromList(
+      this.getLlmApiKeysList("deepseek"),
       "llm:deepseek",
     );
   }
@@ -348,6 +388,35 @@ export class CredentialsManager {
   public getSttProfiles(): SttProfile[] {
     this.ensureSttProfiles();
     return [...(this.credentials.sttProfiles ?? [])];
+  }
+
+  public getSttProfileById(profileId: string): SttProfile | undefined {
+    this.ensureSttProfiles();
+    return this.credentials.sttProfiles?.find((p) => p.id === profileId);
+  }
+
+  /** Resolve keys to test/use — draft list overrides stored profile keys. */
+  public resolveSttApiKeysForProfile(
+    profileId: string,
+    draftKeys?: string[],
+  ): string[] {
+    const draft = normalizeApiKeyList(draftKeys ?? []);
+    if (draft.length) return draft;
+    const profile = this.getSttProfileById(profileId);
+    if (!profile) return [];
+    return getSttProfileApiKeys(profile);
+  }
+
+  /** @deprecated Use resolveSttApiKeysForProfile */
+  public resolveSttApiKeyForProfile(
+    profileId: string,
+    draftKey?: string,
+  ): string | undefined {
+    const keys = this.resolveSttApiKeysForProfile(
+      profileId,
+      draftKey?.trim() ? [draftKey.trim()] : undefined,
+    );
+    return keys[0];
   }
 
   public getDefaultSttProfileId(): string | null {
@@ -402,18 +471,19 @@ export class CredentialsManager {
     const idx = this.credentials.sttProfiles.findIndex((p) => p.id === profile.id);
     if (idx >= 0) {
       const prev = this.credentials.sttProfiles[idx];
-      this.credentials.sttProfiles[idx] = {
-        ...prev,
-        ...profile,
-        apiKey:
-          profile.apiKey !== undefined && profile.apiKey !== ""
-            ? profile.apiKey
-            : prev.apiKey,
-        backupApiKeys:
-          profile.backupApiKeys !== undefined
-            ? profile.backupApiKeys
-            : prev.backupApiKeys,
-      };
+      let merged: SttProfile = { ...prev, ...profile };
+      if (profile.apiKeys !== undefined) {
+        merged = applySttProfileApiKeys(merged, profile.apiKeys);
+      } else if (profile.apiKey !== undefined || profile.backupApiKeys !== undefined) {
+        merged = applySttProfileApiKeys(
+          merged,
+          mergeLegacyApiKeys(
+            profile.apiKey ?? prev.apiKey,
+            profile.backupApiKeys ?? prev.backupApiKeys,
+          ),
+        );
+      }
+      this.credentials.sttProfiles[idx] = merged;
     } else {
       this.credentials.sttProfiles.push(profile);
     }
@@ -609,11 +679,7 @@ export class CredentialsManager {
   }
 
   public getmomorApiKey(): string | undefined {
-    return this.activeFromPool(
-      this.credentials.momorApiKey,
-      this.credentials.momorBackupApiKeys,
-      "llm:momor",
-    );
+    return this.activeFromList(this.getLlmApiKeysList("momor"), "llm:momor");
   }
 
   public getAllCredentials(): StoredCredentials {
@@ -665,32 +731,27 @@ export class CredentialsManager {
   // =========================================================================
 
   public setGeminiApiKey(key: string): void {
-    this.credentials.geminiApiKey = key;
-    this.saveCredentials();
+    this.setLlmApiKeys("gemini", key.trim() ? [key.trim()] : []);
     console.log("[CredentialsManager] Gemini API Key updated");
   }
 
   public setGroqApiKey(key: string): void {
-    this.credentials.groqApiKey = key;
-    this.saveCredentials();
+    this.setLlmApiKeys("groq", key.trim() ? [key.trim()] : []);
     console.log("[CredentialsManager] Groq API Key updated");
   }
 
   public setOpenaiApiKey(key: string): void {
-    this.credentials.openaiApiKey = key;
-    this.saveCredentials();
+    this.setLlmApiKeys("openai", key.trim() ? [key.trim()] : []);
     console.log("[CredentialsManager] OpenAI API Key updated");
   }
 
   public setClaudeApiKey(key: string): void {
-    this.credentials.claudeApiKey = key;
-    this.saveCredentials();
+    this.setLlmApiKeys("claude", key.trim() ? [key.trim()] : []);
     console.log("[CredentialsManager] Claude API Key updated");
   }
 
   public setDeepseekApiKey(key: string): void {
-    this.credentials.deepseekApiKey = key;
-    this.saveCredentials();
+    this.setLlmApiKeys("deepseek", key.trim() ? [key.trim()] : []);
     console.log("[CredentialsManager] DeepSeek API Key updated");
   }
 
@@ -754,7 +815,34 @@ export class CredentialsManager {
 
   public getMaskedSttProfiles() {
     this.ensureSttProfiles();
-    return maskSttProfiles(this.credentials.sttProfiles ?? [], this.credentials);
+    return exposeSttProfilesForSettings(
+      this.credentials.sttProfiles ?? [],
+      this.credentials,
+    );
+  }
+
+  private migrateApiKeyLists(): void {
+    const providers: LlmProviderId[] = [
+      "gemini",
+      "groq",
+      "openai",
+      "claude",
+      "deepseek",
+      "momor",
+    ];
+    for (const provider of providers) {
+      const existing = this.getLlmApiKeysList(provider);
+      if (existing.length) {
+        this.syncLegacyLlmFields(provider, existing);
+      }
+    }
+
+    for (const profile of this.credentials.sttProfiles ?? []) {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys.length) {
+        Object.assign(profile, applySttProfileApiKeys(profile, keys));
+      }
+    }
   }
 
   public setDeepgramApiKey(key: string): void {
@@ -1202,6 +1290,7 @@ export class CredentialsManager {
         }
         this.applyEnvFallbacks();
         this.ensureSttProfiles();
+        this.migrateApiKeyLists();
         return;
       }
 

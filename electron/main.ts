@@ -1120,6 +1120,10 @@ export class AppState {
   private microphoneCapture: MicrophoneCapture | null = null;
   private audioTestCapture: MicrophoneCapture | null = null; // For audio settings test
   private _audioTestStarting = false; // P2-12: in-flight guard against concurrent calls
+  private sttLiveTestCapture: MicrophoneCapture | null = null;
+  private sttLiveTestStt: STTProvider | null = null;
+  private sttLiveTestTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _sttLiveTestRateApplied = false;
   private googleSTT: STTProvider | null = null; // Interviewer
   private googleSTT_User: STTProvider | null = null; // User
 
@@ -1133,13 +1137,18 @@ export class AppState {
 
   private createSTTProvider(
     speaker: "interviewer" | "user",
+    profileIdOverride?: string | null,
   ): STTProvider | null {
     const { CredentialsManager } = require("./services/CredentialsManager");
     const cm = CredentialsManager.getInstance();
-    cm.applyActiveSttProfileToLegacy(this.sessionSttProfileId);
-    const sttProvider = cm.getSttProvider(this.sessionSttProfileId);
+    const effectiveProfileId =
+      profileIdOverride !== undefined
+        ? profileIdOverride
+        : this.sessionSttProfileId;
+    cm.applyActiveSttProfileToLegacy(effectiveProfileId);
+    const sttProvider = cm.getSttProvider(effectiveProfileId);
     const sttLanguage = CredentialsManager.getInstance().getSttLanguage();
-    const sessionProfileId = this.sessionSttProfileId;
+    const sessionProfileId = effectiveProfileId;
 
     // 'none' means the user has explicitly disabled STT (no provider selected).
     // Return null so the pipeline skips STT without falling back to Google.
@@ -2952,6 +2961,162 @@ export class AppState {
       this.audioTestCapture.stop();
       this.audioTestCapture = null;
     }
+  }
+
+  private sendSttLiveTestEvent(
+    channel: string,
+    payload: unknown,
+  ): void {
+    const targets = [
+      this.settingsWindowHelper.getSettingsWindow(),
+      this.getWindowHelper().getLauncherWindow(),
+    ].filter((win): win is BrowserWindow => !!win && !win.isDestroyed());
+    for (const target of targets) {
+      target.webContents.send(channel, payload);
+    }
+  }
+
+  public async startSttLiveTest(
+    profileId: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (this.isMeetingActive) {
+      return {
+        success: false,
+        error:
+          "STT test is unavailable while a meeting is active. End the meeting first.",
+      };
+    }
+    if (this._answerNowMicStarted) {
+      return {
+        success: false,
+        error: "Microphone is in use. Stop the current recording first.",
+      };
+    }
+
+    this.stopSttLiveTest();
+
+    const { CredentialsManager } = require("./services/CredentialsManager");
+    const cm = CredentialsManager.getInstance();
+    const profile = cm.getSttProfiles().find((p: { id: string }) => p.id === profileId);
+    if (!profile) {
+      return { success: false, error: "STT profile not found." };
+    }
+    if (profile.kind === "none") {
+      return { success: false, error: "Invalid STT profile." };
+    }
+
+    try {
+      if (!(await ensureMacMicrophoneAccess("STT live test"))) {
+        return {
+          success: false,
+          error:
+            "Microphone access denied. Allow microphone access in System Settings.",
+        };
+      }
+
+      cm.applyActiveSttProfileToLegacy(profileId);
+      this.sttLiveTestStt = this.createSTTProvider("user", profileId);
+      if (!this.sttLiveTestStt) {
+        return {
+          success: false,
+          error: `Could not initialize STT for "${profile.kind}". Check credentials.`,
+        };
+      }
+
+      this.sttLiveTestStt.on(
+        "transcript",
+        (segment: { text: string; isFinal: boolean }) => {
+          this.sendSttLiveTestEvent("stt-live-test-transcript", {
+            text: segment.text,
+            final: segment.isFinal,
+          });
+        },
+      );
+
+      this.sttLiveTestStt.on("error", (err: Error) => {
+        this.sendSttLiveTestEvent(
+          "stt-live-test-error",
+          err?.message || "STT error",
+        );
+      });
+
+      this.sttLiveTestCapture = new MicrophoneCapture(
+        this._lastRequestedInputDeviceId ?? undefined,
+      );
+      this._sttLiveTestRateApplied = false;
+
+      this.sttLiveTestCapture.on("data", (chunk: Buffer) => {
+        let sum = 0;
+        const step = 10;
+        const len = chunk.length;
+        for (let i = 0; i < len; i += 2 * step) {
+          const val = chunk.readInt16LE(i);
+          sum += val * val;
+        }
+        const count = len / (2 * step);
+        if (count > 0) {
+          const rms = Math.sqrt(sum / count);
+          const level = Math.min(rms / 10000, 1.0);
+          this.sendSttLiveTestEvent("stt-live-test-level", level);
+        }
+
+        if (
+          !this._sttLiveTestRateApplied &&
+          this.sttLiveTestStt &&
+          this.sttLiveTestCapture
+        ) {
+          const rate = this.sttLiveTestCapture.getSampleRate();
+          this.sttLiveTestStt.setSampleRate(rate);
+          this.sttLiveTestStt.setAudioChannelCount?.(1);
+          this._sttLiveTestRateApplied = true;
+        }
+        this.sttLiveTestStt?.write(chunk);
+      });
+
+      this.sttLiveTestCapture.on("sample_rate_changed", (rate: number) => {
+        this.sttLiveTestStt?.setSampleRate(rate);
+      });
+
+      this.sttLiveTestCapture.on("speech_ended", () => {
+        this.sttLiveTestStt?.notifySpeechEnded?.();
+      });
+
+      this.sttLiveTestCapture.start();
+      this.sttLiveTestStt.start();
+
+      this.sttLiveTestTimeout = setTimeout(() => {
+        this.sttLiveTestStt?.finalize?.();
+        this.stopSttLiveTest();
+      }, 15_000);
+
+      console.log(`[Main] STT live test started for profile ${profileId}`);
+      return { success: true };
+    } catch (err: unknown) {
+      this.stopSttLiveTest();
+      const msg = err instanceof Error ? err.message : "STT live test failed";
+      return { success: false, error: msg };
+    }
+  }
+
+  public stopSttLiveTest(): void {
+    if (this.sttLiveTestTimeout) {
+      clearTimeout(this.sttLiveTestTimeout);
+      this.sttLiveTestTimeout = null;
+    }
+    try {
+      this.sttLiveTestCapture?.stop();
+    } catch {
+      /* ignore */
+    }
+    this.sttLiveTestCapture = null;
+    try {
+      this.sttLiveTestStt?.stop();
+      this.sttLiveTestStt?.removeAllListeners();
+    } catch {
+      /* ignore */
+    }
+    this.sttLiveTestStt = null;
+    this._sttLiveTestRateApplied = false;
   }
 
   public finalizeMicSTT(): void {

@@ -70,9 +70,22 @@ interface ElectronAPI {
     modelId?: string,
   ) => Promise<{ success: boolean; error?: string }>;
   testLlmConnection: (
-    provider: "gemini" | "groq" | "openai" | "claude",
-    apiKey?: string,
-  ) => Promise<{ success: boolean; error?: string }>;
+    provider:
+      | "gemini"
+      | "groq"
+      | "openai"
+      | "claude"
+      | "deepseek"
+      | "ollama"
+      | "custom",
+    apiKeys?: string[],
+    customProviderId?: string,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    keyResults?: Array<{ index: number; success: boolean; error?: string }>;
+    failedIndex?: number;
+  }>;
   selectServiceAccount: () => Promise<{
     success: boolean;
     path?: string;
@@ -97,6 +110,10 @@ interface ElectronAPI {
     apiKey: string,
   ) => Promise<{ success: boolean; error?: string }>;
   setDeepseekApiKey: (key: string) => Promise<{ success: boolean }>;
+  setLlmApiKeys: (
+    provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
+    keys: string[],
+  ) => Promise<{ success: boolean; error?: string }>;
   setLlmBackupKeys: (
     provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
     keys: string[],
@@ -328,17 +345,24 @@ interface ElectronAPI {
     region: string,
   ) => Promise<{ success: boolean; error?: string }>;
   testSttConnection: (
-    provider:
-      | "groq"
-      | "openai"
-      | "deepgram"
-      | "elevenlabs"
-      | "azure"
-      | "ibmwatson"
-      | "soniox",
-    apiKey: string,
+    profileId: string,
+    apiKeys?: string[],
     region?: string,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    keyResults?: Array<{ index: number; success: boolean; error?: string }>;
+    failedIndex?: number;
+  }>;
+  startSttLiveTest: (
+    profileId: string,
   ) => Promise<{ success: boolean; error?: string }>;
+  stopSttLiveTest: () => Promise<{ success: boolean }>;
+  onSttLiveTestLevel: (callback: (level: number) => void) => () => void;
+  onSttLiveTestTranscript: (
+    callback: (data: { text: string; final: boolean }) => void,
+  ) => () => void;
+  onSttLiveTestError: (callback: (error: string) => void) => () => void;
 
   // STT Config Events
   onSttConfigChanged: (
@@ -631,6 +655,13 @@ interface ElectronAPI {
       timeoutMs: number;
     };
   }>;
+  testCodexInference: (config?: {
+    enabled?: boolean;
+    path?: string;
+    model?: string;
+    fastModel?: string;
+    timeoutMs?: number;
+  }) => Promise<{ success: boolean; error?: string; message?: string }>;
 
   // Demo
   seedDemo: () => Promise<{ success: boolean }>;
@@ -1339,9 +1370,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
   switchToGemini: (apiKey?: string, modelId?: string) =>
     ipcRenderer.invoke("switch-to-gemini", apiKey, modelId),
   testLlmConnection: (
-    provider: "gemini" | "groq" | "openai" | "claude",
-    apiKey: string,
-  ) => ipcRenderer.invoke("test-llm-connection", provider, apiKey),
+    provider:
+      | "gemini"
+      | "groq"
+      | "openai"
+      | "claude"
+      | "deepseek"
+      | "ollama"
+      | "custom",
+    apiKeys?: string[],
+    customProviderId?: string,
+  ) =>
+    ipcRenderer.invoke(
+      "test-llm-connection",
+      provider,
+      apiKeys,
+      customProviderId,
+    ),
   selectServiceAccount: () => ipcRenderer.invoke("select-service-account"),
 
   // API Key Management
@@ -1357,6 +1402,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("set-momor-api-key", apiKey),
   setDeepseekApiKey: (key: string) =>
     ipcRenderer.invoke("setDeepseekApiKey", key),
+  setLlmApiKeys: (
+    provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
+    keys: string[],
+  ) => ipcRenderer.invoke("set-llm-api-keys", provider, keys),
   setLlmBackupKeys: (
     provider: "gemini" | "groq" | "openai" | "claude" | "deepseek" | "momor",
     keys: string[],
@@ -1459,17 +1508,32 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setIbmWatsonRegion: (region: string) =>
     ipcRenderer.invoke("set-ibmwatson-region", region),
   testSttConnection: (
-    provider:
-      | "groq"
-      | "openai"
-      | "deepgram"
-      | "elevenlabs"
-      | "azure"
-      | "ibmwatson"
-      | "soniox",
-    apiKey: string,
+    profileId: string,
+    apiKeys?: string[],
     region?: string,
-  ) => ipcRenderer.invoke("test-stt-connection", provider, apiKey, region),
+  ) => ipcRenderer.invoke("test-stt-connection", profileId, apiKeys, region),
+  startSttLiveTest: (profileId: string) =>
+    ipcRenderer.invoke("start-stt-live-test", profileId),
+  stopSttLiveTest: () => ipcRenderer.invoke("stop-stt-live-test"),
+  onSttLiveTestLevel: (callback: (level: number) => void) => {
+    const handler = (_: unknown, level: number) => callback(level);
+    ipcRenderer.on("stt-live-test-level", handler);
+    return () => ipcRenderer.removeListener("stt-live-test-level", handler);
+  },
+  onSttLiveTestTranscript: (
+    callback: (data: { text: string; final: boolean }) => void,
+  ) => {
+    const handler = (_: unknown, data: { text: string; final: boolean }) =>
+      callback(data);
+    ipcRenderer.on("stt-live-test-transcript", handler);
+    return () =>
+      ipcRenderer.removeListener("stt-live-test-transcript", handler);
+  },
+  onSttLiveTestError: (callback: (error: string) => void) => {
+    const handler = (_: unknown, error: string) => callback(error);
+    ipcRenderer.on("stt-live-test-error", handler);
+    return () => ipcRenderer.removeListener("stt-live-test-error", handler);
+  },
   localWhisperGetModels: () => ipcRenderer.invoke("local-whisper-get-models"),
   localWhisperSetModel: (modelId: string) =>
     ipcRenderer.invoke("local-whisper-set-model", modelId),
@@ -2043,6 +2107,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     fastModel?: string;
     timeoutMs?: number;
   }) => ipcRenderer.invoke("test-codex-cli", config),
+  testCodexInference: (config?: {
+    enabled?: boolean;
+    path?: string;
+    model?: string;
+    fastModel?: string;
+    timeoutMs?: number;
+  }) => ipcRenderer.invoke("test-codex-inference", config),
 
   // Demo
   seedDemo: () => ipcRenderer.invoke("seed-demo"),

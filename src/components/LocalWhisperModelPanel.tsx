@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Trash2, HardDrive, Check, Loader2, Zap, AlertCircle, ChevronDown, Server } from 'lucide-react';
+import { Download, Trash2, HardDrive, Check, Loader2, Zap, AlertCircle, ChevronDown, Server, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ModelInfo {
     id: string;
@@ -13,6 +16,7 @@ interface ModelInfo {
     status: 'available' | 'missing' | 'downloading' | 'error';
     errorMessage?: string;
     requiresAppleSilicon?: boolean;
+    staticKV?: boolean;
 }
 
 interface HardwareInfo {
@@ -24,6 +28,9 @@ interface HardwareInfo {
     recommendation: string;
     recommendedModel: string;
 }
+
+type ModelStatusFilter = 'all' | 'installed' | 'notInstalled' | 'downloading';
+type ModelLangFilter = 'all' | 'multilingual' | 'english';
 
 interface ChannelConfig {
     enabled: boolean;
@@ -120,6 +127,12 @@ export function LocalWhisperModelPanel({
     const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
     const [downloadingSet, setDownloadingSet] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
+    const [managerExpanded, setManagerExpanded] = useState(!embedded);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<ModelStatusFilter>('all');
+    const [langFilter, setLangFilter] = useState<ModelLangFilter>('all');
+    const [hideIncompatible, setHideIncompatible] = useState(false);
+    const [recommendedOnly, setRecommendedOnly] = useState(false);
 
     // WhisperX Local Server state
     const [whisperxEnabled, setWhisperxEnabled] = useState(false);
@@ -263,13 +276,76 @@ export function LocalWhisperModelPanel({
         notifyModelChange(modelId);
     };
 
+    const availableModels = models.filter(m => m.status === 'available');
+
+    const filteredModels = useMemo(() => {
+        let list = models;
+        const q = searchQuery.trim().toLowerCase();
+
+        if (q) {
+            list = list.filter(
+                (m) =>
+                    m.name.toLowerCase().includes(q) ||
+                    m.id.toLowerCase().includes(q),
+            );
+        }
+
+        if (statusFilter === 'installed') {
+            list = list.filter((m) => m.status === 'available');
+        } else if (statusFilter === 'notInstalled') {
+            list = list.filter((m) => m.status === 'missing');
+        } else if (statusFilter === 'downloading') {
+            list = list.filter(
+                (m) => m.status === 'downloading' || downloadingSet.has(m.id),
+            );
+        }
+
+        if (langFilter === 'multilingual') {
+            list = list.filter((m) => m.multilingual);
+        } else if (langFilter === 'english') {
+            list = list.filter((m) => !m.multilingual);
+        }
+
+        if (hideIncompatible) {
+            list = list.filter((m) => !m.staticKV && !m.requiresAppleSilicon);
+        }
+
+        if (recommendedOnly && hardware?.recommendedModel) {
+            list = list.filter((m) => m.id === hardware.recommendedModel);
+        }
+
+        return list;
+    }, [
+        models,
+        searchQuery,
+        statusFilter,
+        langFilter,
+        hideIncompatible,
+        recommendedOnly,
+        hardware?.recommendedModel,
+        downloadingSet,
+    ]);
+
+    const hasActiveFilters =
+        searchQuery.trim().length > 0 ||
+        statusFilter !== 'all' ||
+        langFilter !== 'all' ||
+        hideIncompatible ||
+        recommendedOnly;
+
+    const clearFilters = () => {
+        setSearchQuery('');
+        setStatusFilter('all');
+        setLangFilter('all');
+        setHideIncompatible(false);
+        setRecommendedOnly(false);
+    };
+
     if (loading) {
         return <div className="p-4 flex justify-center text-text-tertiary"><Loader2 className="animate-spin w-5 h-5" /></div>;
     }
 
-    const availableModels = models.filter(m => m.status === 'available');
-    
-    const sectionClass = embedded
+        const sectionClass = embedded
         ? "space-y-4"
         : "bg-bg-card rounded-xl border border-border-subtle p-5 shadow-sm";
 
@@ -348,22 +424,170 @@ export function LocalWhisperModelPanel({
             </div>
 
             <div className={`${embedded ? "rounded-lg border border-border overflow-hidden" : "bg-bg-card rounded-xl border border-border-subtle overflow-hidden shadow-sm"} relative z-0`}>
-                <div className="px-5 py-4 bg-bg-elevated/50 border-b border-border-subtle flex justify-between items-center">
-                    <h3 className="text-sm font-semibold text-text-primary">{t('whisper.modelManager')}</h3>
-                    {hardware?.recommendedModel && (
-                        <span className="text-[11px] text-text-tertiary font-medium bg-bg-input px-2 py-1 rounded-md border border-border-subtle">
-                            {t('whisper.recommendedFor', { device: hardware.isAppleSilicon ? 'Mac' : 'PC' })}: <span className="text-text-primary">{models.find(m => m.id === hardware.recommendedModel)?.name}</span>
-                        </span>
-                    )}
-                </div>
-                
-                <div className="p-4 space-y-3 bg-bg-elevated/20">
-                    {models.map(model => {
+                <button
+                    type="button"
+                    className="w-full px-5 py-4 bg-bg-elevated/50 border-b border-border-subtle flex justify-between items-center gap-3 text-left hover:bg-bg-elevated/70 transition-colors"
+                    onClick={() => setManagerExpanded((v) => !v)}
+                    aria-expanded={managerExpanded}
+                >
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-semibold text-text-primary">{t('whisper.modelManager')}</h3>
+                            <span className="rounded-full bg-bg-input px-2 py-0.5 text-[10px] font-medium text-text-tertiary border border-border-subtle">
+                                {t('whisper.modelsCount', {
+                                    shown: filteredModels.length,
+                                    total: models.length,
+                                })}
+                            </span>
+                        </div>
+                        {hardware?.recommendedModel && !managerExpanded && (
+                            <p className="mt-1 text-[11px] text-text-tertiary truncate">
+                                {t('whisper.recommendedFor', { device: hardware.isAppleSilicon ? 'Mac' : 'PC' })}:{' '}
+                                <span className="text-text-primary">{models.find(m => m.id === hardware.recommendedModel)?.name}</span>
+                            </p>
+                        )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        {hardware?.recommendedModel && managerExpanded && (
+                            <span className="hidden sm:inline text-[11px] text-text-tertiary font-medium bg-bg-input px-2 py-1 rounded-md border border-border-subtle">
+                                {t('whisper.recommendedFor', { device: hardware.isAppleSilicon ? 'Mac' : 'PC' })}: <span className="text-text-primary">{models.find(m => m.id === hardware.recommendedModel)?.name}</span>
+                            </span>
+                        )}
+                        <ChevronDown
+                            size={16}
+                            className={cn(
+                                'text-text-tertiary transition-transform duration-200',
+                                managerExpanded && 'rotate-180',
+                            )}
+                        />
+                    </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                    {managerExpanded && (
+                        <motion.div
+                            key="manager-body"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="overflow-hidden"
+                        >
+                            <div className="border-b border-border-subtle bg-bg-elevated/30 px-4 py-3 space-y-3">
+                                <div className="relative">
+                                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-tertiary" />
+                                    <Input
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder={t('whisper.searchModels')}
+                                        className="h-9 pl-9 pr-9 text-xs bg-bg-input border-border-subtle"
+                                    />
+                                    {searchQuery && (
+                                        <button
+                                            type="button"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-tertiary hover:text-text-primary"
+                                            onClick={() => setSearchQuery('')}
+                                            aria-label={t('whisper.clearFilters')}
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                    {([
+                                        ['all', t('whisper.filterAll')],
+                                        ['installed', t('whisper.filterInstalled')],
+                                        ['notInstalled', t('whisper.filterNotInstalled')],
+                                        ['downloading', t('whisper.filterDownloading')],
+                                    ] as const).map(([value, label]) => (
+                                        <Button
+                                            key={value}
+                                            type="button"
+                                            size="sm"
+                                            variant={statusFilter === value ? 'default' : 'outline'}
+                                            className="h-7 px-2.5 text-[11px]"
+                                            onClick={() => setStatusFilter(value)}
+                                        >
+                                            {label}
+                                        </Button>
+                                    ))}
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                    {([
+                                        ['all', t('whisper.filterLangAll')],
+                                        ['english', t('whisper.filterEnglish')],
+                                        ['multilingual', t('whisper.filterMultilingual')],
+                                    ] as const).map(([value, label]) => (
+                                        <Button
+                                            key={value}
+                                            type="button"
+                                            size="sm"
+                                            variant={langFilter === value ? 'secondary' : 'ghost'}
+                                            className="h-7 px-2.5 text-[11px]"
+                                            onClick={() => setLangFilter(value)}
+                                        >
+                                            {label}
+                                        </Button>
+                                    ))}
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={hideIncompatible ? 'secondary' : 'ghost'}
+                                        className="h-7 px-2.5 text-[11px]"
+                                        onClick={() => setHideIncompatible((v) => !v)}
+                                    >
+                                        {t('whisper.hideIncompatible')}
+                                    </Button>
+                                    {hardware?.recommendedModel && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={recommendedOnly ? 'secondary' : 'ghost'}
+                                            className="h-7 px-2.5 text-[11px]"
+                                            onClick={() => setRecommendedOnly((v) => !v)}
+                                        >
+                                            {t('common.recommended')}
+                                        </Button>
+                                    )}
+                                    {hasActiveFilters && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 px-2.5 text-[11px] text-muted-foreground"
+                                            onClick={clearFilters}
+                                        >
+                                            {t('whisper.clearFilters')}
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="max-h-[min(420px,50vh)] overflow-y-auto p-4 space-y-3 bg-bg-elevated/20 custom-scrollbar">
+                                {filteredModels.length === 0 ? (
+                                    <div className="rounded-lg border border-dashed border-border-subtle px-4 py-8 text-center">
+                                        <p className="text-xs text-text-tertiary">{t('whisper.noModelsMatch')}</p>
+                                        {hasActiveFilters && (
+                                            <Button
+                                                type="button"
+                                                variant="link"
+                                                size="sm"
+                                                className="mt-2 h-auto p-0 text-xs"
+                                                onClick={clearFilters}
+                                            >
+                                                {t('whisper.clearFilters')}
+                                            </Button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    filteredModels.map(model => {
                         const isDownloading = model.status === 'downloading' || downloadingSet.has(model.id);
                         const progress = downloadProgress[model.id] || 0;
                         const isAvailable = model.status === 'available';
                         const isRecommended = hardware?.recommendedModel === model.id;
-                        const isStaticKV = !!(model as any).staticKV;
+                        const isStaticKV = !!model.staticKV;
 
                         return (
                             <div key={model.id} className={`p-4 flex items-center justify-between bg-bg-card border border-border-subtle rounded-[14px] hover:shadow-sm hover:border-border-muted transition-all duration-200 ${isStaticKV ? 'opacity-60' : ''}`}>
@@ -380,10 +604,11 @@ export function LocalWhisperModelPanel({
                                             <span className="px-1.5 py-0.5 rounded-[4px] bg-purple-500/10 text-purple-500 text-[9px] font-bold uppercase tracking-wider">{t('whisper.appleSilicon')}</span>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-3.5 text-xs text-text-tertiary">
+                                    <div className="flex flex-wrap items-center gap-3.5 text-xs text-text-tertiary">
                                         <span className="flex items-center gap-1.5"><HardDrive size={13} className="opacity-70" /> {model.sizeMb} MB</span>
                                         <span className="flex items-center gap-1.5"><Zap size={13} className="opacity-70" /> {model.speed}</span>
                                         <span className="flex items-center gap-1.5"><Check size={13} className="opacity-70" /> {model.accuracy} acc</span>
+                                        <span>{model.multilingual ? t('whisper.filterMultilingual') : t('whisper.filterEnglish')}</span>
                                         {isStaticKV && <span className="text-yellow-500/70 italic">{t('whisper.requiresRuntimeUpdate')}</span>}
                                     </div>
 
@@ -405,7 +630,7 @@ export function LocalWhisperModelPanel({
                                     )}
                                     
                                     {model.status === 'error' && (
-                                        <div className="mt-2.5 text-xs text-red-500 flex items-center gap-1.5 font-medium bg-red-500/10 px-2.5 py-1.5 rounded-md inline-flex">
+                                        <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs font-medium text-red-500">
                                             <AlertCircle size={14} />
                                             {model.errorMessage || t('whisper.failedDownload')}
                                         </div>
@@ -427,7 +652,7 @@ export function LocalWhisperModelPanel({
                                         <button
                                             onClick={() => handleDelete(model.id)}
                                             className="p-2 rounded-[10px] text-text-tertiary hover:bg-red-500/10 hover:text-red-500 transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]"
-                                            title="Delete model"
+                                            title={t('common.delete')}
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -435,8 +660,12 @@ export function LocalWhisperModelPanel({
                                 </div>
                             </div>
                         );
-                    })}
-                </div>
+                                    })
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
             
             {/* ── WhisperX Local Server ── */}

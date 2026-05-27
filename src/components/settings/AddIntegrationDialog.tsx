@@ -12,7 +12,7 @@ import {
   INTEGRATION_META,
   type IntegrationId,
 } from "./integrationTypes";
-import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import { ProviderBrandIconBadge } from "./ProviderBrandIcon";
 
 interface AddIntegrationDialogProps {
   open: boolean;
@@ -34,46 +34,46 @@ export function AddIntegrationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/50 px-5 py-4">
           <DialogTitle>{t("providers.addIntegration")}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs">
             {t("providers.addIntegrationDesc")}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-2 py-2">
+        <div className="max-h-[min(60vh,420px)] overflow-y-auto p-3">
           {available.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
               {t("providers.allIntegrationsAdded")}
             </p>
           ) : (
-            available.map((id) => {
-              const meta = INTEGRATION_META[id];
-              return (
-                <Button
-                  key={id}
-                  type="button"
-                  variant="outline"
-                  className="h-auto justify-start gap-3 px-4 py-3 text-left"
-                  onClick={() => {
-                    onSelect(id);
-                    onOpenChange(false);
-                  }}
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
-                    <ProviderBrandIcon providerId={id} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{meta.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {meta.category === "cloud"
-                        ? t("providers.categoryCloud")
-                        : t("providers.categoryLocal")}
-                    </p>
-                  </div>
-                </Button>
-              );
-            })
+            <div className="grid gap-2 sm:grid-cols-2">
+              {available.map((id) => {
+                const meta = INTEGRATION_META[id];
+                return (
+                  <Button
+                    key={id}
+                    type="button"
+                    variant="outline"
+                    className="h-auto justify-start gap-3 px-3 py-3 text-left"
+                    onClick={() => {
+                      onSelect(id);
+                      onOpenChange(false);
+                    }}
+                  >
+                    <ProviderBrandIconBadge providerId={id} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{meta.label}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {meta.category === "cloud"
+                          ? t("providers.categoryCloud")
+                          : t("providers.categoryLocal")}
+                      </p>
+                    </div>
+                  </Button>
+                );
+              })}
+            </div>
           )}
         </div>
       </DialogContent>

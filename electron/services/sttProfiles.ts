@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import { mergeLegacyApiKeys, normalizeApiKeyList } from "./apiKeyRotation";
 
 /** Subset of stored credentials used by STT profile helpers (avoids circular imports). */
 export type SttCredentialsSlice = {
@@ -38,12 +39,36 @@ export interface SttProfile {
   name: string;
   kind: SttProfileKind;
   enabled: boolean;
+  /** Ordered API keys — index 0 is used first, then rotated on failure. */
+  apiKeys?: string[];
+  /** @deprecated Use apiKeys[0] */
   apiKey?: string;
+  /** @deprecated Merged into apiKeys */
   backupApiKeys?: string[];
   serviceAccountPath?: string;
   region?: string;
   baseUrl?: string;
   model?: string;
+}
+
+export function getSttProfileApiKeys(profile: SttProfile): string[] {
+  if (profile.apiKeys?.length) {
+    return normalizeApiKeyList(profile.apiKeys);
+  }
+  return mergeLegacyApiKeys(profile.apiKey, profile.backupApiKeys);
+}
+
+export function applySttProfileApiKeys(
+  profile: SttProfile,
+  keys: string[],
+): SttProfile {
+  const normalized = normalizeApiKeyList(keys);
+  return {
+    ...profile,
+    apiKeys: normalized,
+    apiKey: normalized[0],
+    backupApiKeys: normalized.slice(1),
+  };
 }
 
 export const STT_PRESET_CATALOG: Array<{
@@ -79,39 +104,37 @@ export function isSttProfileConfigured(
   }
   if (profile.kind === "local-whisper") return true;
   if (profile.kind === "momor") return hasKey(creds.momorApiKey);
-  return hasKey(profile.apiKey);
+  return getSttProfileApiKeys(profile).length > 0;
 }
 
-export function maskSttProfile(profile: SttProfile): SttProfile & {
-  hasApiKey: boolean;
-  configured: boolean;
-} {
-  const maskedKey = profile.apiKey
-    ? `sk-...${profile.apiKey.slice(-4)}`
-    : "";
-  const maskedBackups = profile.backupApiKeys?.length
-    ? profile.backupApiKeys.map((k) => `sk-...${k.slice(-4)}`)
-    : undefined;
+export function exposeSttProfileForSettings(
+  profile: SttProfile,
+  creds: SttCredentialsSlice,
+): SttProfile & { hasApiKey: boolean; configured: boolean } {
+  const apiKeys = getSttProfileApiKeys(profile);
   return {
     ...profile,
-    apiKey: maskedKey || undefined,
-    backupApiKeys: maskedBackups,
-    hasApiKey: hasKey(profile.apiKey),
-    configured: false,
+    apiKeys,
+    apiKey: undefined,
+    backupApiKeys: undefined,
+    hasApiKey: apiKeys.length > 0,
+    configured: isSttProfileConfigured(profile, creds),
   };
 }
 
+export function exposeSttProfilesForSettings(
+  profiles: SttProfile[],
+  creds: SttCredentialsSlice,
+): Array<SttProfile & { hasApiKey: boolean; configured: boolean }> {
+  return profiles.map((p) => exposeSttProfileForSettings(p, creds));
+}
+
+/** @deprecated Settings UI uses exposeSttProfilesForSettings (full keys). */
 export function maskSttProfiles(
   profiles: SttProfile[],
   creds: SttCredentialsSlice,
-): Array<
-  SttProfile & { hasApiKey: boolean; configured: boolean; apiKey?: string }
-> {
-  return profiles.map((p) => {
-    const configured = isSttProfileConfigured(p, creds);
-    const m = maskSttProfile(p);
-    return { ...m, configured };
-  });
+): Array<SttProfile & { hasApiKey: boolean; configured: boolean }> {
+  return exposeSttProfilesForSettings(profiles, creds);
 }
 
 function legacyKeyForKind(
@@ -228,33 +251,46 @@ export function syncLegacySttFields(
   }
   creds.sttProvider = profile.kind;
   switch (profile.kind) {
-    case "groq":
-      if (profile.apiKey !== undefined) creds.groqSttApiKey = profile.apiKey;
+    case "groq": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.groqSttApiKey = keys[0];
       if (profile.model) creds.groqSttModel = profile.model;
       break;
-    case "openai":
-      if (profile.apiKey !== undefined) creds.openAiSttApiKey = profile.apiKey;
+    }
+    case "openai": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.openAiSttApiKey = keys[0];
       if (profile.baseUrl !== undefined)
         creds.openAiSttBaseUrl = profile.baseUrl || undefined;
       break;
-    case "deepgram":
-      if (profile.apiKey !== undefined) creds.deepgramApiKey = profile.apiKey;
+    }
+    case "deepgram": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.deepgramApiKey = keys[0];
       break;
-    case "elevenlabs":
-      if (profile.apiKey !== undefined)
-        creds.elevenLabsApiKey = profile.apiKey;
+    }
+    case "elevenlabs": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.elevenLabsApiKey = keys[0];
       break;
-    case "azure":
-      if (profile.apiKey !== undefined) creds.azureApiKey = profile.apiKey;
+    }
+    case "azure": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.azureApiKey = keys[0];
       if (profile.region) creds.azureRegion = profile.region;
       break;
-    case "ibmwatson":
-      if (profile.apiKey !== undefined) creds.ibmWatsonApiKey = profile.apiKey;
+    }
+    case "ibmwatson": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.ibmWatsonApiKey = keys[0];
       if (profile.region) creds.ibmWatsonRegion = profile.region;
       break;
-    case "soniox":
-      if (profile.apiKey !== undefined) creds.sonioxApiKey = profile.apiKey;
+    }
+    case "soniox": {
+      const keys = getSttProfileApiKeys(profile);
+      if (keys[0]) creds.sonioxApiKey = keys[0];
       break;
+    }
     case "google":
       if (profile.serviceAccountPath)
         creds.googleServiceAccountPath = profile.serviceAccountPath;

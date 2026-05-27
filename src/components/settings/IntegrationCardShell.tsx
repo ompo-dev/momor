@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+export type IntegrationCategory = "cloud" | "local" | "cli";
+
 export interface IntegrationCardShellProps {
   title: string;
   subtitle?: string;
@@ -12,11 +14,19 @@ export interface IntegrationCardShellProps {
   badges?: React.ReactNode;
   headerActions?: React.ReactNode;
   footer?: React.ReactNode;
+  feedback?: React.ReactNode;
   isDefault?: boolean;
   defaultExpanded?: boolean;
+  category?: IntegrationCategory;
   className?: string;
   children: React.ReactNode;
 }
+
+const CATEGORY_ICON_RING: Record<IntegrationCategory, string> = {
+  cloud: "ring-sky-500/20 bg-sky-500/5",
+  local: "ring-violet-500/20 bg-violet-500/5",
+  cli: "ring-amber-500/20 bg-amber-500/5",
+};
 
 export function IntegrationCardShell({
   title,
@@ -25,8 +35,10 @@ export function IntegrationCardShell({
   badges,
   headerActions,
   footer,
+  feedback,
   isDefault,
   defaultExpanded = true,
+  category = "cloud",
   className,
   children,
 }: IntegrationCardShellProps) {
@@ -36,18 +48,20 @@ export function IntegrationCardShell({
   return (
     <Card
       className={cn(
-        "overflow-hidden transition-shadow",
-        isDefault && "ring-1 ring-primary/40",
+        "group/card overflow-hidden border-border/80 bg-card/50 shadow-none transition-[box-shadow,border-color]",
+        "hover:border-border hover:shadow-sm",
+        isDefault && "border-primary/30 ring-1 ring-primary/25",
         className,
       )}
     >
-      <div className="flex min-h-[3.25rem] items-center gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
+      <div className="flex min-h-[4rem] items-center gap-3 px-4 py-3">
         {icon != null && (
           <div
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset",
+              CATEGORY_ICON_RING[category],
               typeof icon === "string" &&
-                "text-xs font-semibold text-foreground",
+                "text-sm font-semibold text-foreground",
             )}
           >
             {icon}
@@ -55,20 +69,34 @@ export function IntegrationCardShell({
         )}
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight text-foreground">
-            {title}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="truncate text-sm font-semibold tracking-tight text-foreground">
+              {title}
+            </p>
+            {!expanded && badges ? (
+              <div className="flex flex-wrap items-center gap-1">{badges}</div>
+            ) : null}
+          </div>
           {subtitle ? (
-            <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {subtitle}
             </p>
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {badges}
+        <div className="flex shrink-0 items-center gap-1">
+          {expanded && badges ? (
+            <div className="mr-1 hidden flex-wrap items-center gap-1 sm:flex">
+              {badges}
+            </div>
+          ) : null}
           {headerActions ? (
-            <div className="flex items-center gap-1 border-l border-border/50 pl-1.5 ml-0.5">
+            <div
+              className="flex items-center gap-1 border-l border-border/50 pl-2"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              role="presentation"
+            >
               {headerActions}
             </div>
           ) : null}
@@ -76,7 +104,7 @@ export function IntegrationCardShell({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
             aria-label={expanded ? t("common.collapse") : t("common.expand")}
@@ -93,9 +121,12 @@ export function IntegrationCardShell({
 
       {expanded && (
         <>
-          <div className="space-y-4 p-4">{children}</div>
+          <div className="space-y-5 border-t border-border/50 px-4 py-4">
+            {children}
+            {feedback}
+          </div>
           {footer ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/50 bg-muted/10 px-4 py-3">
+            <div className="border-t border-border/50 bg-muted/20 px-4 py-3">
               {footer}
             </div>
           ) : null}

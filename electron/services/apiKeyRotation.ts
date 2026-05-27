@@ -6,19 +6,31 @@ export type LlmProviderId =
   | "deepseek"
   | "momor";
 
-export function buildApiKeyPool(
-  primary?: string,
-  backups?: string[],
-): string[] {
+export function normalizeApiKeyList(keys: string[]): string[] {
   const seen = new Set<string>();
   const pool: string[] = [];
-  for (const key of [primary, ...(backups ?? [])]) {
+  for (const key of keys) {
     const trimmed = key?.trim();
     if (!trimmed || seen.has(trimmed)) continue;
     seen.add(trimmed);
     pool.push(trimmed);
   }
   return pool;
+}
+
+export function mergeLegacyApiKeys(
+  primary?: string,
+  backups?: string[],
+): string[] {
+  return normalizeApiKeyList([primary ?? "", ...(backups ?? [])]);
+}
+
+/** @deprecated Use normalizeApiKeyList / mergeLegacyApiKeys */
+export function buildApiKeyPool(
+  primary?: string,
+  backups?: string[],
+): string[] {
+  return mergeLegacyApiKeys(primary, backups);
 }
 
 export function maskApiKeyList(keys: string[]): string[] {

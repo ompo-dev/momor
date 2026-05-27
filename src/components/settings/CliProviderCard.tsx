@@ -1,8 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
-  AlertCircle,
-  CheckCircle,
   Loader2,
   LogIn,
   LogOut,
@@ -11,7 +9,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { IntegrationStatusBadge } from "./IntegrationStatusBadge";
 import {
@@ -22,7 +19,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IntegrationCardShell } from "./IntegrationCardShell";
-import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import { IntegrationCardSection } from "./IntegrationCardSection";
+import {
+  IntegrationActionBar,
+  type IntegrationTestStatus,
+} from "./IntegrationActionBar";
+import { IntegrationTestResult } from "./IntegrationTestResult";
+import { IntegrationField } from "./IntegrationField";
+import { ProviderBrandIconBadge } from "./ProviderBrandIcon";
 import type { IntegrationId } from "./integrationTypes";
 
 export interface CliModelFieldConfig {
@@ -48,17 +52,22 @@ export interface CliProviderCardProps {
   buildHint?: string;
   onSave: () => Promise<void>;
   onTest: () => Promise<void>;
+  testLabel?: string;
+  onSecondaryTest?: () => Promise<void>;
+  secondaryTestLabel?: string;
+  secondaryTestStatus?: IntegrationTestStatus;
+  secondaryTestError?: string;
   onLogin?: () => void;
   onLogout?: () => void;
   onRefreshAuth?: () => void;
   authLoggedIn?: boolean;
   authEmail?: string | null;
-  authMethod?: string | null;
+  authMethod?: string;
   authBusy?: boolean;
   authMessage?: string;
   saving?: boolean;
   saved?: boolean;
-  testStatus: "idle" | "testing" | "success" | "error";
+  testStatus: IntegrationTestStatus;
   testError?: string;
   onRemove?: () => void;
 }
@@ -78,11 +87,17 @@ export function CliProviderCard({
   buildHint,
   onSave,
   onTest,
+  testLabel,
+  onSecondaryTest,
+  secondaryTestLabel,
+  secondaryTestStatus,
+  secondaryTestError,
   onLogin,
   onLogout,
   onRefreshAuth,
   authLoggedIn,
   authEmail,
+  authMethod,
   authBusy,
   authMessage,
   saving,
@@ -93,13 +108,14 @@ export function CliProviderCard({
 }: CliProviderCardProps) {
   const { t } = useTranslation();
 
-  const footer = (
+  const oauthButtons = (
     <>
       {onRefreshAuth && (
         <Button
           type="button"
           variant="ghost"
           size="sm"
+          className="h-8 text-xs"
           onClick={onRefreshAuth}
           disabled={authBusy}
         >
@@ -114,6 +130,7 @@ export function CliProviderCard({
           type="button"
           variant="outline"
           size="sm"
+          className="h-8 text-xs"
           onClick={onLogout}
           disabled={authBusy}
         >
@@ -130,6 +147,7 @@ export function CliProviderCard({
             type="button"
             variant="outline"
             size="sm"
+            className="h-8 text-xs"
             onClick={onLogin}
             disabled={authBusy}
           >
@@ -142,32 +160,6 @@ export function CliProviderCard({
           </Button>
         )
       )}
-      <Button type="button" size="sm" onClick={() => void onSave()} disabled={saving}>
-        {saving ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-        ) : saved ? (
-          <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
-        ) : (
-          <Save className="mr-1.5 h-3.5 w-3.5" />
-        )}
-        {saved ? t("providers.saved") : t("common.save")}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => void onTest()}
-        disabled={testStatus === "testing"}
-      >
-        {testStatus === "testing" ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-        ) : testStatus === "success" ? (
-          <CheckCircle className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
-        ) : testStatus === "error" ? (
-          <AlertCircle className="mr-1.5 h-3.5 w-3.5 text-destructive" />
-        ) : null}
-        {t("providers.testConnection")}
-      </Button>
     </>
   );
 
@@ -175,9 +167,10 @@ export function CliProviderCard({
     <IntegrationCardShell
       title={title}
       subtitle={description}
+      category="cli"
       icon={
         iconId ? (
-          <ProviderBrandIcon providerId={iconId} />
+          <ProviderBrandIconBadge providerId={iconId} />
         ) : (
           title.charAt(0).toUpperCase()
         )
@@ -194,51 +187,100 @@ export function CliProviderCard({
         />
       }
       footer={
-        <>
-          {footer}
-          {onRemove && (
+        <IntegrationActionBar
+          onTest={() => void onTest()}
+          testLabel={testLabel ?? t("providers.testConnection")}
+          testStatus={testStatus}
+          onSecondaryTest={
+            onSecondaryTest ? () => void onSecondaryTest() : undefined
+          }
+          secondaryTestLabel={secondaryTestLabel}
+          secondaryTestStatus={secondaryTestStatus}
+          extra={oauthButtons}
+          save={
             <Button
               type="button"
-              variant="ghost"
               size="sm"
-              className="ml-auto h-8 text-xs text-destructive hover:text-destructive"
-              onClick={onRemove}
+              className="h-8 min-w-[5.5rem] text-xs"
+              onClick={() => void onSave()}
+              disabled={saving}
+              variant={saved ? "secondary" : "default"}
             >
-              {t("providers.remove")}
+              {saving ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {saved ? t("providers.saved") : t("common.save")}
             </Button>
-          )}
+          }
+          destructive={
+            onRemove ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-destructive hover:text-destructive"
+                onClick={onRemove}
+              >
+                {t("providers.remove")}
+              </Button>
+            ) : undefined
+          }
+        />
+      }
+      feedback={
+        <>
+          <IntegrationTestResult
+            status={
+              testStatus === "success"
+                ? "success"
+                : testStatus === "error"
+                  ? "error"
+                  : "idle"
+            }
+            message={
+              testStatus === "success"
+                ? t("providers.connectionSuccessful")
+                : testError
+            }
+          />
+          {secondaryTestError ? (
+            <IntegrationTestResult status="error" message={secondaryTestError} />
+          ) : null}
         </>
       }
     >
       {(authLoggedIn || authMessage) && (
-        <div className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+        <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-400">
           {authLoggedIn && (
-            <p className="text-emerald-600 dark:text-emerald-400">
+            <p>
               {t("providers.oauthLoggedIn")}
               {authEmail ? ` — ${authEmail}` : ""}
+              {authMethod && authMethod !== "none"
+                ? ` (${authMethod})`
+                : ""}
             </p>
           )}
-          {authMessage && <p className="mt-1">{authMessage}</p>}
+          {authMessage && <p className="mt-1 text-muted-foreground">{authMessage}</p>}
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <Label className="text-xs">{t("providers.cliPath")}</Label>
-        <Input
-          value={executablePath}
-          onChange={(e) => onPathChange(e.target.value)}
-          placeholder={pathPlaceholder}
-          className="h-9 font-mono text-xs"
-        />
-        {buildHint && (
-          <p className="text-[11px] text-muted-foreground">{buildHint}</p>
-        )}
-      </div>
+      <IntegrationCardSection>
+        <IntegrationField label={t("providers.cliPath")}>
+          <Input
+            value={executablePath}
+            onChange={(e) => onPathChange(e.target.value)}
+            placeholder={pathPlaceholder}
+            className="h-9 font-mono text-xs"
+          />
+          {buildHint && (
+            <p className="mt-1 text-[10px] text-muted-foreground">{buildHint}</p>
+          )}
+        </IntegrationField>
 
-      <div className="flex flex-col gap-4">
         {typeof timeoutMs === "number" && onTimeoutChange && (
-          <div className="space-y-1.5">
-            <Label className="text-xs">{t("providers.timeoutMs")}</Label>
+          <IntegrationField label={t("providers.timeoutMs")}>
             <Input
               type="number"
               min={1000}
@@ -246,11 +288,11 @@ export function CliProviderCard({
               onChange={(e) => onTimeoutChange(Number(e.target.value))}
               className="h-9 font-mono text-xs"
             />
-          </div>
+          </IntegrationField>
         )}
+
         {modelFields.map((field) => (
-          <div key={field.id} className="space-y-1.5">
-            <Label className="text-xs">{field.label}</Label>
+          <IntegrationField key={field.id} label={field.label}>
             <Select value={field.value} onValueChange={field.onChange}>
               <SelectTrigger className="h-9 text-xs">
                 <SelectValue />
@@ -263,13 +305,9 @@ export function CliProviderCard({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </IntegrationField>
         ))}
-      </div>
-
-      {testError && (
-        <p className="text-xs text-destructive">{testError}</p>
-      )}
+      </IntegrationCardSection>
     </IntegrationCardShell>
   );
 }

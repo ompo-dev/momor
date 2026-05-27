@@ -95,7 +95,7 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
       name: updates.name ?? "",
       kind: updates.kind ?? "none",
       enabled: updates.enabled !== false,
-      apiKey: updates.apiKey,
+      apiKeys: updates.apiKeys,
       serviceAccountPath: updates.serviceAccountPath,
       region: updates.region,
       model: updates.model,
@@ -232,7 +232,7 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
             </div>
           )}
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {profiles.map((profile) => (
               <div
                 key={profile.id}
