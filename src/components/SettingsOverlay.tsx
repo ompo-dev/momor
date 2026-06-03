@@ -1385,7 +1385,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
       >
         <DialogContent
           id="settings-panel-wrapper"
-          className="flex max-w-5xl w-[min(96vw,56rem)] h-[min(85vh,720px)] p-0 gap-0 overflow-hidden border-border bg-background text-foreground [&>button]:hidden sm:rounded-xl"
+          className="flex max-w-5xl w-[min(96vw,56rem)] h-[min(85vh,720px)] p-0 gap-0 overflow-hidden border border-linear-hairline bg-linear-canvas text-linear-ink [&>button]:hidden sm:rounded-linear-xl"
           onInteractOutside={(e) => {
             if (isPreviewingOpacity) e.preventDefault();
           }}
@@ -1405,7 +1405,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                 onClose={onClose}
               />
 
-              <ScrollArea className="flex-1 bg-background">
+              <ScrollArea className="flex-1 bg-linear-canvas">
               <div className="px-6 py-6 md:px-8 relative min-h-full">
                 {activeTab === "general" && (
                   <GeneralSettingsTab

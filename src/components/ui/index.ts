@@ -19,3 +19,8 @@ export * from "./textarea"
 export * from "./tooltip"
 export * from "./settings-toggle-row"
 export * from "./onboarding-popover"
+
+export * from "./linear/Surface";
+export * from "./linear/LinearCard";
+export * from "./linear/LinearButton";
+export * from "./linear/HairlineDivider";

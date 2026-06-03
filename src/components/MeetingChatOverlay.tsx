@@ -613,11 +613,11 @@ ${contextString}`;
               },
               opacity: { duration: 0.2 },
             }}
-            className="relative mx-auto mb-0 flex w-full max-w-[680px] flex-col overflow-hidden rounded-t-[24px] border-x border-t border-border bg-card text-card-foreground shadow-2xl"
+            className="relative mx-auto mb-0 flex w-full max-w-[680px] flex-col overflow-hidden rounded-t-[24px] border-x border-t border-linear-hairline bg-linear-surface-1 text-linear-ink shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-              <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="flex shrink-0 items-center justify-between border-b border-linear-hairline px-4 py-3">
+              <div className="flex items-center gap-2 text-linear-ink-tertiary">
                 <img
                   src={momorIcon}
                   className="force-black-icon h-3.5 w-3.5 opacity-50"
@@ -675,7 +675,7 @@ ${contextString}`;
                   onChange={(e) => setInputQuery(e.target.value)}
                   onKeyDown={handleInputKeyDown}
                   placeholder={t("meetingDetails.askPlaceholder")}
-                  className="h-12 w-full rounded-full py-6 pl-5 pr-12 shadow-md"
+                  className="h-12 w-full rounded-full py-6 pl-5 pr-12 shadow-md bg-linear-surface-1 border border-linear-hairline text-linear-ink placeholder:text-linear-ink-tertiary focus-visible:ring-2 focus-visible:ring-linear-primary/40"
                 />
                 <Button
                   type="button"

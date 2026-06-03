@@ -26,6 +26,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "./ui/button";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { Badge } from "./ui/badge";
+import { LinearCard, LinearCardContent } from "./ui";
 import { cn } from "../lib/utils";
 
 function isSelfSpeaker(speaker: string | undefined): boolean {
@@ -303,20 +304,22 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-background text-foreground font-sans overflow-hidden">
+    <div className="h-full w-full flex flex-col bg-linear-canvas text-linear-ink font-sans overflow-hidden">
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto custom-scrollbar">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.3 }}
-          className="max-w-4xl mx-auto px-8 py-8 pb-32" // Added pb-32 for floating footer clearance
+          className="max-w-4xl mx-auto px-6 py-8 pb-32"
         >
+          <LinearCard className="rounded-linear-xl">
+            <LinearCardContent className="p-6">
           {/* Meta Info & Actions Row */}
           <div className="flex items-start justify-between mb-6">
             <div className="w-full pr-4">
               {/* Date formatting could be improved to use meeting.date if it's an ISO string */}
-              <div className="text-xs text-text-tertiary font-medium mb-1">
+              <div className="text-xs text-linear-ink-subtle font-medium mb-1">
                 {new Date(meeting.date).toLocaleDateString(dateLocale, {
                   weekday: "long",
                   month: "long",
@@ -329,7 +332,7 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
                 initialValue={meeting.title}
                 onSave={handleTitleSave}
                 tagName="h1"
-                className="text-3xl font-bold text-text-primary tracking-tight -ml-2 px-2 py-1 rounded-md transition-colors"
+                className="text-3xl font-semibold text-linear-ink tracking-[-0.03em] -ml-2 px-2 py-1 rounded-linear-md transition-colors"
                 multiline={false}
               />
             </div>
@@ -355,9 +358,14 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <Button variant="ghost" size="sm" onClick={handleCopy} className="gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="gap-2 text-linear-ink-muted hover:text-linear-ink"
+            >
               {isCopied ? (
-                <Check size={14} className="text-emerald-500" />
+                <Check size={14} className="text-linear-success" />
               ) : (
                 <Copy size={14} />
               )}
@@ -382,67 +390,67 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
               >
                 {/* Overview - Rendered as Markdown */}
                 {meeting.detailedSummary?.overview && (
-                  <div className="mb-6 pb-6 border-b border-border-subtle prose prose-sm max-w-none">
+                  <div className="mb-6 pb-6 border-b border-linear-hairline max-w-none">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
                         h1: ({ node, ...props }) => (
                           <h1
-                            className="text-xl font-bold text-text-primary mt-4 mb-2"
+                            className="text-xl font-semibold text-linear-ink mt-4 mb-2 tracking-[-0.02em]"
                             {...props}
                           />
                         ),
                         h2: ({ node, ...props }) => (
                           <h2
-                            className="text-lg font-semibold text-text-primary mt-4 mb-2"
+                            className="text-lg font-semibold text-linear-ink mt-4 mb-2 tracking-[-0.02em]"
                             {...props}
                           />
                         ),
                         h3: ({ node, ...props }) => (
                           <h3
-                            className="text-base font-semibold text-text-primary mt-3 mb-1"
+                            className="text-base font-semibold text-linear-ink mt-3 mb-1 tracking-[-0.01em]"
                             {...props}
                           />
                         ),
                         p: ({ node, ...props }) => (
                           <p
-                            className="text-sm text-text-secondary leading-relaxed mb-2"
+                            className="text-sm text-linear-ink-muted leading-relaxed mb-2"
                             {...props}
                           />
                         ),
                         ul: ({ node, ...props }) => (
                           <ul
-                            className="list-disc ml-4 mb-2 space-y-1"
+                            className="list-disc ml-4 mb-2 space-y-1 text-sm text-linear-ink-muted"
                             {...props}
                           />
                         ),
                         ol: ({ node, ...props }) => (
                           <ol
-                            className="list-decimal ml-4 mb-2 space-y-1"
+                            className="list-decimal ml-4 mb-2 space-y-1 text-sm text-linear-ink-muted"
                             {...props}
                           />
                         ),
                         li: ({ node, ...props }) => (
                           <li
-                            className="text-sm text-text-secondary"
+                            className="text-sm text-linear-ink-muted"
                             {...props}
                           />
                         ),
                         strong: ({ node, ...props }) => (
                           <strong
-                            className="font-semibold text-text-primary"
+                            className="font-semibold text-linear-ink"
                             {...props}
                           />
                         ),
                         a: ({ node, ...props }) => (
                           <a
-                            className="text-blue-500 hover:underline"
+                            className="text-linear-primary hover:underline"
                             {...props}
                           />
                         ),
                       }}
                     >
-                      {meeting.detailedSummary?.overview || ""}
+                      {cleanMarkdown(meeting.detailedSummary.overview)}
                     </ReactMarkdown>
                   </div>
                 )}
@@ -471,20 +479,20 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
                             );
                           }}
                           tagName="h2"
-                          className="text-lg font-semibold text-text-primary -ml-2 px-2 py-1 rounded-sm transition-colors"
+                          className="text-lg font-semibold text-linear-ink -ml-2 px-2 py-1 rounded-linear-sm transition-colors"
                           multiline={false}
                         />
                       </div>
                       <ul className="space-y-3">
                         {meeting.detailedSummary.actionItems.map((item, i) => (
                           <li key={i} className="flex items-start gap-3 group">
-                            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-text-secondary group-hover:bg-blue-500 transition-colors shrink-0" />
+                            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-linear-ink-tertiary group-hover:bg-linear-primary transition-colors shrink-0" />
                             <div className="flex-1">
                               <EditableTextBlock
                                 initialValue={item}
                                 onSave={(val) => handleActionItemSave(i, val)}
                                 tagName="p"
-                                className="text-sm text-text-secondary leading-relaxed -ml-2 px-2 rounded-sm transition-colors"
+                                className="text-sm text-linear-ink-muted leading-relaxed -ml-2 px-2 rounded-linear-sm transition-colors"
                                 placeholder={t(
                                   "meetingDetails.actionItemPlaceholder",
                                 )}
@@ -534,20 +542,20 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
                             );
                           }}
                           tagName="h2"
-                          className="text-lg font-semibold text-text-primary -ml-2 px-2 py-1 rounded-sm transition-colors"
+                          className="text-lg font-semibold text-linear-ink -ml-2 px-2 py-1 rounded-linear-sm transition-colors"
                           multiline={false}
                         />
                       </div>
                       <ul className="space-y-3">
                         {meeting.detailedSummary.keyPoints.map((item, i) => (
                           <li key={i} className="flex items-start gap-3 group">
-                            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-text-secondary group-hover:bg-purple-500 transition-colors shrink-0" />
+                            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-linear-ink-tertiary group-hover:bg-linear-primary transition-colors shrink-0" />
                             <div className="flex-1">
                               <EditableTextBlock
                                 initialValue={item}
                                 onSave={(val) => handleKeyPointSave(i, val)}
                                 tagName="p"
-                                className="text-sm text-text-secondary leading-relaxed -ml-2 px-2 rounded-sm transition-colors"
+                                className="text-sm text-linear-ink-muted leading-relaxed -ml-2 px-2 rounded-linear-sm transition-colors"
                                 placeholder={t(
                                   "meetingDetails.keyPointPlaceholder",
                                 )}
@@ -991,6 +999,8 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
               </motion.section>
             )}
           </div>
+            </LinearCardContent>
+          </LinearCard>
         </motion.div>
       </main>
 

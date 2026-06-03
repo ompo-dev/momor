@@ -21,25 +21,26 @@
 @layer base {
   :root,
   [data-theme="dark"] {
-    --background: 240 6% 10%;
-    --foreground: 0 0% 98%;
-    --card: 240 4% 16%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 4% 16%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 217 91% 60%;
+    /* Linear dark-canvas baseline */
+    --background: 240 1% 1%;
+    --foreground: 0 0% 97%;
+    --card: 214 30% 6%;
+    --card-foreground: 0 0% 97%;
+    --popover: 214 30% 6%;
+    --popover-foreground: 0 0% 97%;
+    --primary: 233 55% 60%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4% 16%;
+    --secondary: 214 30% 6%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 20%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 5% 24%;
+    --muted: 214 30% 8%;
+    --muted-foreground: 220 13% 82%;
+    --accent: 214 30% 8%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 26%;
-    --input: 240 4% 26%;
-    --ring: 217 91% 60%;
+    --border: 220 8% 15%;
+    --input: 220 8% 15%;
+    --ring: 233 55% 60%;
     --radius: 0.5rem;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -92,40 +93,30 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 
-  /* --- SEMANTIC TOKEN SYSTEM (DEFAULT: DARK) --- */
-  /* Reference Image Matching */
-  --bg-sidebar: #18181b;
-  /* User Spec: Side Panel */
-  --bg-main: #1e1e21;
-  /* User Spec: Main BG */
-  --bg-card: #242429;
-  /* User Spec: Detectable Container */
+  /* --- LEGACY SEMANTIC TOKENS (DARK) --- */
+  /* Mapped to Linear ladder to keep existing components consistent during big-bang. */
+  --bg-sidebar: #0c1117;
+  --bg-main: #010102;
+  --bg-card: #0c1117;
 
-  --bg-toggle-switch: #303033;
-  /* User Spec: Toggle Button */
-  --bg-item-surface: #27272a;
-  /* User Spec: Icons & Input Backgrounds */
-  --bg-item-active: #2c2c2c;
-  /* Selected state */
+  --bg-toggle-switch: #151d28;
+  --bg-item-surface: #0c1117;
+  --bg-item-active: #111821;
 
-  --bg-primary: #000000;
-  /* Fallback */
-  --bg-secondary: #050505;
-  /* Fallback */
-  --bg-elevated: #151515;
-  /* Fallback */
-  --bg-input: #1a1a1a;
-  /* Fallback */
+  --bg-primary: #010102;
+  --bg-secondary: #0c1117;
+  --bg-elevated: #111821;
+  --bg-input: #0c1117;
 
-  --text-primary: #ffffff;
-  --text-secondary: #a0a0a0;
-  --text-tertiary: #606060;
+  --text-primary: #f7f8f8;
+  --text-secondary: #d0d6e0;
+  --text-tertiary: #8a8f98;
 
-  --border-subtle: transparent;
-  --border-muted: #333333;
+  --border-subtle: #23252a;
+  --border-muted: #2f3238;
 
-  --accent-primary: #3b82f6;
-  --accent-muted: rgba(59, 130, 246, 0.15);
+  --accent-primary: #5e6ad2;
+  --accent-muted: rgba(94, 106, 210, 0.15);
 
   --bg-component: #262626;
   /* Specific legacy value */
@@ -172,13 +163,13 @@
   --overlay-pill-blur: calc(1px + (var(--overlay-opacity) * 12px));
   --overlay-transcript-blur: calc(var(--overlay-opacity) * 6px);
 
-  /* Primary Action Button Defaults (Dark) */
-  --btn-primary-bg: #2563eb; /* blue-600 */
-  --btn-primary-hover: #3b82f6; /* blue-500 */
-  --btn-primary-disabled-bg: rgba(30, 58, 138, 0.3); /* blue-900/30 */
-  --btn-primary-disabled-border: rgba(30, 64, 175, 0.3); /* blue-800/30 */
-  --btn-primary-disabled-text: rgba(96, 165, 250, 0.4); /* blue-400/40 */
-  --btn-primary-shadow-color: rgba(30, 58, 138, 0.3); /* blue-900/30 */
+  /* Primary Action Button Defaults (Dark / Linear) */
+  --btn-primary-bg: #5e6ad2;
+  --btn-primary-hover: #828fff;
+  --btn-primary-disabled-bg: rgba(94, 106, 210, 0.22);
+  --btn-primary-disabled-border: rgba(94, 106, 210, 0.18);
+  --btn-primary-disabled-text: rgba(208, 214, 224, 0.5);
+  --btn-primary-shadow-color: rgba(0, 0, 0, 0.0);
 }
 
 [data-theme="light"] {

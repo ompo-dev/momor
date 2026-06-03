@@ -10,10 +10,12 @@ type StatusVariant =
 const VARIANT_CLASS: Record<StatusVariant, string> = {
   configured:
     "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  notConfigured: "border-border/60 bg-muted/40 text-muted-foreground",
+  notConfigured:
+    "border-linear-hairline bg-linear-surface-1 text-linear-ink-tertiary",
   enabled:
     "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  default: "border-primary/30 bg-primary/10 text-primary",
+  default:
+    "border-linear-primary/30 bg-linear-primary/12 text-linear-primary",
 };
 
 interface IntegrationStatusBadgeProps {

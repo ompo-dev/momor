@@ -6,13 +6,13 @@ const MomorProSettings: React.FC = () => {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-6 text-center space-y-4">
       <div className="text-4xl">🎉</div>
-      <h2 className="text-xl font-semibold text-text-primary">
+      <h2 className="text-xl font-semibold text-linear-ink tracking-[-0.02em]">
         {t('settings.free.title')}
       </h2>
-      <p className="text-sm text-text-secondary max-w-sm">
+      <p className="text-sm text-linear-ink-muted max-w-sm">
         {t('settings.free.description')}
       </p>
-      <p className="text-xs text-text-tertiary">
+      <p className="text-xs text-linear-ink-tertiary">
         {t('settings.free.noLicense')}
       </p>
     </div>

@@ -36,19 +36,19 @@ const CopyBlock = ({ command }: { command: string }) => {
         setTimeout(() => setCopied(false), 2000);
     };
     return (
-        <div className="flex items-center justify-between bg-black/20 rounded-lg pl-3 pr-1.5 py-1.5 border border-white/[0.03] group hover:border-white/10 transition-colors mt-1.5 mb-2.5 w-full">
-            <code className="text-[10px] font-mono text-blue-400 truncate mr-2 select-all overflow-hidden whitespace-nowrap">
+        <div className="flex items-center justify-between bg-linear-surface-1 rounded-linear-md pl-3 pr-1.5 py-1.5 border border-linear-hairline group hover:border-linear-hairline-strong transition-colors mt-1.5 mb-2.5 w-full">
+            <code className="text-[10px] font-mono text-linear-primary truncate mr-2 select-all overflow-hidden whitespace-nowrap">
                 {command}
             </code>
             <button
                 onClick={handleCopy}
-                className="h-6 px-2.5 rounded-md bg-white/5 hover:bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors border border-white/5 flex-shrink-0"
+                className="h-6 px-2.5 rounded-linear-sm bg-linear-surface-2 hover:bg-linear-surface-3 active:bg-linear-surface-4 flex items-center justify-center transition-colors border border-linear-hairline flex-shrink-0"
                 title={t('overlay.copyToClipboard')}
             >
                 {copied ? (
-                    <span className="text-[10px] font-semibold text-green-400">{t('update.copiedLabel', 'Copied')}</span>
+                    <span className="text-[10px] font-semibold text-linear-success">{t('update.copiedLabel', 'Copied')}</span>
                 ) : (
-                    <span className="text-[10px] font-medium text-white/50 group-hover:text-white/80">{t('update.copyLabel', 'Copy')}</span>
+                    <span className="text-[10px] font-medium text-linear-ink-tertiary group-hover:text-linear-ink">{t('update.copyLabel', 'Copy')}</span>
                 )}
             </button>
         </div>

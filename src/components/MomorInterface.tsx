@@ -4159,7 +4159,7 @@ Provide only the answer, nothing else.`;
   const sttSummaryDetail = sttNotConfigured
     ? t("overlay.sttOpenAudioSettings")
     : sttSummary.detail;
-  const statusPillBaseClass = `flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium shadow-sm backdrop-blur-xl ${isLightTheme ? "bg-white/55 border-black/10" : "bg-black/20 border-white/10"}`;
+  const statusPillBaseClass = `flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium backdrop-blur-xl ${isLightTheme ? "bg-linear-surface-1 border-linear-hairline text-linear-ink" : "bg-linear-surface-1 border-linear-hairline text-linear-ink"}`;
 
   const copyDiagnostics = async () => {
     const version = import.meta.env.VITE_APP_VERSION || "unknown";

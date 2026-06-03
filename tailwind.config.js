@@ -16,6 +16,30 @@ module.exports = {
     },
     extend: {
       colors: {
+        // Linear-style tokens (Tailwind-only, no CSS vars).
+        // Usage example: bg-linear-canvas text-linear-ink border-linear-hairline
+        linear: {
+          canvas: "#010102",
+          surface: {
+            1: "#0c1117",
+            2: "#111821",
+            3: "#151d28",
+            4: "#1a2431",
+          },
+          hairline: "#23252a",
+          "hairline-strong": "#2f3238",
+          "hairline-tertiary": "#2a2d33",
+          ink: "#f7f8f8",
+          "ink-muted": "#d0d6e0",
+          "ink-subtle": "#8a8f98",
+          "ink-tertiary": "#62666d",
+          primary: "#5e6ad2",
+          "primary-hover": "#828fff",
+          "primary-focus": "#5e69d1",
+          success: "#27a644",
+          overlay: "#000000",
+        },
+
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -83,6 +107,23 @@ module.exports = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        // Linear radius scale
+        "linear-xs": "4px",
+        "linear-sm": "6px",
+        "linear-md": "8px",
+        "linear-lg": "12px",
+        "linear-xl": "16px",
+      },
+      spacing: {
+        // Linear spacing tokens (4px base)
+        "linear-xxs": "4px",
+        "linear-xs": "8px",
+        "linear-sm": "12px",
+        "linear-md": "16px",
+        "linear-lg": "24px",
+        "linear-xl": "32px",
+        "linear-xxl": "48px",
+        "linear-section": "96px",
       },
       fontFamily: {
         sans: [
@@ -97,6 +138,12 @@ module.exports = {
         ],
         celeb: ["CelebMF", "sans-serif"],
         "celeb-light": ["CelebMFLight", "sans-serif"],
+      },
+      letterSpacing: {
+        // Linear-ish tracking. Use sparingly (display/headlines).
+        "linear-body": "-0.05em",
+        "linear-tight": "-0.03em",
+        "linear-display": "-0.04em",
       },
       transitionTimingFunction: {
         "apple-ease": "cubic-bezier(0.25, 1, 0.5, 1)",

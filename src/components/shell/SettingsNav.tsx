@@ -76,12 +76,12 @@ export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProp
   const { t } = useTranslation()
 
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-r border-border bg-muted/20">
-      <div className="border-b border-border px-4 py-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <aside className="flex w-[220px] shrink-0 flex-col border-r border-linear-hairline bg-linear-surface-1">
+      <div className="border-b border-linear-hairline px-4 py-4">
+        <p className="text-xs font-medium uppercase tracking-wider text-linear-ink-tertiary">
           {t("settings.title")}
         </p>
-        <p className="mt-0.5 text-sm font-semibold text-foreground">Momor</p>
+        <p className="mt-0.5 text-sm font-semibold text-linear-ink">Momor</p>
       </div>
 
       <ScrollArea className="flex-1 px-2 py-3">
@@ -89,7 +89,7 @@ export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProp
           {NAV_GROUPS.map((group, groupIndex) => (
             <div key={groupIndex} className="space-y-1">
               {group.labelKey ? (
-                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-linear-ink-tertiary">
                   {t(group.labelKey)}
                 </p>
               ) : null}
@@ -99,10 +99,10 @@ export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProp
                   type="button"
                   onClick={() => onTabChange(item.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                    "flex w-full items-center gap-2.5 rounded-linear-md px-2.5 py-2 text-left text-sm transition-colors",
                     activeTab === item.id
-                      ? "bg-accent font-medium text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                      ? "bg-linear-surface-2 font-medium text-linear-ink border border-linear-hairline"
+                      : "text-linear-ink-muted hover:bg-linear-surface-2/60 hover:text-linear-ink",
                   )}
                 >
                   {item.icon}
@@ -114,7 +114,7 @@ export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProp
         </nav>
       </ScrollArea>
 
-      <div className="space-y-1 border-t border-border p-3">
+      <div className="space-y-1 border-t border-linear-hairline p-3">
         <Button
           variant="ghost"
           size="sm"
