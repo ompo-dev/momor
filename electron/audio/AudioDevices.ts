@@ -3,7 +3,7 @@ import { loadNativeModule } from './nativeModuleLoader';
 // NativeModule may be null if the Rust binary isn't built yet (new clone without `npm run build:native`).
 // All methods below handle this gracefully by returning empty arrays.
 const NativeModule: any = loadNativeModule();
-const { getInputDevices, getOutputDevices } = NativeModule || {};
+const { getInputDevices, getOutputDevices, getCommunicationsOutputDeviceId } = NativeModule || {};
 
 export interface AudioDevice {
     id: string;
@@ -34,6 +34,21 @@ export class AudioDevices {
         } catch (e) {
             console.error('[AudioDevices] Failed to get output devices:', e);
             return [];
+        }
+    }
+
+    /**
+     * Returns the default eCommunications render device ID on Windows.
+     * VoIP apps (Zoom, Teams, Meet) route audio to this device.
+     * Compare with the current capture device to detect the split-device scenario.
+     */
+    public static getCommunicationsOutputDeviceId(): string {
+        if (!getCommunicationsOutputDeviceId) return '';
+        try {
+            return getCommunicationsOutputDeviceId() || '';
+        } catch (e) {
+            console.error('[AudioDevices] Failed to get eCommunications device:', e);
+            return '';
         }
     }
 }

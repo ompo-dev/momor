@@ -58,14 +58,33 @@ export class LiveRAGIndexer {
         }, INDEXING_INTERVAL_MS);
     }
 
+    // Debounce timer for question-triggered immediate indexing.
+    private questionTriggerTimer: ReturnType<typeof setTimeout> | null = null;
+    private static readonly QUESTION_TRIGGER_DEBOUNCE_MS = 1500;
+    // Regex to detect questions without full preprocessing overhead.
+    private static readonly QUESTION_RE = /[?]$|\b(what|how|why|where|when|which|who|can you|could you|tell me|explain|describe|walk me through)\b/i;
+
     /**
      * Feed new transcript segments from the live meeting.
      * Called by SessionTracker whenever new transcript arrives.
      * This is append-only — segments are never modified after being fed.
+     * When a question is detected, triggers an immediate index pass (debounced)
+     * instead of waiting for the 30s timer — so the answer LLM has fresh context.
      */
     feedSegments(segments: RawSegment[]): void {
         if (!this.isActive || !this.meetingId) return;
         this.allSegments.push(...segments);
+
+        const hasQuestion = segments.some(s =>
+            s.speaker === 'interviewer' && LiveRAGIndexer.QUESTION_RE.test(s.text)
+        );
+        if (hasQuestion) {
+            if (this.questionTriggerTimer) clearTimeout(this.questionTriggerTimer);
+            this.questionTriggerTimer = setTimeout(() => {
+                this.questionTriggerTimer = null;
+                this.tick().catch(err => console.error('[LiveRAGIndexer] Question-triggered tick error:', err));
+            }, LiveRAGIndexer.QUESTION_TRIGGER_DEBOUNCE_MS);
+        }
     }
 
     /**
@@ -159,6 +178,10 @@ export class LiveRAGIndexer {
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
+        }
+        if (this.questionTriggerTimer) {
+            clearTimeout(this.questionTriggerTimer);
+            this.questionTriggerTimer = null;
         }
 
         // Final flush — process any remaining segments

@@ -107,9 +107,11 @@ export class RateLimiter {
  */
 export function createProviderRateLimiters() {
     return {
-        groq: new RateLimiter(6, 0.1),        // 6 req/min
+        groq: new RateLimiter(6, 0.1),        // 6 req/min (free tier)
         gemini: new RateLimiter(120, 2.0),    // 120 req/min
         openai: new RateLimiter(120, 2.0),    // 120 req/min
         claude: new RateLimiter(120, 2.0),    // 120 req/min
+        deepseek: new RateLimiter(10, 1.0),   // ~60 req/min, burst 10
+        momor: new RateLimiter(5, 0.5),       // conservative: 30 req/min, burst 5
     };
 }

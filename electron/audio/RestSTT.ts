@@ -435,7 +435,7 @@ export class RestSTT extends EventEmitter {
             monoS16 = inputS16;
         }
 
-        // Decimate to target rate
+        // Resample to target rate with anti-aliasing
         if (this.sampleRate === TARGET_RATE) {
             return Buffer.from(monoS16.buffer);
         }
@@ -443,8 +443,23 @@ export class RestSTT extends EventEmitter {
         const factor = this.sampleRate / TARGET_RATE;
         const outLen = Math.floor(monoS16.length / factor);
         const outS16 = new Int16Array(outLen);
-        for (let i = 0; i < outLen; i++) {
-            outS16[i] = monoS16[Math.floor(i * factor)];
+        if (Number.isInteger(factor)) {
+            // Box filter average — eliminates aliasing for exact integer ratios (48k→16k)
+            for (let i = 0; i < outLen; i++) {
+                let sum = 0;
+                const base = i * factor;
+                for (let k = 0; k < factor; k++) sum += monoS16[base + k];
+                outS16[i] = Math.round(sum / factor);
+            }
+        } else {
+            // Linear interpolation for non-integer ratios
+            for (let i = 0; i < outLen; i++) {
+                const srcPos = i * factor;
+                const lo     = Math.floor(srcPos);
+                const hi     = Math.min(lo + 1, monoS16.length - 1);
+                const frac   = srcPos - lo;
+                outS16[i] = Math.round(monoS16[lo] * (1 - frac) + monoS16[hi] * frac);
+            }
         }
         return Buffer.from(outS16.buffer);
     }

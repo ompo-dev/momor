@@ -19,10 +19,11 @@ import { UserSessionContextService } from './services/UserSessionContextService'
 // Mode types
 export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' | 'recap' | 'clarify' | 'manual' | 'follow_up_questions' | 'code_hint' | 'brainstorm';
 
-// Refinement intent detection (refined to avoid false positives)
+// Refinement intent detection — supports EN and PT-BR
 function detectRefinementIntent(userText: string): { isRefinement: boolean; intent: string } {
     const lowercased = userText.toLowerCase().trim();
     const refinementPatterns = [
+        // EN
         { pattern: /make it longer|expand on this|elaborate more/i, intent: 'expand' },
         { pattern: /rephrase that|say it differently|put it another way/i, intent: 'rephrase' },
         { pattern: /give me an example|provide an instance/i, intent: 'add_example' },
@@ -30,6 +31,15 @@ function detectRefinementIntent(userText: string): { isRefinement: boolean; inte
         { pattern: /make it casual|be less formal|sound relaxed/i, intent: 'more_casual' },
         { pattern: /make it formal|be more professional|sound professional/i, intent: 'more_formal' },
         { pattern: /simplify this|make it simpler|explain specifically/i, intent: 'simplify' },
+        // PT-BR
+        { pattern: /deixa? (mais |bem )?longo|expande|elabora mais/i, intent: 'expand' },
+        { pattern: /reformula|fala de outro (jeito|modo)|diz de outra (forma|maneira)/i, intent: 'rephrase' },
+        { pattern: /d[aá] um exemplo|me d[aá] um exemplo|coloca um exemplo/i, intent: 'add_example' },
+        { pattern: /mais confiante|mais assertivo|soa mais forte/i, intent: 'more_confident' },
+        { pattern: /mais casual|menos formal|mais descontra[íi]do/i, intent: 'more_casual' },
+        { pattern: /mais formal|mais profissional|soa profissional/i, intent: 'more_formal' },
+        { pattern: /simplifica|deixa mais simples|explica de forma (mais )?simples/i, intent: 'simplify' },
+        { pattern: /deixa mais curto|mais (curto|conciso|breve)|resume/i, intent: 'simplify' },
     ];
 
     for (const { pattern, intent } of refinementPatterns) {

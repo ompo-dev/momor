@@ -1162,22 +1162,13 @@ export class AppState {
     let stt: STTProvider;
 
     if (sttProvider === "momor") {
-      const momorKey = CredentialsManager.getInstance().getmomorApiKey();
-      if (!momorKey) {
-        // Momor is Coming Soon — no key means degrade gracefully like every other provider
-        console.warn(
-          `[Main] No Momor API Key configured for ${speaker}, falling back to GoogleSTT`,
-        );
-        stt = new GoogleSTT(speaker);
-      } else {
-        // 'system' for interviewer (system audio), 'mic' for user (microphone).
-        // The server uses ${key}:${channel} as the session key so both streams
-        // can coexist without triggering concurrent_session_blocked.
-        stt = new momorProSTT(
-          momorKey,
-          speaker === "interviewer" ? "system" : "mic",
-        );
-      }
+      // momorProSTT WebSocket backend is currently disabled. Route all momor
+      // provider selections to GoogleSTT so users with a saved "momor" setting
+      // don't end up with a broken STT pipeline (connect() throws).
+      console.warn(
+        `[Main] Momor Pro STT is currently disabled for ${speaker}, falling back to GoogleSTT`,
+      );
+      stt = new GoogleSTT(speaker);
     } else if (sttProvider === "deepgram") {
       const apiKey =
         CredentialsManager.getInstance().getDeepgramApiKey(sessionProfileId);
@@ -1271,28 +1262,17 @@ export class AppState {
       const { LocalWhisperSTT } = require("./audio/LocalWhisperSTT");
       const sm = SettingsManager.getInstance();
       const rawModel = sm.get("localWhisperModel") ?? "Xenova/whisper-tiny.en";
-      // Moonshine models require a dedicated streaming pipeline not yet supported.
-      // All other onnx-community/* Whisper models work via the cache_position patch.
-      const globalModel = rawModel.startsWith("onnx-community/moonshine-")
-        ? (() => {
-            console.warn(
-              `[Main] ${rawModel} (Moonshine) needs streaming pipeline — falling back to Xenova/whisper-tiny`,
-            );
-            return "Xenova/whisper-tiny";
-          })()
-        : rawModel;
       // Per-channel override: when enabled the two STT instances may load
       // different models (e.g. Moonshine Tiny for mic, Moonshine Base for
-      // system audio). Falls back to globalModel if the per-channel slot is
+      // system audio). Falls back to rawModel if the per-channel slot is
       // empty or the feature is disabled.
-      let modelId = globalModel;
+      let modelId = rawModel;
       if (sm.get("localWhisperPerChannelEnabled")) {
         const override =
           speaker === "interviewer"
             ? sm.get("localWhisperModelSystem")
             : sm.get("localWhisperModelMic");
-        if (override && !override.startsWith("onnx-community/moonshine-"))
-          modelId = override;
+        if (override) modelId = override;
       }
       console.log(
         `[Main] Using LocalWhisperSTT for ${speaker}, model: ${modelId}`,
@@ -1591,6 +1571,27 @@ export class AppState {
             stuck: true,
           });
           return;
+        }
+
+        // Windows: detect eCommunications vs eMultimedia split (Zoom/Teams use eCommunications)
+        if (process.platform === "win32") {
+          try {
+            const commsId = AudioDevices.getCommunicationsOutputDeviceId();
+            const defaultId = require("./audio/nativeModuleLoader").loadNativeModule()?.getDefaultOutputDeviceId?.() || "";
+            if (commsId && defaultId && commsId !== defaultId) {
+              const msg = "No audio detected — your meeting app (Zoom/Teams/Meet) is routing audio to the Communications device while Momor captures the Multimedia device. In your meeting app, change the speaker output to your default system device, then restart the meeting.";
+              console.warn(`${prefix}eCommunications/eMultimedia split detected: comms=${commsId} vs default=${defaultId}`);
+              this.broadcast("audio-capture-failed", {
+                channel: "system",
+                message: msg,
+                attempt: 0,
+                maxAttempts: 3,
+                terminal: false,
+                stuck: true,
+              });
+              return;
+            }
+          } catch {}
         }
 
         console.warn(

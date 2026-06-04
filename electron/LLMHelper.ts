@@ -69,6 +69,7 @@ import {
 } from "./utils/curlUtils";
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from "./services/CredentialsManager";
+import { UsageTracker } from "./services/UsageTracker";
 import { TRIAL_SENTINEL_KEY } from "./config/constants";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -135,6 +136,10 @@ export class LLMHelper {
   private aiResponseLanguage: string = "auto";
   private sttLanguage: string = "english-us";
   private momorKey: string | null = null;
+
+  // Momor API base URL. Empty string = disabled in this build.
+  // Set to a real URL to re-enable the Momor API provider.
+  private static readonly MOMOR_ENDPOINT = "";
 
   // Rate limiters per provider to prevent 429 errors on free tiers
   private rateLimiters: ReturnType<typeof createProviderRateLimiters>;
@@ -393,7 +398,7 @@ export class LLMHelper {
   }
 
   private hasmomor(): boolean {
-    return !!this.momorKey;
+    return !!this.momorKey && !!LLMHelper.MOMOR_ENDPOINT;
   }
 
   /**
@@ -2210,6 +2215,21 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         }
 
         for (const provider of providers) {
+          const circuitId = /^momor/i.test(provider.name) ? "momor"
+            : /^groq/i.test(provider.name) ? "groq"
+            : /^codex/i.test(provider.name) ? "codex"
+            : /^openai/i.test(provider.name) ? "openai"
+            : /^claude/i.test(provider.name) ? "claude"
+            : /^deepseek/i.test(provider.name) ? "deepseek"
+            : /^gemini/i.test(provider.name) ? "gemini"
+            : undefined;
+          if (circuitId) {
+            const cb = this.providerRouter.getCircuitBreaker(circuitId);
+            if (!cb.canExecute()) {
+              console.log(`[LLMHelper] ⚡ ${provider.name} circuit open — skipping (retry in ${Math.round(cb.timeUntilRetry / 1000)}s)`);
+              continue;
+            }
+          }
           try {
             console.log(
               `[LLMHelper] ${rotation === 0 ? "🚀" : "🔁"} Attempting ${provider.name}...`,
@@ -2217,6 +2237,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
             const rawResponse = await provider.execute();
             if (rawResponse && rawResponse.trim().length > 0) {
               console.log(`[LLMHelper] ✅ ${provider.name} succeeded`);
+              if (circuitId) this.providerRouter.recordSuccess(circuitId);
+              if (circuitId) UsageTracker.getInstance().record(circuitId, userContent, rawResponse);
               return this.processResponse(rawResponse);
             }
             console.warn(
@@ -2226,6 +2248,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
             console.warn(
               `[LLMHelper] ⚠️ ${provider.name} failed: ${error.message}`,
             );
+            if (circuitId) this.providerRouter.recordFailure(circuitId);
           }
         }
       }
@@ -2508,6 +2531,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     imagePaths?: string[],
   ): Promise<string> {
     this.assertOutboundScopes("momor", userMessage, imagePaths);
+    await this.rateLimiters.momor.acquire();
     // Prefer the in-memory field; fall back to CredentialsManager for the direct-routing path
     // where currentModelId === 'momor' but setmomorKey() wasn't called yet.
     let momorKey = this.momorKey;
@@ -2517,7 +2541,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     }
     if (!momorKey) throw new Error("Momor API key not set");
 
-    const endpointUrl = ""; // api.momor.software disabled in open-source build
+    const endpointUrl = LLMHelper.MOMOR_ENDPOINT;
     // When the key is the trial sentinel, authenticate with the real trial token
     // instead — the server validates x-trial-token, not __trial__ as an API key.
     const headers: any = { "Content-Type": "application/json" };
@@ -2677,6 +2701,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     if (!this.deepseekClient)
       throw new Error("DeepSeek client not initialized");
     this.assertOutboundScopes("deepseek", userMessage);
+    await this.rateLimiters.deepseek.acquire();
 
     const model = this.deepseekModel;
 
@@ -2710,6 +2735,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     if (!this.deepseekClient)
       throw new Error("DeepSeek client not initialized");
     this.assertOutboundScopes("deepseek", userMessage);
+    await this.rateLimiters.deepseek.acquire();
 
     const model = this.deepseekModel;
 
@@ -3813,19 +3839,42 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
       for (let i = 0; i < providers.length; i++) {
         const provider = providers[i];
+        // Derive circuit breaker ID from provider name and check state
+        const circuitId = /^momor/i.test(provider.name) ? "momor"
+          : /^groq/i.test(provider.name) ? "groq"
+          : /^codex/i.test(provider.name) ? "codex"
+          : /^openai/i.test(provider.name) ? "openai"
+          : /^claude/i.test(provider.name) ? "claude"
+          : /^deepseek/i.test(provider.name) ? "deepseek"
+          : /^gemini/i.test(provider.name) ? "gemini"
+          : undefined;
+        if (circuitId) {
+          const cb = this.providerRouter.getCircuitBreaker(circuitId);
+          if (!cb.canExecute()) {
+            console.log(`[LLMHelper] ⚡ ${provider.name} circuit open — skipping (retry in ${Math.round(cb.timeUntilRetry / 1000)}s)`);
+            continue;
+          }
+        }
         try {
           console.log(
             `[LLMHelper] ${rotation === 0 ? "🚀" : "🔁"} Attempting ${provider.name}...`,
           );
-          yield* provider.execute();
+          let streamOutput = "";
+          for await (const token of provider.execute()) {
+            streamOutput += token;
+            yield token;
+          }
           console.log(
             `[LLMHelper] ✅ ${provider.name} stream completed successfully`,
           );
+          if (circuitId) this.providerRouter.recordSuccess(circuitId);
+          if (circuitId) UsageTracker.getInstance().record(circuitId, userContent, streamOutput);
           return; // SUCCESS — exit immediately
         } catch (err: any) {
           console.warn(
             `[LLMHelper] ⚠️ ${provider.name} failed: ${err.message}`,
           );
+          if (circuitId) this.providerRouter.recordFailure(circuitId);
           // Continue to next provider
         }
       }
@@ -4329,6 +4378,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     // the full response), then drip-fed words with setTimeout delays — pure theater.
     // This version opens a streaming fetch and yields tokens as the server generates
     // them, cutting time-to-first-token from ~3s to ~80ms.
+    await this.rateLimiters.momor.acquire();
     let momorKey = this.momorKey;
     if (!momorKey) {
       const { CredentialsManager } = require("./services/CredentialsManager");
@@ -4416,8 +4466,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     );
     let response: Response;
     try {
-      response = await fetch("", {
-        // api.momor.software disabled in open-source build
+      response = await fetch(LLMHelper.MOMOR_ENDPOINT, {
+        // endpoint configured via LLMHelper.MOMOR_ENDPOINT
         method: "POST",
         headers: streamHeaders,
         body: JSON.stringify(body),

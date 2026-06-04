@@ -1,6 +1,7 @@
 import { VectorStore, ScoredChunk } from './VectorStore';
 import { EmbeddingPipeline } from './EmbeddingPipeline';
 import { formatChunkForContext } from './SemanticChunker';
+import { NLIReranker } from './NLIReranker';
 
 /**
  * Query intent types for biasing retrieval strategy
@@ -111,6 +112,9 @@ export class RAGRetriever {
 
         candidates.sort((a, b) => (b.finalScore || 0) - (a.finalScore || 0));
 
+        // 3b. NLI cross-encoder reranking on top candidates (blends semantic entailment score)
+        candidates = await NLIReranker.getInstance().rerank(query, candidates);
+
         // 4. Select top-K within token budget
         const selected: ScoredChunk[] = [];
         let totalTokens = 0;
@@ -201,12 +205,15 @@ export class RAGRetriever {
 
         // Re-rank
         const now = Date.now();
-        const ranked = boostedChunks.map(chunk => ({
+        let ranked: ScoredChunk[] = boostedChunks.map(chunk => ({
             ...chunk,
             finalScore: this.computeFinalScore(chunk, now, recencyWeight)
         }));
 
         ranked.sort((a, b) => (b.finalScore || 0) - (a.finalScore || 0));
+
+        // NLI cross-encoder reranking on top candidates
+        ranked = await NLIReranker.getInstance().rerank(query, ranked);
 
         // Select within budget
         const selected: ScoredChunk[] = [];

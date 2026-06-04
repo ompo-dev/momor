@@ -212,9 +212,23 @@ export class ElevenLabsStreamingSTT extends EventEmitter {
         const outputLength = Math.floor(inputS16.length / downsampleFactor);
         outputS16 = new Int16Array(outputLength);
 
-        for (let i = 0; i < outputLength; i++) {
-          // Simple decimation (take every Nth sample)
-          outputS16[i] = inputS16[Math.floor(i * downsampleFactor)];
+        if (Number.isInteger(downsampleFactor)) {
+          // Box filter average — eliminates aliasing for exact integer ratios (48k→16k)
+          for (let i = 0; i < outputLength; i++) {
+            let sum = 0;
+            const base = i * downsampleFactor;
+            for (let k = 0; k < downsampleFactor; k++) sum += inputS16[base + k];
+            outputS16[i] = Math.round(sum / downsampleFactor);
+          }
+        } else {
+          // Linear interpolation for non-integer ratios
+          for (let i = 0; i < outputLength; i++) {
+            const srcPos = i * downsampleFactor;
+            const lo     = Math.floor(srcPos);
+            const hi     = Math.min(lo + 1, inputS16.length - 1);
+            const frac   = srcPos - lo;
+            outputS16[i] = Math.round(inputS16[lo] * (1 - frac) + inputS16[hi] * frac);
+          }
         }
       }
 

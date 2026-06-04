@@ -86,14 +86,42 @@ pub fn list_output_devices() -> Result<Vec<(String, String)>> {
 }
 
 /// Returns the WASAPI device id of the current default render device on the
-/// eMultimedia/eConsole role, or empty string on failure. JS polls this so the
-/// SystemAudioCapture follows the user's output route when they switch
-/// devices mid-meeting. Note: this still doesn't track the eCommunications
-/// role separately (a known limitation tracked in find_device_by_id).
+/// eMultimedia/eConsole role, or empty string on failure.
 pub fn default_output_device_uid() -> String {
     match get_default_device(&Direction::Render) {
         Ok(dev) => dev.get_id().unwrap_or_default(),
         Err(_) => String::new(),
+    }
+}
+
+/// Returns the WASAPI device id of the default eCommunications render device.
+/// VoIP apps (Zoom, Teams, Meet, Discord) route audio to this role rather than
+/// the eMultimedia/eConsole default. Comparing this with default_output_device_uid()
+/// lets callers detect the Zoom/Teams split and warn the user.
+/// Returns empty string if COM init fails or no eCommunications device is set.
+pub fn communications_device_uid() -> String {
+    use windows::{
+        Win32::{
+            Media::Audio::{EDataFlow, ERole, IMMDeviceEnumerator, MMDeviceEnumerator},
+            System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+        },
+    };
+    unsafe {
+        // Safe to call even if COM is already initialized on this thread.
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
+                Ok(e) => e,
+                Err(_) => return String::new(),
+            };
+        // EDataFlow::eRender = 0, ERole::eCommunications = 2
+        match enumerator.GetDefaultAudioEndpoint(EDataFlow(0), ERole(2)) {
+            Ok(device) => match device.GetId() {
+                Ok(id_pwstr) => id_pwstr.to_string().unwrap_or_default(),
+                Err(_) => String::new(),
+            },
+            Err(_) => String::new(),
+        }
     }
 }
 

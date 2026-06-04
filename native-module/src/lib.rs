@@ -591,3 +591,14 @@ pub fn get_output_devices() -> Vec<AudioDeviceInfo> {
 pub fn get_default_output_device_id() -> String {
     speaker::default_output_device_uid()
 }
+
+/// Returns the default eCommunications render device ID on Windows.
+/// VoIP apps (Zoom, Teams, Meet) route audio here. Compare with
+/// get_default_output_device_id() to detect the "split device" scenario
+/// where system audio capture gets silence because the meeting app uses
+/// the eCommunications device while capture listens to eMultimedia.
+/// Returns empty string on non-Windows platforms or on COM failure.
+#[napi]
+pub fn get_communications_output_device_id() -> String {
+    speaker::communications_device_uid()
+}

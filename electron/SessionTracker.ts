@@ -36,7 +36,7 @@ export interface AssistantResponse {
 export class SessionTracker {
   // Context management (mirrors Swift ContextManager)
   private contextItems: ContextItem[] = [];
-  private readonly contextWindowDuration: number = 120; // 120 seconds
+  private readonly contextWindowDuration: number = 180; // 180 seconds — matches getContext(180) callers
   private readonly maxContextItems: number = 500;
 
   // Last assistant message for follow-up mode
@@ -201,6 +201,8 @@ export class SessionTracker {
    */
   clearSessionContext(): void {
     this.contextItems = [];
+    this.fullTranscript = [];
+    this.transcriptEpochSummaries = [];
     this.detectedCodingQuestion = null;
     this.codingQuestionSource = null;
     this.codingQuestionSetAt = null;
@@ -208,7 +210,7 @@ export class SessionTracker {
     this.lastAssistantMessage = null;
     this.assistantResponseHistory = [];
     this.lastInterimInterviewer = null;
-    console.log("[SessionTracker] Mode-specific session context cleared");
+    console.log("[SessionTracker] Session context cleared (including full transcript history)");
   }
 
   /**

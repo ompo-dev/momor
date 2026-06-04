@@ -817,8 +817,23 @@ export class OpenAIStreamingSTT extends EventEmitter {
         const factor       = this.inputSampleRate / targetRate;
         const outputLength = Math.floor(monoS16.length / factor);
         const outputS16    = new Int16Array(outputLength);
-        for (let i = 0; i < outputLength; i++) {
-            outputS16[i] = monoS16[Math.floor(i * factor)];
+        if (Number.isInteger(factor)) {
+            // Box filter: average N samples → removes aliasing for exact integer ratios
+            for (let i = 0; i < outputLength; i++) {
+                let sum = 0;
+                const base = i * factor;
+                for (let k = 0; k < factor; k++) sum += monoS16[base + k];
+                outputS16[i] = Math.round(sum / factor);
+            }
+        } else {
+            // Linear interpolation: better than pure decimation for non-integer ratios
+            for (let i = 0; i < outputLength; i++) {
+                const srcPos = i * factor;
+                const lo     = Math.floor(srcPos);
+                const hi     = Math.min(lo + 1, monoS16.length - 1);
+                const frac   = srcPos - lo;
+                outputS16[i] = Math.round(monoS16[lo] * (1 - frac) + monoS16[hi] * frac);
+            }
         }
         return Buffer.from(outputS16.buffer);
     }
