@@ -95,17 +95,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
-  // ── License handlers — stubbed: all features are free in this open-source build ──
-  safeHandle("license:activate", async () => ({ success: true }));
-  safeHandle("license:check-premium", async () => true);
-  safeHandle("license:get-details", async () => ({
-    isPremium: true,
-    provider: "open_source",
-  }));
-  safeHandle("license:check-premium-async", async () => true);
-  safeHandle("license:deactivate", async () => ({ success: true }));
-  safeHandle("license:get-hardware-id", async () => "unavailable");
-
   safeHandle("get-recognition-languages", async () => {
     return RECOGNITION_LANGUAGES;
   });
@@ -1636,23 +1625,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     _usageCache.clear();
     return { ok: true };
   });
-
-  // ── Trial handlers — stubbed: no trial gating in this open-source build ──
-  safeHandle("trial:start", async () => ({
-    ok: false,
-    error: "trial_not_available",
-  }));
-  safeHandle("trial:status", async () => ({
-    ok: false,
-    error: "no_trial_token",
-  }));
-  safeHandle("trial:get-local", async () => ({
-    hasToken: false,
-    trialClaimed: false,
-  }));
-  safeHandle("trial:convert", async () => ({ ok: true }));
-  safeHandle("trial:end-byok", async () => ({ success: true }));
-  safeHandle("trial:wipe-profile-data", async () => ({ success: true }));
 
   // Custom Provider Handlers
   safeHandle("get-custom-providers", async () => {

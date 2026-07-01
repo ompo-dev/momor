@@ -84,7 +84,6 @@ import {
   type MeetingInterfaceTheme,
 } from "../lib/meetingInterfaceTheme";
 import { KeyRecorder } from "./ui/KeyRecorder";
-import { PremiumUpgradeModal } from "../premium";
 import icon from "./icon.png";
 import { SettingsNav, type SettingsTabId } from "./shell/SettingsNav";
 import { Button } from "./ui/button";
