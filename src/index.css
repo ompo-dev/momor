@@ -21,60 +21,65 @@
 @layer base {
   :root,
   [data-theme="dark"] {
-    /* Linear dark-canvas baseline */
-    --background: 240 1% 1%;
-    --foreground: 0 0% 97%;
-    --card: 214 30% 6%;
-    --card-foreground: 0 0% 97%;
-    --popover: 214 30% 6%;
-    --popover-foreground: 0 0% 97%;
-    --primary: 233 55% 60%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 214 30% 6%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 214 30% 8%;
-    --muted-foreground: 220 13% 82%;
-    --accent: 214 30% 8%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 8% 15%;
-    --input: 220 8% 15%;
-    --ring: 233 55% 60%;
-    --radius: 0.5rem;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* ── Zed "One Dark" — shadcn token mapping ───────────────────────────
+       Canvas #282c33 · Panel #2f343e · Elevated #3b414d
+       Accent #74ade8 · Text #dce0e5 / #a9afbc / #878a98 */
+    --background: 218 12% 18%;
+    --foreground: 214 14% 88%;
+    --card: 220 14% 21%;
+    --card-foreground: 214 14% 88%;
+    --popover: 220 14% 21%;
+    --popover-foreground: 214 14% 88%;
+    --primary: 211 72% 68%;
+    --primary-foreground: 218 16% 13%;
+    --secondary: 218 15% 21%;
+    --secondary-foreground: 214 14% 88%;
+    --muted: 220 14% 21%;
+    --muted-foreground: 220 13% 70%;
+    --accent: 218 13% 24%;
+    --accent-foreground: 214 14% 88%;
+    --destructive: 357 50% 63%;
+    --destructive-foreground: 218 16% 13%;
+    --border: 218 13% 24%;
+    --input: 220 12% 31%;
+    --ring: 211 72% 68%;
+    --radius: 0.375rem;
+    --chart-1: 211 72% 68%;
+    --chart-2: 92 33% 63%;
+    --chart-3: 40 58% 69%;
+    --chart-4: 283 45% 64%;
+    --chart-5: 357 50% 63%;
   }
 
   [data-theme="light"] {
-    --background: 0 0% 96%;
-    --foreground: 240 10% 4%;
+    /* ── Zed "One Light" — shadcn token mapping ──────────────────────────
+       Canvas #fafafa · Panel #ebebec · Window #dcdcdd
+       Accent #5c78e2 · Text #242529 / #58585a / #7e8086 */
+    --background: 0 0% 98%;
+    --foreground: 228 7% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card-foreground: 228 7% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 221 83% 53%;
+    --popover-foreground: 228 7% 15%;
+    --primary: 227 70% 62%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 221 83% 53%;
-    --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --secondary: 240 4% 92%;
+    --secondary-foreground: 228 7% 15%;
+    --muted: 240 4% 92%;
+    --muted-foreground: 240 1% 35%;
+    --accent: 240 4% 88%;
+    --accent-foreground: 228 7% 15%;
+    --destructive: 8 58% 57%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 2% 82%;
+    --input: 240 2% 82%;
+    --ring: 227 70% 62%;
+    --radius: 0.375rem;
+    --chart-1: 227 70% 62%;
+    --chart-2: 109 28% 49%;
+    --chart-3: 33 64% 41%;
+    --chart-4: 295 39% 47%;
+    --chart-5: 8 58% 57%;
   }
 
   * {
@@ -93,184 +98,169 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 
-  /* --- LEGACY SEMANTIC TOKENS (DARK) --- */
-  /* Mapped to Linear ladder to keep existing components consistent during big-bang. */
-  --bg-sidebar: #0c1117;
-  --bg-main: #010102;
-  --bg-card: #0c1117;
+  /* ── Zed "One Dark" — semantic surface ladder ────────────────────────
+     Canvas #282c33 → Panel #2f343e → Elevated #3b414d
+     Hover #363c46 · Selected #454a56 · Border #464b57 / variant #363c46 */
+  --bg-sidebar: #2f343e;
+  --bg-main: #282c33;
+  --bg-card: #2f343e;
 
-  --bg-toggle-switch: #151d28;
-  --bg-item-surface: #0c1117;
-  --bg-item-active: #111821;
+  --bg-toggle-switch: #454a56;
+  --bg-item-surface: #2f343e;
+  --bg-item-active: #363c46;
 
-  --bg-primary: #010102;
-  --bg-secondary: #0c1117;
-  --bg-elevated: #111821;
-  --bg-input: #0c1117;
+  --bg-primary: #282c33;
+  --bg-secondary: #2f343e;
+  --bg-elevated: #3b414d;
+  --bg-input: #2e343e;
 
-  --text-primary: #f7f8f8;
-  --text-secondary: #d0d6e0;
-  --text-tertiary: #8a8f98;
+  --text-primary: #dce0e5;
+  --text-secondary: #a9afbc;
+  --text-tertiary: #878a98;
 
-  --border-subtle: #23252a;
-  --border-muted: #2f3238;
+  --border-subtle: #363c46;
+  --border-muted: #464b57;
 
-  --accent-primary: #5e6ad2;
-  --accent-muted: rgba(94, 106, 210, 0.15);
+  --accent-primary: #74ade8;
+  --accent-muted: rgba(116, 173, 232, 0.15);
 
-  --bg-component: #262626;
-  /* Specific legacy value */
+  --bg-component: #363c46;
 
-  --overlay-bg: rgba(30, 30, 30, 0.65);
+  /* ── In-meeting overlay — Zed slate-panel glass (base #282c33) ──────── */
+  --overlay-bg: rgba(40, 44, 51, 0.66);
 
   --overlay-opacity: 0.65;
-  --overlay-border: rgba(255, 255, 255, 0.12);
-  --overlay-border-soft: rgba(255, 255, 255, 0.1);
+  --overlay-border: rgba(255, 255, 255, 0.1);
+  --overlay-border-soft: rgba(255, 255, 255, 0.07);
   --overlay-panel-bg: rgb(
-    30 30 30 / calc(0.05 + (var(--overlay-opacity) * 0.55))
+    40 44 51 / calc(0.08 + (var(--overlay-opacity) * 0.6))
   );
   --overlay-pill-bg: rgb(
-    30 30 30 / calc(0.04 + (var(--overlay-opacity) * 0.48))
+    40 44 51 / calc(0.06 + (var(--overlay-opacity) * 0.52))
   );
   --overlay-transcript-bg: rgb(
-    30 30 30 / calc(0.02 + (var(--overlay-opacity) * 0.24))
+    40 44 51 / calc(0.03 + (var(--overlay-opacity) * 0.26))
   );
-  --overlay-chip-bg: rgba(255, 255, 255, 0.035);
-  --overlay-chip-hover-bg: rgba(255, 255, 255, 0.11);
-  --overlay-input-bg: rgba(255, 255, 255, 0.05);
-  --overlay-input-hover-bg: rgba(255, 255, 255, 0.12);
-  --overlay-input-focus-bg: rgba(255, 255, 255, 0.16);
-  --overlay-control-bg: rgba(255, 255, 255, 0.05);
-  --overlay-control-hover-bg: rgba(255, 255, 255, 0.12);
-  --overlay-code-bg: rgba(255, 255, 255, 0.03);
-  --overlay-code-border: rgba(255, 255, 255, 0.08);
-  --overlay-code-header-bg: rgba(255, 255, 255, 0.05);
-  --overlay-inline-code-bg: rgba(255, 255, 255, 0.07);
-  --overlay-icon-bg: rgba(255, 255, 255, 0.05);
-  --overlay-icon-hover-bg: rgba(255, 255, 255, 0.12);
+  --overlay-chip-bg: rgba(70, 75, 87, 0.32);
+  --overlay-chip-hover-bg: rgba(69, 74, 86, 0.5);
+  --overlay-input-bg: rgba(46, 52, 62, 0.5);
+  --overlay-input-hover-bg: rgba(54, 60, 70, 0.62);
+  --overlay-input-focus-bg: rgba(54, 60, 70, 0.78);
+  --overlay-control-bg: rgba(70, 75, 87, 0.3);
+  --overlay-control-hover-bg: rgba(69, 74, 86, 0.48);
+  --overlay-code-bg: rgba(20, 22, 27, 0.42);
+  --overlay-code-border: rgba(255, 255, 255, 0.07);
+  --overlay-code-header-bg: rgba(40, 44, 51, 0.5);
+  --overlay-inline-code-bg: rgba(116, 173, 232, 0.16);
+  --overlay-icon-bg: rgba(70, 75, 87, 0.3);
+  --overlay-icon-hover-bg: rgba(69, 74, 86, 0.46);
   --overlay-panel-shadow: rgb(
-    0 0 0 / calc(0.05 + (var(--overlay-opacity) * 0.18))
+    0 0 0 / calc(0.12 + (var(--overlay-opacity) * 0.22))
   );
   --overlay-pill-shadow: rgb(
-    0 0 0 / calc(0.03 + (var(--overlay-opacity) * 0.12))
+    0 0 0 / calc(0.08 + (var(--overlay-opacity) * 0.16))
   );
-  --overlay-text-primary: rgba(255, 255, 255, 0.985);
-  --overlay-text-secondary: rgba(255, 255, 255, 0.9);
-  --overlay-text-muted: rgba(255, 255, 255, 0.7);
-  --overlay-text-placeholder: rgba(255, 255, 255, 0.58);
-  --overlay-text-strong: #ffffff;
+  --overlay-text-primary: rgba(220, 224, 229, 0.985);
+  --overlay-text-secondary: rgba(220, 224, 229, 0.82);
+  --overlay-text-muted: rgba(169, 175, 188, 0.92);
+  --overlay-text-placeholder: rgba(135, 138, 152, 0.85);
+  --overlay-text-strong: #f4f6f8;
   --overlay-shell-blur: calc(2px + (var(--overlay-opacity) * 18px));
   --overlay-pill-blur: calc(1px + (var(--overlay-opacity) * 12px));
   --overlay-transcript-blur: calc(var(--overlay-opacity) * 6px);
 
-  /* Primary Action Button Defaults (Dark / Linear) */
-  --btn-primary-bg: #5e6ad2;
-  --btn-primary-hover: #828fff;
-  --btn-primary-disabled-bg: rgba(94, 106, 210, 0.22);
-  --btn-primary-disabled-border: rgba(94, 106, 210, 0.18);
-  --btn-primary-disabled-text: rgba(208, 214, 224, 0.5);
-  --btn-primary-shadow-color: rgba(0, 0, 0, 0.0);
+  /* Primary Action Button Defaults (Zed One Dark accent) */
+  --btn-primary-bg: #74ade8;
+  --btn-primary-hover: #8bbcee;
+  --btn-primary-disabled-bg: rgba(116, 173, 232, 0.22);
+  --btn-primary-disabled-border: rgba(116, 173, 232, 0.18);
+  --btn-primary-disabled-text: rgba(220, 224, 229, 0.5);
+  --btn-primary-shadow-color: rgba(0, 0, 0, 0);
 }
 
 [data-theme="light"] {
-  /* ─── LIGHT MODE — Professional SaaS Standard ────────────────────────────
-     Synthesised from Linear, Vercel, Stripe, Figma, Notion design systems.
-
-     Rules used by every top product design team:
-       1. Canvas is near-white gray (#F5F5F5), never pure white — not harsh
-       2. Cards are #FFFFFF — elevated via SHADOW, not thick borders
-       3. Borders: rgba(0,0,0,0.07) — structural only, barely visible
-       4. Text: #111827 → #6B7280 → #9CA3AF (gray-900/500/400, WCAG AA)
-       5. Separation = whitespace first, shadow second, border last
-       6. Accent: blue-600 (#2563EB) — accessible, confident, not electric
-
-     Settings modal visual stack:
-       #F5F5F5 canvas  →  #FFFFFF sidebar/frame  →  #FFFFFF cards (shadow)
+  /* ─── Zed "One Light" — semantic surface ladder ──────────────────────────
+     Canvas #fafafa (editor) → Panel #ebebec → Window #dcdcdd.
+     Cards kept #ffffff so the existing shadow-based elevation reads cleanly
+     on the near-white canvas. Accent #5c78e2 · Border #c9c9ca / variant #dfdfe0
+     Text #242529 → #58585a → #7e8086.
      ─────────────────────────────────────────────────────────────────────── */
 
   /* ── Canvas / page layer ── */
-  --bg-primary: #f5f5f5; /* App page / list canvas — neutral near-white  */
-  --bg-secondary: #ebebeb; /* Header / nav bar chrome                      */
+  --bg-primary: #fafafa; /* App page / list canvas — Zed editor near-white */
+  --bg-secondary: #ebebec; /* Header / nav bar chrome — Zed panel            */
 
   /* ── Settings modal surfaces ── */
-  --bg-main: #f5f5f5; /* Content body — the recessed canvas           */
-  --bg-sidebar: #ffffff; /* Sidebar — white panel, matches modal frame   */
-  --bg-elevated: #ffffff; /* Modal outer frame & dropdowns                */
-  --bg-card: #ffffff; /* Section cards — white, depth via shadow      */
-  --bg-input: #f9fafb; /* Inputs — hairline tint (gray-50)             */
+  --bg-main: #fafafa; /* Content body — the recessed canvas             */
+  --bg-sidebar: #ebebec; /* Sidebar — Zed panel grey                       */
+  --bg-elevated: #ffffff; /* Modal outer frame & dropdowns (lifted)         */
+  --bg-card: #ffffff; /* Section cards — white, depth via shadow        */
+  --bg-input: #ffffff; /* Inputs                                         */
 
   /* ── Interactive elements ── */
-  --bg-component: #f3f4f6; /* Secondary button fill (gray-100)             */
-  --bg-item-surface: #eaecef; /* Row hover — clearly visible against canvas   */
-  --bg-item-active: rgba(
-    37,
-    99,
-    235,
-    0.09
-  ); /* Blue-tinted selection (Linear/Notion style) */
-  --bg-toggle-switch: #d1d5db; /* Toggle off-state track (gray-300)            */
+  --bg-component: #ebebec; /* Secondary button fill — Zed panel              */
+  --bg-item-surface: #dfdfe0; /* Row hover — Zed element.hover                  */
+  --bg-item-active: rgba(92, 120, 226, 0.12); /* Blue-tinted selection (Zed accent) */
+  --bg-toggle-switch: #cacaca; /* Toggle off-state track — Zed element.active    */
 
-  /* ── Typography — Tailwind gray scale, proven for readability ── */
-  --text-primary: #111827; /* gray-900 — near-black, warm                  */
-  --text-secondary: #6b7280; /* gray-500 — comfortable secondary             */
-  --text-tertiary: #9ca3af; /* gray-400 — soft hints and labels             */
+  /* ── Typography — Zed One Light ── */
+  --text-primary: #242529; /* Zed text                                       */
+  --text-secondary: #58585a; /* Zed text.muted                                 */
+  --text-tertiary: #7e8086; /* Zed text.placeholder                           */
 
-  /* ── Borders — barely-there structural lines ── */
-  --border-subtle: rgba(0, 0, 0, 0.07); /* card outlines, dividers          */
-  --border-muted: rgba(0, 0, 0, 0.11); /* inputs, tables                   */
+  /* ── Borders — Zed One Light ── */
+  --border-subtle: #dfdfe0; /* card outlines, dividers — Zed border.variant    */
+  --border-muted: #c9c9ca; /* inputs, tables — Zed border                     */
 
   /* ── Accent ── */
-  --accent-primary: #2563eb; /* blue-600 — accessible, confident             */
-  --accent-muted: rgba(37, 99, 235, 0.1);
+  --accent-primary: #5c78e2; /* Zed text.accent                                */
+  --accent-muted: rgba(92, 120, 226, 0.12);
 
-  --bg-component: #f3f4f6;
-
-  /* ── Overlay system (in-meeting floating UI) ── */
-  /* Frosted white glass — lighter than dark mode for less visual weight    */
-  --overlay-bg: rgba(255, 255, 255, 0.82);
-  --overlay-border: rgba(0, 0, 0, 0.09);
+  /* ── Overlay system (in-meeting floating UI) — light frosted Zed panel ── */
+  --overlay-bg: rgba(250, 250, 250, 0.82);
+  --overlay-border: rgba(0, 0, 0, 0.1);
   --overlay-border-soft: rgba(0, 0, 0, 0.06);
   --overlay-panel-bg: rgb(
-    255 255 255 / calc(0.22 + (var(--overlay-opacity) * 0.5))
+    250 250 250 / calc(0.3 + (var(--overlay-opacity) * 0.5))
   );
   --overlay-pill-bg: rgb(
-    255 255 255 / calc(0.18 + (var(--overlay-opacity) * 0.42))
+    250 250 250 / calc(0.26 + (var(--overlay-opacity) * 0.44))
   );
   --overlay-transcript-bg: rgb(
-    0 0 0 / calc(0.003 + (var(--overlay-opacity) * 0.016))
+    36 37 41 / calc(0.003 + (var(--overlay-opacity) * 0.016))
   );
-  --overlay-chip-bg: rgba(255, 255, 255, 0.2);
-  --overlay-chip-hover-bg: rgba(243, 244, 246, 0.32);
-  --overlay-input-bg: rgba(255, 255, 255, 0.24);
-  --overlay-input-hover-bg: rgba(255, 255, 255, 0.38);
-  --overlay-input-focus-bg: rgba(239, 246, 255, 0.46);
-  --overlay-control-bg: rgba(255, 255, 255, 0.24);
-  --overlay-control-hover-bg: rgba(243, 244, 246, 0.38);
-  --overlay-code-bg: rgba(249, 250, 251, 0.22);
+  --overlay-chip-bg: rgba(235, 235, 236, 0.55);
+  --overlay-chip-hover-bg: rgba(223, 223, 224, 0.7);
+  --overlay-input-bg: rgba(255, 255, 255, 0.6);
+  --overlay-input-hover-bg: rgba(255, 255, 255, 0.75);
+  --overlay-input-focus-bg: rgba(255, 255, 255, 0.92);
+  --overlay-control-bg: rgba(235, 235, 236, 0.6);
+  --overlay-control-hover-bg: rgba(223, 223, 224, 0.75);
+  --overlay-code-bg: rgba(235, 235, 236, 0.5);
   --overlay-code-border: rgba(0, 0, 0, 0.08);
-  --overlay-code-header-bg: rgba(243, 244, 246, 0.28);
-  --overlay-inline-code-bg: rgba(219, 234, 254, 0.42);
-  --overlay-icon-bg: rgba(255, 255, 255, 0.22);
-  --overlay-icon-hover-bg: rgba(243, 244, 246, 0.36);
+  --overlay-code-header-bg: rgba(223, 223, 224, 0.6);
+  --overlay-inline-code-bg: rgba(92, 120, 226, 0.12);
+  --overlay-icon-bg: rgba(235, 235, 236, 0.55);
+  --overlay-icon-hover-bg: rgba(223, 223, 224, 0.7);
   --overlay-panel-shadow: rgb(
-    0 0 0 / calc(0.04 + (var(--overlay-opacity) * 0.08))
+    0 0 0 / calc(0.05 + (var(--overlay-opacity) * 0.1))
   );
   --overlay-pill-shadow: rgb(
-    0 0 0 / calc(0.02 + (var(--overlay-opacity) * 0.05))
+    0 0 0 / calc(0.03 + (var(--overlay-opacity) * 0.06))
   );
-  --overlay-text-primary: rgba(17, 24, 39, 0.95);
-  --overlay-text-secondary: rgba(55, 65, 81, 0.85);
-  --overlay-text-muted: rgba(107, 114, 128, 0.9);
-  --overlay-text-placeholder: rgba(156, 163, 175, 0.9);
-  --overlay-text-strong: #111827;
+  --overlay-text-primary: rgba(36, 37, 41, 0.96);
+  --overlay-text-secondary: rgba(88, 88, 90, 0.88);
+  --overlay-text-muted: rgba(126, 128, 134, 0.92);
+  --overlay-text-placeholder: rgba(126, 128, 134, 0.7);
+  --overlay-text-strong: #242529;
   --overlay-shell-blur: calc(2px + (var(--overlay-opacity) * 18px));
   --overlay-pill-blur: calc(2px + (var(--overlay-opacity) * 12px));
   --overlay-transcript-blur: calc(var(--overlay-opacity) * 5px);
 
-  /* Primary Action Button (Light) */
-  --btn-primary-bg: #2563eb; /* blue-600 */
-  --btn-primary-hover: #1d4ed8; /* blue-700 */
-  --btn-primary-disabled-bg: var(--bg-input); /* #F9FAFB */
+  /* Primary Action Button (Zed One Light accent) */
+  --btn-primary-bg: #5c78e2; /* Zed accent          */
+  --btn-primary-hover: #4a66d0; /* darker accent       */
+  --btn-primary-disabled-bg: var(--bg-input);
   --btn-primary-disabled-border: var(--border-subtle);
   --btn-primary-disabled-text: var(--text-tertiary);
   --btn-primary-shadow-color: rgba(0, 0, 0, 0.05);

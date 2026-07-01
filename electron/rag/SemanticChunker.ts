@@ -13,6 +13,11 @@ export interface Chunk {
     endMs: number;
     text: string;
     tokenCount: number;
+    // Generic source model (lets notes be indexed alongside meetings).
+    // Defaults to a meeting when omitted (sourceId = meetingId).
+    sourceType?: 'meeting' | 'note';
+    sourceId?: string;
+    sourceTitle?: string | null;
 }
 
 // Chunking parameters
@@ -39,8 +44,97 @@ function buildChunk(
         startMs: segments[0].startMs,
         endMs: segments[segments.length - 1].endMs,
         text,
-        tokenCount: estimateTokens(text)
+        tokenCount: estimateTokens(text),
+        sourceType: 'meeting',
+        sourceId: meetingId,
+        sourceTitle: null,
     };
+}
+
+/**
+ * Chunk free-form note text (markdown/plaintext) into embedding-sized pieces.
+ * Notes have no speaker/timestamps, so `startMs`/`endMs` carry the note's
+ * updated-at (used for recency scoring) and `speaker` is empty.
+ */
+export function chunkText(
+    sourceId: string,
+    sourceTitle: string,
+    text: string,
+    baseTimestamp: number,
+): Chunk[] {
+    const clean = (text || '').replace(/\r\n/g, '\n').trim();
+    if (!clean) return [];
+
+    // Split on blank lines (paragraphs); fall back to single-newline blocks.
+    const paragraphs = clean
+        .split(/\n{2,}/)
+        .map(p => p.trim())
+        .filter(Boolean);
+
+    const chunks: Chunk[] = [];
+    let buf: string[] = [];
+    let bufTokens = 0;
+    let index = 0;
+
+    const flush = () => {
+        if (buf.length === 0) return;
+        const body = buf.join('\n\n');
+        chunks.push({
+            meetingId: sourceId, // kept for type compatibility; not a real meeting
+            chunkIndex: index++,
+            speaker: '',
+            startMs: baseTimestamp,
+            endMs: baseTimestamp,
+            text: body,
+            tokenCount: estimateTokens(body),
+            sourceType: 'note',
+            sourceId,
+            sourceTitle,
+        });
+        buf = [];
+        bufTokens = 0;
+    };
+
+    const pushHardSplit = (para: string) => {
+        // A single oversized paragraph: split by words into MAX_TOKENS windows.
+        const words = para.split(/\s+/);
+        let chunkWords: string[] = [];
+        let t = 0;
+        for (const w of words) {
+            const wt = estimateTokens(w + ' ');
+            if (t + wt > MAX_TOKENS && chunkWords.length > 0) {
+                buf.push(chunkWords.join(' '));
+                bufTokens += t;
+                flush();
+                chunkWords = [];
+                t = 0;
+            }
+            chunkWords.push(w);
+            t += wt;
+        }
+        if (chunkWords.length > 0) {
+            buf.push(chunkWords.join(' '));
+            bufTokens += t;
+        }
+    };
+
+    for (const para of paragraphs) {
+        const pTokens = estimateTokens(para);
+        if (pTokens > MAX_TOKENS) {
+            flush();
+            pushHardSplit(para);
+            flush();
+            continue;
+        }
+        if (bufTokens + pTokens > TARGET_TOKENS && bufTokens >= MIN_TOKENS) {
+            flush();
+        }
+        buf.push(para);
+        bufTokens += pTokens;
+    }
+    flush();
+
+    return chunks;
 }
 
 /**
@@ -145,6 +239,12 @@ export function chunkTranscript(
  * Format chunks for display in context
  */
 export function formatChunkForContext(chunk: Chunk): string {
+    // Note chunks have no speaker/timestamp — label by note title instead.
+    if (chunk.sourceType === 'note') {
+        const title = chunk.sourceTitle?.trim();
+        return title ? `[${title}] ${chunk.text}` : chunk.text;
+    }
+
     const minutes = Math.floor(chunk.startMs / 60000);
     const seconds = Math.floor((chunk.startMs % 60000) / 1000);
     const timestamp = `${minutes}:${seconds.toString().padStart(2, '0')}`;

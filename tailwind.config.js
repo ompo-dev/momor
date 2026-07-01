@@ -16,28 +16,53 @@ module.exports = {
     },
     extend: {
       colors: {
-        // Linear-style tokens (Tailwind-only, no CSS vars).
+        // Zed "One" palette, kept under the `linear` key so every existing
+        // `bg-linear-*` / `text-linear-*` utility instantly adopts the new look.
         // Usage example: bg-linear-canvas text-linear-ink border-linear-hairline
+        //
+        // One Dark ladder: canvas #282c33 · panel #2f343e · hover #363c46
+        //   · elevated #3b414d · selected #454a56 · border #464b57 / #363c46
+        //   · text #dce0e5 / #a9afbc / #878a98 · accent #74ade8
         linear: {
-          canvas: "#010102",
+          canvas: "#282c33",
           surface: {
-            1: "#0c1117",
-            2: "#111821",
-            3: "#151d28",
-            4: "#1a2431",
+            1: "#2f343e",
+            2: "#363c46",
+            3: "#3b414d",
+            4: "#454a56",
           },
-          hairline: "#23252a",
-          "hairline-strong": "#2f3238",
-          "hairline-tertiary": "#2a2d33",
-          ink: "#f7f8f8",
-          "ink-muted": "#d0d6e0",
-          "ink-subtle": "#8a8f98",
-          "ink-tertiary": "#62666d",
-          primary: "#5e6ad2",
-          "primary-hover": "#828fff",
-          "primary-focus": "#5e69d1",
-          success: "#27a644",
+          hairline: "#363c46",
+          "hairline-strong": "#464b57",
+          "hairline-tertiary": "#3b414d",
+          ink: "#dce0e5",
+          "ink-muted": "#a9afbc",
+          "ink-subtle": "#878a98",
+          "ink-tertiary": "#6a6f7b",
+          primary: "#74ade8",
+          "primary-hover": "#8bbcee",
+          "primary-focus": "#5b9bde",
+          success: "#a1c181",
           overlay: "#000000",
+        },
+        // Explicit `zed-*` alias for new code (same values as `linear-*`).
+        zed: {
+          canvas: "#282c33",
+          panel: "#2f343e",
+          hover: "#363c46",
+          elevated: "#3b414d",
+          selected: "#454a56",
+          border: "#464b57",
+          "border-variant": "#363c46",
+          "border-focused": "#47679e",
+          ink: "#dce0e5",
+          "ink-muted": "#a9afbc",
+          "ink-placeholder": "#878a98",
+          accent: "#74ade8",
+          "accent-hover": "#8bbcee",
+          success: "#a1c181",
+          warning: "#dec184",
+          error: "#d07277",
+          modified: "#dec184",
         },
 
         border: "hsl(var(--border))",

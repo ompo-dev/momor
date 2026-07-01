@@ -38,6 +38,27 @@ export interface DynamicActionPayload {
   };
 }
 
+export type AgentProvider = "claude" | "openclaude" | "opencode" | "codex";
+export type AgentPermissionMode = "read-only" | "auto-edit" | "full-access";
+
+export interface AgentCliConfig {
+  /** Builtin provider id or a custom external-agent id. */
+  provider?: string;
+  model?: string;
+  executablePaths?: Partial<Record<AgentProvider, string>>;
+  permissionMode?: AgentPermissionMode;
+  workspaceStrategy?: "fixed" | "per-meeting" | "custom";
+  customWorkspacePath?: string;
+  approvalsEnabled?: boolean;
+  customAgents?: Array<{
+    id: string;
+    name: string;
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }>;
+}
+
 export interface ElectronAPI {
   updateContentDimensions: (dimensions: {
     width: number;
@@ -784,6 +805,170 @@ export interface ElectronAPI {
   >;
   getMeetingDetails: (id: string) => Promise<any>;
   updateMeetingTitle: (id: string, title: string) => Promise<boolean>;
+
+  // Workspace (Notion-style folders + notes)
+  workspaceGetTree: () => Promise<{
+    folders: Array<{
+      id: string;
+      name: string;
+      parentId: string | null;
+      icon: string | null;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+    notes: Array<{
+      id: string;
+      folderId: string | null;
+      title: string;
+      icon: string | null;
+      sortOrder: number;
+      updatedAt: string;
+    }>;
+    meetings: Array<{
+      id: string;
+      folderId: string | null;
+      title: string;
+      date: string;
+      sortOrder: number;
+    }>;
+  }>;
+  folderCreate: (input: {
+    name: string;
+    parentId?: string | null;
+    icon?: string | null;
+    sortOrder?: number;
+  }) => Promise<{
+    id: string;
+    name: string;
+    parentId: string | null;
+    icon: string | null;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  } | null>;
+  folderRename: (
+    id: string,
+    name: string,
+    icon?: string | null,
+  ) => Promise<boolean>;
+  folderMove: (
+    id: string,
+    parentId: string | null,
+    sortOrder: number,
+  ) => Promise<boolean>;
+  folderDelete: (id: string) => Promise<boolean>;
+  noteGet: (id: string) => Promise<{
+    id: string;
+    folderId: string | null;
+    title: string;
+    icon: string | null;
+    cover: string | null;
+    contentJson: string;
+    contentText: string;
+    sourceMeetingId: string | null;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  } | null>;
+  noteCreate: (input: {
+    title?: string;
+    folderId?: string | null;
+    icon?: string | null;
+    contentJson?: string;
+    contentText?: string;
+    sourceMeetingId?: string | null;
+    sortOrder?: number;
+  }) => Promise<{ id: string; title: string } | null>;
+  noteUpdate: (
+    id: string,
+    updates: {
+      title?: string;
+      icon?: string | null;
+      cover?: string | null;
+      contentJson?: string;
+      contentText?: string;
+    },
+  ) => Promise<boolean>;
+  noteMove: (
+    id: string,
+    folderId: string | null,
+    sortOrder: number,
+  ) => Promise<boolean>;
+  noteDelete: (id: string) => Promise<boolean>;
+  notesSearch: (
+    query: string,
+  ) => Promise<Array<{ id: string; title: string; contentText: string }>>;
+  meetingSetFolder: (
+    id: string,
+    folderId: string | null,
+  ) => Promise<boolean>;
+
+  // MCP servers + Skills (configurable abilities)
+  mcpGetAll: () => Promise<
+    Array<{
+      id: string;
+      name: string;
+      transport: "stdio" | "sse" | "http";
+      command: string | null;
+      args: string[];
+      env: Record<string, string>;
+      url: string | null;
+      enabled: boolean;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  >;
+  mcpCreate: (input: {
+    name: string;
+    transport?: "stdio" | "sse" | "http";
+    command?: string | null;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string | null;
+    enabled?: boolean;
+  }) => Promise<{ id: string; name: string } | null>;
+  mcpUpdate: (
+    id: string,
+    updates: {
+      name?: string;
+      transport?: "stdio" | "sse" | "http";
+      command?: string | null;
+      args?: string[];
+      env?: Record<string, string>;
+      url?: string | null;
+      enabled?: boolean;
+    },
+  ) => Promise<boolean>;
+  mcpDelete: (id: string) => Promise<boolean>;
+  onAbilitiesUpdated: (callback: () => void) => () => void;
+  skillGetAll: () => Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      content: string;
+      enabled: boolean;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  >;
+  skillCreate: (input: {
+    name: string;
+    description?: string;
+    content?: string;
+    enabled?: boolean;
+  }) => Promise<{ id: string; name: string } | null>;
+  skillUpdate: (
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      content?: string;
+      enabled?: boolean;
+    },
+  ) => Promise<boolean>;
+  skillDelete: (id: string) => Promise<boolean>;
   updateMeetingSummary: (
     id: string,
     updates: {
@@ -899,6 +1084,37 @@ export interface ElectronAPI {
   onGeminiStreamToken: (callback: (token: string) => void) => () => void;
   onGeminiStreamDone: (callback: () => void) => () => void;
   onGeminiStreamError: (callback: (error: string) => void) => () => void;
+
+  // Agent CLI bridge (claude / openclaude / opencode / codex)
+  agentChatStream?: (payload: {
+    message: string;
+    meetingId?: string;
+    meetingTitle?: string;
+    provider?: string;
+    model?: string;
+    systemPrompt?: string;
+  }) => Promise<void>;
+  agentCancel?: () => Promise<{ cancelled: boolean }>;
+  agentGetProviders?: () => Promise<{ providers: { provider: string; path: string }[]; error?: string }>;
+  agentGetConfig?: () => Promise<{ config: AgentCliConfig }>;
+  agentSetConfig?: (config: Partial<AgentCliConfig>) => Promise<{ ok: boolean; config?: AgentCliConfig; error?: string }>;
+  agentRespondPermission?: (payload: { id: string; allow: boolean; message?: string }) => Promise<{ ok: boolean }>;
+  onAgentStreamToken?: (callback: (token: string) => void) => () => void;
+  onAgentStreamThinking?: (callback: (text: string) => void) => () => void;
+  onAgentToolCall?: (
+    callback: (data: { toolId: string; name: string; args: Record<string, unknown> }) => void,
+  ) => () => void;
+  onAgentToolResult?: (
+    callback: (data: { toolId: string; result: string; isError?: boolean }) => void,
+  ) => () => void;
+  onAgentStreamSession?: (callback: (data: { sessionId: string }) => void) => () => void;
+  onAgentStreamDone?: (
+    callback: (data: { fullText: string; costUsd?: number }) => void,
+  ) => () => void;
+  onAgentStreamError?: (callback: (data: { error: string }) => void) => () => void;
+  onAgentPermissionRequest?: (
+    callback: (data: { id: string; tool: string; input: Record<string, unknown> }) => void,
+  ) => () => void;
 
   // Model Management
   getDefaultModel: () => Promise<{ model: string }>;

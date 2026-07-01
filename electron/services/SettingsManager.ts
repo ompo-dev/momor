@@ -52,6 +52,26 @@ export interface AppSettings {
     // When true (default) and the active mode is a technical / coding interview, prefer
     // direct vision LLM over structured-extract-then-answer for lowest latency.
     technicalInterviewVisionFirst?: boolean;
+    // Agent CLI integration (claude / openclaude / opencode / codex). Shape mirrors
+    // electron/services/agent/types.ts#AgentCliSettings. Stored as a single blob so the
+    // agent layer owns its schema without spreading keys across AppSettings.
+    agentCli?: {
+        provider?: string; // builtin id (claude|openclaude|opencode|codex) or custom agent id
+        model?: string;
+        executablePaths?: Partial<Record<'claude' | 'openclaude' | 'opencode' | 'codex', string>>;
+        permissionMode?: 'read-only' | 'auto-edit' | 'full-access';
+        workspaceStrategy?: 'fixed' | 'per-meeting' | 'custom';
+        customWorkspacePath?: string;
+        approvalsEnabled?: boolean;
+        // Zed-style "Add More Agents": any ACP-speaking command the user registers.
+        customAgents?: Array<{
+            id: string;
+            name: string;
+            command: string;
+            args?: string[];
+            env?: Record<string, string>;
+        }>;
+    };
 }
 
 export const VALID_SCREEN_UNDERSTANDING_MODES = ['vision_first', 'vision_only', 'private_vision'] as const;

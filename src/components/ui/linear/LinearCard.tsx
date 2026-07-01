@@ -12,7 +12,7 @@ export const LinearCard = React.forwardRef<HTMLDivElement, LinearCardProps>(
       ref={ref}
       className={cn(
         surface === 2 ? "bg-linear-surface-2" : "bg-linear-surface-1",
-        "rounded-linear-lg border border-linear-hairline text-linear-ink",
+        "rounded-lg border border-linear-hairline text-linear-ink",
         className,
       )}
       {...props}

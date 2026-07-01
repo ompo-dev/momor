@@ -43,7 +43,9 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -130,7 +132,7 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
               </button>
             ))}
             {options.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-500 italic">
+              <div className="px-3 py-2 text-xs text-muted-foreground italic">
                 No models available
               </div>
             )}
@@ -417,43 +419,50 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     }
   }, [credentialsLoaded, canUseFastMode, fastResponseMode]);
 
-  const buildModelOptions = (): { id: string; name: string }[] => {
-    const opts: { id: string; name: string }[] = [];
+  // kind: "llm" = direct API/local model (text in → text out).
+  //       "agent" = runs under the hood through a CLI agent (tools/skills/MCP/
+  //       filesystem). Agent options route through the agent-cli execution path,
+  //       NOT the provider's direct API — so e.g. OpenClaude uses your OAuth CLI
+  //       login instead of needing an Anthropic API key.
+  type ModelOption = { id: string; name: string; kind: "llm" | "agent" };
+  const buildModelOptions = (): ModelOption[] => {
+    const opts: ModelOption[] = [];
     for (const [prov, cfg] of Object.entries(STANDARD_CLOUD_MODELS)) {
       if (!hasStoredKey[prov as keyof typeof hasStoredKey]) continue;
-      cfg.ids.forEach((id, i) => opts.push({ id, name: cfg.names[i] }));
+      cfg.ids.forEach((id, i) => opts.push({ id, name: cfg.names[i], kind: "llm" }));
       const pm = preferredModels[prov as keyof typeof preferredModels];
       if (pm && !cfg.ids.includes(pm)) {
-        opts.push({ id: pm, name: prettifyModelId(pm) });
+        opts.push({ id: pm, name: prettifyModelId(pm), kind: "llm" });
       }
     }
     if (deepseekHasKey) {
-      opts.push({
-        id: deepseekModel,
-        name: `DeepSeek (${deepseekModel})`,
-      });
+      opts.push({ id: deepseekModel, name: `DeepSeek (${deepseekModel})`, kind: "llm" });
     }
     if (openClaudeConfig.enabled) {
+      // Route through the CLI agent, not the Anthropic API. The displayed model
+      // is what the CLI is logged into; the agent layer resolves the executable.
       opts.push({
-        id: openClaudeConfig.model,
-        name: `Claude Code (${prettifyModelId(openClaudeConfig.model)})`,
+        id: "agent-cli:openclaude",
+        name: `Claude Code · OpenClaude (${prettifyModelId(openClaudeConfig.model)})`,
+        kind: "agent",
       });
     }
     if (codexCliConfig.enabled) {
       opts.push({
         id: CODEX_CLI_MODEL.id,
         name: `${CODEX_CLI_MODEL.name} (${prettifyModelId(codexCliConfig.model)})`,
+        kind: "agent",
       });
       CODEX_CLI_MODEL_PRESETS.forEach((model) => {
         const id = codexCliSelectorId(model.id);
         if (!opts.find((o) => o.id === id)) {
-          opts.push({ id, name: `${CODEX_CLI_MODEL.name}: ${model.name}` });
+          opts.push({ id, name: `${CODEX_CLI_MODEL.name}: ${model.name}`, kind: "agent" });
         }
       });
     }
-    customProviders.forEach((p) => opts.push({ id: p.id, name: p.name }));
+    customProviders.forEach((p) => opts.push({ id: p.id, name: p.name, kind: "llm" }));
     ollamaModels.forEach((m) =>
-      opts.push({ id: `ollama-${m}`, name: `${m} (Local)` }),
+      opts.push({ id: `ollama-${m}`, name: `${m} (Local)`, kind: "llm" }),
     );
     return opts;
   };
@@ -610,6 +619,15 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     const next = { ...openClaudeConfigRef.current, ...patch };
     setOpenClaudeConfig(next);
     await window.electronAPI?.setOpenClaudeConfig?.(next);
+    // Bridge into the agent layer so the orchestrator (agent-cli:openclaude
+    // model + meeting Agent mode) launches the exact CLI the user configured.
+    try {
+      await window.electronAPI?.agentSetConfig?.({
+        executablePaths: { openclaude: next.path },
+      });
+    } catch {
+      /* agent settings unavailable — default paths still resolve */
+    }
     if (patch.enabled) pinIntegration("openclaude");
     return next;
   };
@@ -1000,11 +1018,30 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {modelOptions.map((o) => (
-                        <SelectItem key={o.id} value={o.id} className="text-sm">
-                          {o.name}
-                        </SelectItem>
-                      ))}
+                      {modelOptions.some((o) => o.kind === "llm") && (
+                        <SelectGroup>
+                          <SelectLabel>LLMs (API & local)</SelectLabel>
+                          {modelOptions
+                            .filter((o) => o.kind === "llm")
+                            .map((o) => (
+                              <SelectItem key={o.id} value={o.id} className="text-sm">
+                                {o.name}
+                              </SelectItem>
+                            ))}
+                        </SelectGroup>
+                      )}
+                      {modelOptions.some((o) => o.kind === "agent") && (
+                        <SelectGroup>
+                          <SelectLabel>Agentes CLI (rodam no seu PC)</SelectLabel>
+                          {modelOptions
+                            .filter((o) => o.kind === "agent")
+                            .map((o) => (
+                              <SelectItem key={o.id} value={o.id} className="text-sm">
+                                {o.name}
+                              </SelectItem>
+                            ))}
+                        </SelectGroup>
+                      )}
                     </SelectContent>
                   </Select>
                 </SettingsToolbar>
@@ -1030,11 +1067,15 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {modelOptions.map((o) => (
-                        <SelectItem key={o.id} value={o.id} className="text-sm">
-                          {o.name}
-                        </SelectItem>
-                      ))}
+                      {/* Vision goes through direct LLMs only — CLI agents
+                          aren't a vision path. */}
+                      {modelOptions
+                        .filter((o) => o.kind === "llm")
+                        .map((o) => (
+                          <SelectItem key={o.id} value={o.id} className="text-sm">
+                            {o.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </SettingsToolbar>
@@ -1069,6 +1110,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           </Card>
         ) : (
           <div className="flex flex-col gap-4">
+          {(isVisible("gemini") || isVisible("groq") || isVisible("openai") || isVisible("claude") || isVisible("deepseek")) && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                LLMs · API & local
+              </span>
+              <span className="h-px flex-1 bg-border/60" />
+            </div>
+          )}
           {isVisible("gemini") && (
           <ProviderCard
             providerId="gemini"
@@ -1195,6 +1244,15 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             keyTestErrors={keyTestErrors.deepseek}
             onRemoveFromList={() => unpinIntegration("deepseek")}
           />
+          )}
+
+          {(isVisible("openclaude") || isVisible("codex-cli")) && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Agentes CLI · rodam no seu PC
+              </span>
+              <span className="h-px flex-1 bg-border/60" />
+            </div>
           )}
 
           {isVisible("openclaude") && (

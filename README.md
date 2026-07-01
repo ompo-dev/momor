@@ -967,6 +967,3 @@ momor is a free, open-source alternative to:
 <sub>
 free-ai-interview-copilot · open-source-cluely · cluely-alternative · cluely-clone · interview-coder-alternative · final-round-ai-alternative · lockedin-ai-alternative · ai-interview-assistant · real-time-interview-ai · undetectable-interview-ai · stealth-mode · local-ai · ollama · byok · rag · electron · rust · privacy-first · meeting-assistant · interview-helper · open-source-interview-ai
 </sub>
-#   m o m o r 
- 
- 

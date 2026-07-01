@@ -153,7 +153,50 @@ export class CodexCliService {
     return { success: false, error: first.error };
   }
 
+  /**
+   * Validates the Codex config.toml. If the file is missing, empty, or corrupt
+   * (null bytes / invalid TOML), backs it up and writes a minimal valid config.
+   * Safe to call before every invocation — fast filesystem check only.
+   */
+  public static ensureCodexConfig(): void {
+    const configDir = path.join(os.homedir(), '.codex');
+    const configPath = path.join(configDir, 'config.toml');
+    try {
+      if (!fs.existsSync(configPath)) return; // Codex will create it on first run
+
+      const raw = fs.readFileSync(configPath);
+      // Corrupt if: all null/whitespace bytes, or contains embedded NUL (0x00)
+      const hasNul = raw.includes(0);
+      const text = raw.toString('utf8');
+      const isEmpty = text.trim().length === 0;
+
+      if (!hasNul && !isEmpty) {
+        // Newer codex rejects `service_tier = "default"` (only `fast`/`flex`
+        // are valid). An invalid value makes EVERY codex call fail with
+        // "Error loading config.toml". Strip the line in place rather than
+        // nuking the user's whole config.
+        const badServiceTier = /^[ \t]*service_tier[ \t]*=[ \t]*["']?default["']?[ \t]*\r?\n?/im;
+        if (badServiceTier.test(text)) {
+          fs.copyFileSync(configPath, configPath + '.bak');
+          const cleaned = text.replace(badServiceTier, '');
+          fs.writeFileSync(configPath, cleaned, 'utf8');
+          console.log('[CodexCliService] Removed invalid service_tier="default" from config.toml (backup at .bak)');
+        }
+        return; // otherwise looks fine
+      }
+
+      // Backup and repair
+      const backupPath = configPath + '.bak';
+      fs.copyFileSync(configPath, backupPath);
+      fs.writeFileSync(configPath, 'model = "gpt-5.4"\n', 'utf8');
+      console.log('[CodexCliService] Repaired corrupt config.toml (backup at .bak)');
+    } catch (e) {
+      console.warn('[CodexCliService] Could not validate config.toml:', e);
+    }
+  }
+
   public static async run(path: string, options: CodexCliRunOptions): Promise<string> {
+    this.ensureCodexConfig();
     const result = await this.collect(path, options);
     const normalized = this.extractText(result.stdout);
     if (normalized) return normalized;
@@ -162,6 +205,7 @@ export class CodexCliService {
   }
 
   public static async *stream(path: string, options: CodexCliRunOptions): AsyncGenerator<string, void, unknown> {
+    this.ensureCodexConfig();
     if (options.signal?.aborted) throw new Error('Codex CLI request aborted before start.');
 
     const args = this.buildArgs(options.model, options.imagePaths, options.sandboxMode);

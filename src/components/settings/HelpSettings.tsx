@@ -763,7 +763,7 @@ const getBadgeStyle = (color?: string) => {
     case "green":
       return "bg-green-500/10 text-green-500 border-green-500/20";
     default:
-      return "bg-gray-500/10 text-gray-500 border-gray-500/20";
+      return "bg-muted text-muted-foreground border-border";
   }
 };
 
@@ -785,7 +785,7 @@ const getIconStyle = (color?: string, isSelectedItem: boolean = false) => {
     case "green":
       return "bg-green-500/10 text-green-600";
     default:
-      return "bg-gray-500/10 text-gray-600";
+      return "bg-muted text-muted-foreground";
   }
 };
 

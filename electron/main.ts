@@ -704,6 +704,18 @@ export class AppState {
     // Pre-warm the zero-shot intent classifier in background
     warmupIntentClassifier();
 
+    // Start Meeting MCP Server for agent CLI integration (non-blocking)
+    setImmediate(() => {
+      try {
+        const { MeetingMCPServer } = require("./services/MeetingMCPServer");
+        MeetingMCPServer.getInstance().start().catch((err: Error) => {
+          console.warn("[AppState] MeetingMCPServer failed to start:", err?.message);
+        });
+      } catch (e) {
+        console.warn("[AppState] MeetingMCPServer load failed:", e);
+      }
+    });
+
     // Setup Ollama IPC
     this.setupOllamaIpcHandlers();
 
@@ -5090,6 +5102,13 @@ async function initializeApp() {
   app.on("before-quit", (event) => {
     console.log("App is quitting, cleaning up resources...");
     appState.setQuitting(true);
+
+    // Kill any persistent ACP agent processes (external CLI agents) so they
+    // don't outlive the app.
+    try {
+      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      AgentOrchestrator.getInstance().disposeAcpConnections();
+    } catch {}
 
     // ROUND 2 FIX (#9): synchronously stop the CGEventTap worker thread
     // BEFORE V8 starts tearing down. The tap callback holds an

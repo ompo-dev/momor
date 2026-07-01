@@ -348,7 +348,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                 </button>
               ))}
               {options.length === 0 && (
-                <div className="px-3 py-2 text-sm text-gray-500 italic">
+                <div className="px-3 py-2 text-sm text-muted-foreground italic">
                   No devices found
                 </div>
               )}
@@ -417,7 +417,7 @@ const ProviderSelect: React.FC<ProviderSelectProps> = ({
       case "green":
         return "bg-green-500/10 text-green-500 border-green-500/20";
       default:
-        return "bg-gray-500/10 text-gray-500 border-gray-500/20";
+        return "bg-muted text-muted-foreground border-border";
     }
   };
 
@@ -440,7 +440,7 @@ const ProviderSelect: React.FC<ProviderSelectProps> = ({
       case "green":
         return "bg-green-500/10 text-green-600";
       default:
-        return "bg-gray-500/10 text-gray-600";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -1385,7 +1385,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
       >
         <DialogContent
           id="settings-panel-wrapper"
-          className="flex max-w-5xl w-[min(96vw,56rem)] h-[min(85vh,720px)] p-0 gap-0 overflow-hidden border border-linear-hairline bg-linear-canvas text-linear-ink [&>button]:hidden sm:rounded-linear-xl"
+          className="flex max-w-5xl w-[min(96vw,56rem)] h-[min(85vh,720px)] p-0 gap-0 overflow-hidden border border-linear-hairline bg-linear-canvas text-linear-ink [&>button]:hidden sm:rounded-lg"
           onInteractOutside={(e) => {
             if (isPreviewingOpacity) e.preventDefault();
           }}

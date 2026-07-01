@@ -99,7 +99,7 @@ export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProp
                   type="button"
                   onClick={() => onTabChange(item.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-linear-md px-2.5 py-2 text-left text-sm transition-colors",
+                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
                     activeTab === item.id
                       ? "bg-linear-surface-2 font-medium text-linear-ink border border-linear-hairline"
                       : "text-linear-ink-muted hover:bg-linear-surface-2/60 hover:text-linear-ink",

@@ -16,6 +16,7 @@ export type QueryIntent =
 
 export interface RetrievalOptions {
     meetingId?: string;           // For meeting-scoped queries
+    sourceIds?: string[];         // Folder-scope: restrict to these note/meeting ids
     maxTokens?: number;           // Context token budget (default: 1500)
     topK?: number;                // Initial retrieval count (default: 8)
     recencyWeight?: number;       // 0-1, how much to weight recent (default: 0.3)
@@ -158,6 +159,7 @@ export class RAGRetriever {
         options: RetrievalOptions = {}
     ): Promise<RetrievedContext> {
         const {
+            sourceIds,
             maxTokens = 1500,
             topK = 8,
             recencyWeight = 0.3,
@@ -185,6 +187,7 @@ export class RAGRetriever {
         // Search both chunks and summaries
         const providerName = this.embeddingPipeline.getActiveProviderName();
         const chunkResults = await this.vectorStore.searchSimilar(queryEmbedding, {
+            sourceIds,
             limit: topK * 2,
             minSimilarity: 0.25,
             providerName
@@ -231,29 +234,31 @@ export class RAGRetriever {
             if (selected.length >= topK) break;
         }
 
-        // Group by meeting for coherent output
-        const byMeeting = new Map<string, ScoredChunk[]>();
+        // Group by source (note or meeting) for coherent output
+        const bySource = new Map<string, ScoredChunk[]>();
         for (const chunk of selected) {
-            if (!byMeeting.has(chunk.meetingId)) {
-                byMeeting.set(chunk.meetingId, []);
-            }
-            byMeeting.get(chunk.meetingId)!.push(chunk);
+            const key = chunk.sourceId ?? chunk.meetingId;
+            if (!bySource.has(key)) bySource.set(key, []);
+            bySource.get(key)!.push(chunk);
         }
 
-        // Format with meeting grouping
         const contextParts: string[] = [];
-        for (const [meetingId, chunks] of byMeeting) {
-            // Sort chunks within meeting by timestamp
+        for (const [sourceKey, chunks] of bySource) {
             chunks.sort((a, b) => a.startMs - b.startMs);
             const chunkTexts = chunks.map(c => formatChunkForContext(c)).join('\n');
-            contextParts.push(`--- Meeting ${meetingId} ---\n${chunkTexts}`);
+            const first = chunks[0];
+            const header =
+                first.sourceType === 'note'
+                    ? `--- Note: ${first.sourceTitle?.trim() || 'Untitled'} ---`
+                    : `--- Meeting ${sourceKey} ---`;
+            contextParts.push(`${header}\n${chunkTexts}`);
         }
 
         return {
             chunks: selected,
             formattedContext: contextParts.join('\n\n'),
             totalTokens,
-            meetingIds: [...byMeeting.keys()],
+            meetingIds: [...bySource.keys()],
             intent
         };
     }

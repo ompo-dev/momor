@@ -4,8 +4,8 @@ import { X, Copy, Check, Globe, ArrowUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import momorIcon from "./icon.png";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
+import { ZedThreadMessage, ZedComposer } from "./zed";
 
 // ============================================
 // Types
@@ -57,11 +57,11 @@ const UserMessage: React.FC<{ content: string }> = ({ content }) => (
     initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.15 }}
-    className="flex justify-end mb-6"
+    className="mb-5"
   >
-    <div className="bg-primary text-primary-foreground px-5 py-3 rounded-2xl rounded-tr-md max-w-[70%] text-[15px] leading-relaxed">
+    <ZedThreadMessage role="user" label="You">
       {content}
-    </div>
+    </ZedThreadMessage>
   </motion.div>
 );
 
@@ -86,31 +86,36 @@ const AssistantMessage: React.FC<{
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15 }}
-      className="flex flex-col items-start mb-6"
+      className="mb-5"
     >
-      <div className="text-text-primary text-[15px] leading-relaxed max-w-[85%]">
+      <ZedThreadMessage
+        role="agent"
+        label="Momor"
+        actions={
+          !isStreaming && content ? (
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              {copied ? (
+                <Check size={12} className="text-emerald-500" />
+              ) : (
+                <Copy size={12} />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          ) : undefined
+        }
+      >
         {content}
         {isStreaming && (
           <motion.span
-            className="inline-block w-0.5 h-4 bg-text-secondary ml-0.5 align-middle"
+            className="ml-0.5 inline-block h-4 w-0.5 align-middle bg-text-secondary"
             animate={{ opacity: [1, 0] }}
             transition={{ duration: 0.5, repeat: Infinity }}
           />
         )}
-      </div>
-      {!isStreaming && content && (
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 mt-3 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          {copied ? (
-            <Check size={14} className="text-emerald-500" />
-          ) : (
-            <Copy size={14} />
-          )}
-          {copied ? "Copied" : "Copy message"}
-        </button>
-      )}
+      </ZedThreadMessage>
     </motion.div>
   );
 };
@@ -439,31 +444,21 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
             </div>
             </ScrollArea>
 
-            {/* Floating Footer (Ask Bar) */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 flex justify-center z-50 pointer-events-none">
-              <div className="w-full max-w-[440px] relative group pointer-events-auto">
-                {/* Dark Glass Effect Input */}
-                <Input
-                  type="text"
+            {/* Floating Footer — Zed agent composer */}
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-50 flex justify-center bg-gradient-to-t from-card via-card/90 to-transparent p-4">
+              <div className="pointer-events-auto w-full max-w-[560px]">
+                <ZedComposer
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={handleInputKeyDown}
-                  placeholder="Ask me anything..."
-                  className="w-full pl-5 pr-12 py-6 h-12 rounded-full shadow-md"
-                />
-                <Button
-                  size="icon"
-                  onClick={() => {
+                  onChange={setQuery}
+                  onSubmit={() => {
                     if (query.trim()) {
                       submitQuestion(query);
                       setQuery("");
                     }
                   }}
-                  disabled={!query.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full"
-                >
-                  <ArrowUp size={16} className="transform rotate-45" />
-                </Button>
+                  placeholder="Ask across all meetings — / for commands"
+                  autoFocus
+                />
               </div>
             </div>
           </motion.div>

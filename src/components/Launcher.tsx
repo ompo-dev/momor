@@ -33,6 +33,7 @@ import { generateMeetingPDF } from "../utils/pdfGenerator";
 import MeetingDetails from "./MeetingDetails";
 import TopSearchPill from "./TopSearchPill";
 import GlobalChatOverlay from "./GlobalChatOverlay";
+import { Workspace } from "./workspace";
 import { motion, AnimatePresence } from "framer-motion";
 import { FeatureSpotlight } from "./FeatureSpotlight";
 import { analytics } from "../lib/analytics/analytics.service"; // Added analytics import
@@ -434,36 +435,28 @@ const Launcher: React.FC<LauncherProps> = ({
             setIsGlobalChatOpen(true);
           }}
           onOpenMeeting={(meetingId) => {
-            const meeting = meetings.find((m) => m.id === meetingId);
-            if (meeting) {
-              handleOpenMeeting(meeting);
-              analytics.trackCommandExecuted("open_meeting_from_search");
-            }
+            // Open meetings inside the workspace content pane.
+            window.dispatchEvent(
+              new CustomEvent("momor-open-workspace-item", {
+                detail: { kind: "meeting", refId: meetingId },
+              }),
+            );
+            analytics.trackCommandExecuted("open_meeting_from_search");
+          }}
+          onOpenNote={(noteId) => {
+            window.dispatchEvent(
+              new CustomEvent("momor-open-workspace-item", {
+                detail: { kind: "note", refId: noteId },
+              }),
+            );
+            analytics.trackCommandExecuted("open_note_from_search");
           }}
         />
 
-        {/* Right: Actions */}
+        {/* Right: Actions. Profile/context + settings moved to the sidebar footer. */}
         <div
           className={`flex items-center gap-1 no-drag shrink-0 ${isMac ? "mr-1" : ""}`}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsUserContextOpen(true)}
-            title={t("userContext.openTitle")}
-            className="h-8 w-8"
-          >
-            <User size={18} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onOpenSettings()}
-            title={t("settings.title")}
-            className="h-8 w-8"
-          >
-            <Settings size={18} />
-          </Button>
           {!isMac && <WindowControls />}
         </div>
       </header>
@@ -499,264 +492,91 @@ const Launcher: React.FC<LauncherProps> = ({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
             >
-              {/* Main Area - Fixed Top, Scrollable Bottom */}
-              {/* Top Section is now effectively static due to parent flex col */}
-
-              {/* TOP SECTION: Grey Background (Scrolls with content) */}
-              <section
-                className={`${isLight ? "bg-bg-primary" : "bg-bg-elevated"} px-8 pt-6 pb-8 border-b border-border-subtle shrink-0`}
-              >
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {/* 1.5. Hero Header (Title + Controls + CTA) */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <h1 className="text-3xl font-celeb-light font-medium text-text-primary tracking-wide drop-shadow-sm">
-                        {t('launcher.title')}
-                      </h1>
-
-                      {/* Refresh Button */}
-                      <button
-                        onClick={handleRefresh}
-                        disabled={isRefreshing}
-                        className={`p-2 text-text-secondary hover:text-text-primary rounded-full transition-colors ${isRefreshing ? "animate-spin text-blue-400" : ""} ${isLight ? "hover:bg-black/8" : "hover:bg-white/10"}`}
-                        title={t('launcher.refreshTitle')}
+              {/* Slim action bar: ghost toggle + Ollama status + Start CTA.
+                  The body below is the Notion-style workspace (sidebar + page). */}
+              <div className="shrink-0 flex items-center justify-between gap-3 px-6 py-2.5 border-b border-border-subtle bg-card/40">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 border border-border rounded-full px-3 py-1 bg-muted/50 shrink-0">
+                    <Ghost
+                      size={13}
+                      className={isDetectable ? "text-muted-foreground" : "text-primary"}
+                    />
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      {isDetectable
+                        ? t("launcher.detectable")
+                        : t("launcher.undetectable")}
+                    </span>
+                    <Switch
+                      checked={!isDetectable}
+                      onCheckedChange={() => toggleDetectable()}
+                      aria-label={t("launcher.undetectable")}
+                    />
+                  </div>
+                  <AnimatePresence>
+                    {ollamaPullStatus !== "idle" && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="flex items-center gap-2 px-3 py-1 rounded-full bg-bg-elevated/80 border border-border-subtle min-w-0"
                       >
-                        <RefreshCw size={18} />
-                      </button>
-
-                      <div className="flex items-center gap-2 border border-border rounded-full px-3 py-1.5 min-w-[140px] bg-muted/50">
-                        {isDetectable ? (
-                          <Ghost size={14} className="text-muted-foreground" />
+                        {ollamaPullStatus === "downloading" ? (
+                          <DownloadCloud size={13} className="text-blue-400 animate-pulse shrink-0" />
+                        ) : ollamaPullStatus === "complete" ? (
+                          <CheckCircle size={13} className="text-emerald-400 shrink-0" />
                         ) : (
-                          <Ghost size={14} className="text-primary" />
+                          <AlertCircle size={13} className="text-red-400 shrink-0" />
                         )}
-                        <span className="text-xs font-medium flex-1 text-muted-foreground">
-                          {isDetectable ? t('launcher.detectable') : t('launcher.undetectable')}
+                        <span className="text-[11px] font-medium text-text-secondary truncate">
+                          {ollamaPullStatus === "downloading"
+                            ? t("launcher.settingUpMemory", { percent: ollamaPullPercent })
+                            : ollamaPullMessage}
                         </span>
-                        <Switch
-                          checked={!isDetectable}
-                          onCheckedChange={() => toggleDetectable()}
-                          aria-label={t('launcher.undetectable')}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Center: Ollama Pull Status Pill (flex-1 to center evenly) */}
-                    <div className="flex-1 flex justify-center mx-4">
-                      <AnimatePresence>
-                        {ollamaPullStatus !== "idle" && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 400,
-                              damping: 25,
-                            }}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-xl ${isLight ? "bg-bg-elevated border border-border-muted shadow-[0_4px_16px_rgba(0,0,0,0.1)]" : "bg-bg-elevated/80 border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.3)]"}`}
-                          >
-                            {ollamaPullStatus === "downloading" ? (
-                              <DownloadCloud
-                                size={14}
-                                className="text-blue-400 animate-pulse shrink-0"
-                              />
-                            ) : ollamaPullStatus === "complete" ? (
-                              <CheckCircle
-                                size={14}
-                                className="text-emerald-400 shrink-0"
-                              />
-                            ) : (
-                              <AlertCircle
-                                size={14}
-                                className="text-red-400 shrink-0"
-                              />
-                            )}
-                            <div className="flex flex-col">
-                              <span className="text-[11px] font-medium text-text-secondary whitespace-nowrap">
-                                {ollamaPullStatus === "downloading"
-                                  ? t('launcher.settingUpMemory', { percent: ollamaPullPercent })
-                                  : ollamaPullMessage}
-                              </span>
-                              {ollamaPullStatus === "downloading" && (
-                                <div className="w-full h-[3px] bg-white/10 rounded-full mt-1 overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                                    style={{ width: `${ollamaPullPercent}%` }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    <Button
-                      size="lg"
-                      variant={isMeetingActive ? "outline" : "default"}
-                      onClick={() => {
-                        if (isMeetingActive) {
-                          window.electronAPI?.setWindowMode?.("overlay", true);
-                          analytics.trackCommandExecuted(
-                            "resume_meeting_from_launcher",
-                          );
-                        } else {
-                          onStartMeeting();
-                          analytics.trackCommandExecuted("start_momor_cta");
-                        }
-                      }}
-                      className={`shrink-0 gap-2 h-10 px-5 text-sm font-medium shadow-sm ${
-                        isMeetingActive
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                          : ""
-                      }`}
-                    >
-                      {isMeetingActive ? (
-                        <>
-                          <span className="relative flex h-2 w-2 shrink-0">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                          </span>
-                          {t("launcher.meetingOngoing")}
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 fill-current" aria-hidden />
-                          {t("launcher.startMomor")}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* 2. Hero Section Cards */}
-                  <div className="w-full h-[198px]">
-                    {/* Default Intro — momor support & upcoming features.
-                                            Calendar "Up Next" lives in Settings → Calendar, not here. */}
-                    <div className="md:col-span-2 h-full">
-                      <FeatureSpotlight />
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* BOTTOM SECTION: Black Background (Scrollable content) */}
-              <main className="flex-1 overflow-y-auto custom-scrollbar bg-background">
-                <section className="px-8 py-8 min-h-full">
-                  <div className="max-w-4xl mx-auto space-y-8">
-                    {/* Iterating Date Groups */}
-                    {sortedGroups.map((label) => (
-                      <section key={label}>
-                        <h3 className="text-[13px] font-medium text-text-secondary mb-3 pl-1">
-                          {label}
-                        </h3>
-                        <div className="space-y-1">
-                          {groupedMeetings[label].map((m) => (
-                            <Card
-                              key={m.id}
-                              className="group relative border-transparent shadow-none bg-transparent hover:bg-accent/50 transition-colors cursor-pointer"
-                              onClick={() => handleOpenMeeting(m)}
-                            >
-                            <CardContent className="flex items-center justify-between px-3 py-2 p-0">
-                              <div
-                                className={`font-medium text-[14px] max-w-[60%] truncate ${isMeetingProcessing(m.title) ? "text-blue-400 italic animate-pulse" : "text-text-primary"}`}
-                              >
-                                {isMeetingProcessing(m.title)
-                                  ? processingTitle
-                                  : m.title}
-                              </div>
-
-                              {/* Time & Duration Section */}
-                              <div className="flex items-center gap-4">
-                                {isMeetingProcessing(m.title) ? (
-                                  <div className="flex items-center gap-2 transition-all duration-200 ease-out group-hover:opacity-0 group-hover:translate-x-2 delayed-hover-exit">
-                                    <RefreshCw
-                                      size={12}
-                                      className="animate-spin text-blue-500"
-                                    />
-                                    <span className="text-xs text-blue-500 font-medium">
-                                      {t('launcher.finalizing')}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <span className="relative z-10 bg-bg-elevated text-text-secondary text-[9px] px-1.5 py-0.5 rounded-full font-medium min-w-[35px] text-center tracking-wide">
-                                      {formatDurationPill(m.duration)}
-                                    </span>
-
-                                    {/* Time Text (Should fade out on hover) */}
-                                    <span className="text-[13px] text-text-secondary font-medium min-w-[60px] text-right transition-all duration-200 ease-out group-hover:opacity-0 group-hover:translate-x-2 delayed-hover-exit">
-                                      {formatTime(m.date)}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-
-                              <div
-                                className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 translate-x-4 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                                      <MoreHorizontal size={16} />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-36">
-                                    <DropdownMenuItem
-                                      onClick={async () => {
-                                        analytics.trackPdfExported();
-                                        if (window.electronAPI?.getMeetingDetails) {
-                                          try {
-                                            const fullMeeting =
-                                              await window.electronAPI.getMeetingDetails(m.id);
-                                            generateMeetingPDF(fullMeeting || m);
-                                          } catch {
-                                            generateMeetingPDF(m);
-                                          }
-                                        } else {
-                                          generateMeetingPDF(m);
-                                        }
-                                      }}
-                                    >
-                                      <Download size={13} className="mr-2" />
-                                      {t("launcher.export")}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      onClick={async () => {
-                                        if (window.electronAPI?.deleteMeeting) {
-                                          const success =
-                                            await window.electronAPI.deleteMeeting(m.id);
-                                          if (success) {
-                                            setMeetings((prev) =>
-                                              prev.filter((meeting) => meeting.id !== m.id),
-                                            );
-                                          }
-                                        }
-                                      }}
-                                    >
-                                      <Trash2 size={13} className="mr-2" />
-                                      {t("launcher.delete")}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-
-                    {meetings.length === 0 && (
-                      <div className="p-4 text-muted-foreground text-sm">
-                        {t('launcher.noRecentMeetings')}
-                      </div>
+                      </motion.div>
                     )}
-                  </div>
-                </section>
-              </main>
+                  </AnimatePresence>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant={isMeetingActive ? "outline" : "default"}
+                  onClick={() => {
+                    if (isMeetingActive) {
+                      window.electronAPI?.setWindowMode?.("overlay", true);
+                      analytics.trackCommandExecuted("resume_meeting_from_launcher");
+                    } else {
+                      onStartMeeting();
+                      analytics.trackCommandExecuted("start_momor_cta");
+                    }
+                  }}
+                  className={`shrink-0 gap-2 h-9 px-4 text-[13px] font-medium ${
+                    isMeetingActive
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400"
+                      : ""
+                  }`}
+                >
+                  {isMeetingActive ? (
+                    <>
+                      <span className="relative flex h-2 w-2 shrink-0">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                      </span>
+                      {t("launcher.meetingOngoing")}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+                      {t("launcher.startMomor")}
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Notion-style workspace */}
+              <Workspace
+                onOpenSettings={onOpenSettings}
+                onOpenUserContext={() => setIsUserContextOpen(true)}
+              />
             </motion.div>
           )}
         </AnimatePresence>

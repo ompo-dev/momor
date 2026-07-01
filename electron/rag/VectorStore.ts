@@ -187,8 +187,8 @@ export class VectorStore {
      */
     saveChunks(chunks: Chunk[]): number[] {
         const insert = this.db.prepare(`
-            INSERT INTO chunks (meeting_id, chunk_index, speaker, start_timestamp_ms, end_timestamp_ms, cleaned_text, token_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chunks (meeting_id, chunk_index, speaker, start_timestamp_ms, end_timestamp_ms, cleaned_text, token_count, source_type, source_id, source_title)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const ids: number[] = [];
@@ -202,7 +202,10 @@ export class VectorStore {
                     chunk.startMs,
                     chunk.endMs,
                     chunk.text,
-                    chunk.tokenCount
+                    chunk.tokenCount,
+                    chunk.sourceType ?? 'meeting',
+                    chunk.sourceId ?? chunk.meetingId,
+                    chunk.sourceTitle ?? null
                 );
                 ids.push(result.lastInsertRowid as number);
             }
@@ -210,6 +213,49 @@ export class VectorStore {
 
         insertAll();
         return ids;
+    }
+
+    /** Chunks for a source (note/meeting) that still need embeddings. */
+    getChunksWithoutEmbeddingsForSource(sourceId: string): StoredChunk[] {
+        const rows = this.db.prepare(`
+            SELECT * FROM chunks
+            WHERE source_id = ? AND embedding IS NULL
+            ORDER BY chunk_index ASC
+        `).all(sourceId) as any[];
+        return rows.map(r => this.rowToChunk(r));
+    }
+
+    /** Delete all chunks for a source (note/meeting) by source_id. */
+    deleteChunksForSource(sourceId: string): void {
+        if (this.useNativeVec) {
+            try {
+                const ids = this.db.prepare(
+                    'SELECT id FROM chunks WHERE source_id = ?'
+                ).all(sourceId) as any[];
+                if (ids.length > 0) {
+                    const placeholders = ids.map(() => '?').join(',');
+                    const idList = ids.map(r => r.id);
+                    for (const dim of DatabaseManager.KNOWN_DIMS) {
+                        try {
+                            this.db.prepare(
+                                `DELETE FROM vec_chunks_${dim} WHERE chunk_id IN (${placeholders})`
+                            ).run(...idList);
+                        } catch (_) { /* dim table may not exist */ }
+                    }
+                }
+            } catch (e) {
+                console.warn('[VectorStore] deleteChunksForSource vec0 cleanup failed:', e);
+            }
+        }
+        this.db.prepare('DELETE FROM chunks WHERE source_id = ?').run(sourceId);
+    }
+
+    /** Whether a source (note/meeting) has at least one embedded chunk. */
+    hasEmbeddingsForSource(sourceId: string): boolean {
+        const row = this.db.prepare(
+            'SELECT COUNT(*) as count FROM chunks WHERE source_id = ? AND embedding IS NOT NULL'
+        ).get(sourceId) as any;
+        return row.count > 0;
     }
 
     /**
@@ -267,17 +313,18 @@ export class VectorStore {
         queryEmbedding: number[],
         options: {
             meetingId?: string;
+            sourceIds?: string[];   // folder-scope filter (note/meeting ids)
             limit?: number;
             minSimilarity?: number;
             providerName?: string;
         } = {}
     ): Promise<ScoredChunk[]> {
-        const { meetingId, limit = 8, minSimilarity = 0.25, providerName } = options;
+        const { meetingId, sourceIds, limit = 8, minSimilarity = 0.25, providerName } = options;
 
         if (this.useNativeVec) {
-            return this.searchSimilarNative(queryEmbedding, meetingId, limit, minSimilarity, providerName);
+            return this.searchSimilarNative(queryEmbedding, meetingId, sourceIds, limit, minSimilarity, providerName);
         }
-        return this.searchSimilarJSWorker(queryEmbedding, meetingId, limit, minSimilarity, providerName);
+        return this.searchSimilarJSWorker(queryEmbedding, meetingId, sourceIds, limit, minSimilarity, providerName);
     }
 
     /**
@@ -287,6 +334,7 @@ export class VectorStore {
     private async searchSimilarNative(
         queryEmbedding: number[],
         meetingId: string | undefined,
+        sourceIds: string[] | undefined,
         limit: number,
         minSimilarity: number,
         providerName?: string
@@ -301,6 +349,7 @@ export class VectorStore {
                 queryBlob,
                 dim,
                 meetingId,
+                sourceIds,
                 providerName,
                 limit,
                 minSimilarity,
@@ -308,7 +357,7 @@ export class VectorStore {
             });
         } catch (e) {
             console.error('[VectorStore] Native vec search (worker) failed, falling back to JS:', e);
-            return this.searchSimilarJSWorker(queryEmbedding, meetingId, limit, minSimilarity, providerName);
+            return this.searchSimilarJSWorker(queryEmbedding, meetingId, sourceIds, limit, minSimilarity, providerName);
         }
     }
 
@@ -318,12 +367,13 @@ export class VectorStore {
     private async searchSimilarJSWorker(
         queryEmbedding: number[],
         meetingId: string | undefined,
+        sourceIds: string[] | undefined,
         limit: number,
         minSimilarity: number,
         providerName?: string
     ): Promise<ScoredChunk[]> {
         let query = `
-            SELECT c.* 
+            SELECT c.*
             FROM chunks c
             WHERE c.embedding IS NOT NULL
         `;
@@ -332,6 +382,10 @@ export class VectorStore {
         if (meetingId) {
             query += ' AND c.meeting_id = ?';
             params.push(meetingId);
+        }
+        if (sourceIds && sourceIds.length > 0) {
+            query += ` AND c.source_id IN (${sourceIds.map(() => '?').join(',')})`;
+            params.push(...sourceIds);
         }
         // NOTE: We do NOT filter by embedding_provider here — meetings whose
         // embedding_provider column is NULL (common after legacy imports or if metadata
@@ -370,7 +424,10 @@ export class VectorStore {
             start_timestamp_ms: r.start_timestamp_ms,
             end_timestamp_ms: r.end_timestamp_ms,
             cleaned_text: r.cleaned_text,
-            token_count: r.token_count
+            token_count: r.token_count,
+            source_type: r.source_type,
+            source_id: r.source_id,
+            source_title: r.source_title
         }));
 
         try {
@@ -735,6 +792,9 @@ export class VectorStore {
             endMs: row.end_timestamp_ms,
             text: row.cleaned_text,
             tokenCount: row.token_count,
+            sourceType: row.source_type ?? 'meeting',
+            sourceId: row.source_id ?? row.meeting_id,
+            sourceTitle: row.source_title ?? null,
             embedding: undefined // Explicitly avoiding buffer parsing unless needed
         };
     }

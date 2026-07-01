@@ -728,6 +728,278 @@ export class LLMHelper {
   private isCodexCliModel(modelId: string): boolean {
     return modelId === "codex-cli" || modelId.startsWith("codex-cli:");
   }
+
+  // Execution mode marker: "agent-cli:<provider>" selects a CLI agent
+  // (claude / openclaude / opencode / codex) as the brain for this turn.
+  private isAgentCliModel(modelId: string): boolean {
+    return modelId === "agent-cli" || modelId.startsWith("agent-cli:");
+  }
+
+  /**
+   * Route a turn through the agent CLI orchestrator and surface its text
+   * stream. Tool calls / file changes are intentionally not threaded through
+   * the generic token stream — the Agent Console (meeting overlay) consumes the
+   * richer event channel directly. This path exists so a CLI agent can be the
+   * user's selected model in the normal assist/chat flow too.
+   */
+  private async *streamWithAgentCli(
+    message: string,
+    systemPrompt?: string,
+  ): AsyncGenerator<string, void, unknown> {
+    let provider: string | undefined;
+    const colon = this.currentModelId.indexOf(":");
+    if (colon !== -1) provider = this.currentModelId.slice(colon + 1);
+
+    // Fail-closed data-scope enforcement: the CLI agent forwards the turn (and
+    // any meeting context) to its own provider, so the same outbound-scope
+    // policy that gates direct providers must gate the agent path too.
+    this.assertOutboundScopes(provider || "agent-cli", message);
+
+    try {
+      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const { SettingsManager } = require("./services/SettingsManager");
+      const settings = (() => {
+        try {
+          return SettingsManager.getInstance().get("agentCli") ?? {};
+        } catch {
+          return {};
+        }
+      })();
+
+      const stream = AgentOrchestrator.getInstance().run(
+        {
+          prompt: message,
+          systemPrompt,
+          provider: (provider as any) || settings.provider,
+        },
+        settings,
+      );
+
+      for await (const ev of stream) {
+        if (ev.type === "token" && ev.text) yield ev.text;
+        else if (ev.type === "tool_call")
+          this.broadcastAgentEvent("agent-tool-call", {
+            toolId: ev.toolId,
+            name: ev.toolName,
+            args: ev.toolArgs,
+          });
+        else if (ev.type === "tool_result")
+          this.broadcastAgentEvent("agent-tool-result", {
+            toolId: ev.toolId,
+            result: ev.toolResult,
+            isError: ev.toolIsError,
+          });
+        else if (ev.type === "error" && ev.error) throw new Error(ev.error);
+      }
+    } catch (err: any) {
+      throw new Error(`Agent CLI failed: ${err?.message ?? "unknown error"}`);
+    }
+  }
+
+  /** Enabled skills as a system-prompt block (shared by every provider). */
+  private getEnabledSkillsBlock(): string {
+    try {
+      const { DatabaseManager } = require("./db/DatabaseManager");
+      const skills = DatabaseManager.getInstance().getEnabledSkills();
+      if (!skills.length) return "";
+      const parts = skills.map(
+        (s: any) =>
+          `## ${s.name}\n${s.description ? s.description + "\n\n" : ""}${s.content}`,
+      );
+      return (
+        "# Available skills\n" +
+        "When a request matches a skill's description, follow that skill's instructions.\n\n" +
+        parts.join("\n\n")
+      );
+    } catch {
+      return "";
+    }
+  }
+
+  // ── Native MCP tool-use loop (provider-agnostic) ──────────────────────
+  // Lets ANY OpenAI-compatible provider (OpenAI / DeepSeek / Ollama) call the
+  // user's MCP tools through Momor — the runtime lives here, not in the provider.
+
+  private _ollamaOpenAiClient: any = null;
+
+  /** Resolve an OpenAI-compatible client for the active model, or null. */
+  private resolveOpenAiCompatClient(): { client: any; model: string } | null {
+    try {
+      if (this.useOllama && this.ollamaModel) {
+        if (!this._ollamaOpenAiClient) {
+          this._ollamaOpenAiClient = new OpenAI({
+            baseURL: `${this.ollamaUrl}/v1`,
+            apiKey: "ollama",
+          });
+        }
+        return { client: this._ollamaOpenAiClient, model: this.ollamaModel };
+      }
+      const mid = (this.currentModelId || "").toLowerCase();
+      if (this.deepseekClient && mid.includes("deepseek")) {
+        return { client: this.deepseekClient, model: this.currentModelId };
+      }
+      if (
+        this.openaiClient &&
+        (mid.includes("gpt") ||
+          mid.startsWith("o1") ||
+          mid.startsWith("o3") ||
+          mid.startsWith("o4") ||
+          mid.includes("openai"))
+      ) {
+        return { client: this.openaiClient, model: this.currentModelId };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Run an OpenAI-style tool-use loop against the user's MCP tools, then stream the answer. */
+  private async *streamWithMcpTools(
+    systemPrompt: string,
+    userContent: string,
+    oai: { client: any; model: string },
+  ): AsyncGenerator<string, void, unknown> {
+    const { McpClientManager } = require("./services/mcp/McpClientManager");
+    const manager = McpClientManager.getInstance();
+    await manager.ensureConnections();
+    const tools = manager.getOpenAiTools();
+
+    const messages: any[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ];
+
+    const MAX_ITERS = 6;
+    for (let i = 0; i < MAX_ITERS; i++) {
+      const resp = await oai.client.chat.completions.create({
+        model: oai.model,
+        messages,
+        ...(tools.length ? { tools, tool_choice: "auto" } : {}),
+      });
+      const msg = resp?.choices?.[0]?.message;
+      if (!msg) return;
+
+      const toolCalls = msg.tool_calls ?? [];
+      if (toolCalls.length === 0) {
+        if (msg.content) yield msg.content;
+        return;
+      }
+
+      // Execute each requested tool, surfacing chips in the overlay.
+      messages.push(msg);
+      for (const tc of toolCalls) {
+        const name = tc.function?.name ?? "tool";
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function?.arguments || "{}");
+        } catch {
+          /* leave empty */
+        }
+        this.broadcastAgentEvent("agent-tool-call", { toolId: tc.id, name, args });
+        const result = await manager.callTool(name, args);
+        this.broadcastAgentEvent("agent-tool-result", {
+          toolId: tc.id,
+          result,
+          isError: typeof result === "string" && result.startsWith("Error"),
+        });
+        messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+      }
+    }
+
+    // Tool budget exhausted — force a final answer without more tools.
+    const final = await oai.client.chat.completions.create({
+      model: oai.model,
+      messages,
+    });
+    const text = final?.choices?.[0]?.message?.content;
+    if (text) yield text;
+  }
+
+  /** True when the active model is Gemini (and not routed via Ollama). */
+  private isGeminiActive(): boolean {
+    return (
+      !this.useOllama &&
+      !!this.client &&
+      (this.currentModelId || "").toLowerCase().includes("gemini")
+    );
+  }
+
+  /** Gemini-native tool-use loop (functionDeclarations / functionCalls). */
+  private async *streamWithMcpToolsGemini(
+    systemPrompt: string,
+    userContent: string,
+  ): AsyncGenerator<string, void, unknown> {
+    const { McpClientManager } = require("./services/mcp/McpClientManager");
+    const manager = McpClientManager.getInstance();
+    await manager.ensureConnections();
+    const tools = manager.getGeminiTools();
+    const model = this.currentModelId || GEMINI_FLASH_MODEL;
+    const contents: any[] = [{ role: "user", parts: [{ text: userContent }] }];
+    const baseConfig: any = { systemInstruction: systemPrompt };
+
+    const MAX_ITERS = 6;
+    for (let i = 0; i < MAX_ITERS; i++) {
+      const resp: any = await this.client!.models.generateContent({
+        model,
+        contents,
+        config: tools.length ? { ...baseConfig, tools } : baseConfig,
+      });
+      const calls = resp?.functionCalls ?? [];
+      if (!calls.length) {
+        if (resp?.text) yield resp.text;
+        return;
+      }
+      contents.push({
+        role: "model",
+        parts: calls.map((c: any) => ({
+          functionCall: { name: c.name, args: c.args ?? {} },
+        })),
+      });
+      const respParts: any[] = [];
+      for (const c of calls) {
+        const id = `gem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        this.broadcastAgentEvent("agent-tool-call", {
+          toolId: id,
+          name: c.name,
+          args: c.args ?? {},
+        });
+        const result = await manager.callTool(c.name, c.args ?? {});
+        this.broadcastAgentEvent("agent-tool-result", {
+          toolId: id,
+          result,
+          isError: typeof result === "string" && result.startsWith("Error"),
+        });
+        respParts.push({
+          functionResponse: { name: c.name, response: { result } },
+        });
+      }
+      contents.push({ role: "user", parts: respParts });
+    }
+
+    const final: any = await this.client!.models.generateContent({
+      model,
+      contents,
+      config: baseConfig,
+    });
+    if (final?.text) yield final.text;
+  }
+
+  /** Broadcast an agent tool event to all windows (overlay surfaces it as a chip). */
+  private broadcastAgentEvent(channel: string, payload: any): void {
+    try {
+      const { BrowserWindow } = require("electron");
+      for (const w of BrowserWindow.getAllWindows()) {
+        try {
+          if (!w.isDestroyed()) w.webContents.send(channel, payload);
+        } catch {
+          /* noop */
+        }
+      }
+    } catch {
+      /* noop */
+    }
+  }
   // ---------------------------
 
   private currentModelId: string = GEMINI_FLASH_MODEL;
@@ -4044,13 +4316,69 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
     // Determine the system prompt to use
     // logic: if override provided, use it. otherwise use HARD_SYSTEM_PROMPT (which is the universal base)
+    // Tiny internal prompts (classification etc.) skip skills + MCP tools.
+    const isTinyPrompt =
+      !!systemPromptOverride && TINY_PROMPTS_SET.has(systemPromptOverride);
+
     const baseSystemPrompt = systemPromptOverride || HARD_SYSTEM_PROMPT;
-    const finalSystemPrompt = this.injectLanguageInstruction(baseSystemPrompt);
+    let finalSystemPrompt = this.injectLanguageInstruction(baseSystemPrompt);
+    // Universal skills: every provider that streams through here gets enabled
+    // skills appended (provider-agnostic). Done here — after the prompt-identity
+    // checks above — so it never breaks universal/tiny-prompt detection.
+    if (!isTinyPrompt) {
+      const skillsBlock = this.getEnabledSkillsBlock();
+      if (skillsBlock) {
+        finalSystemPrompt = `${finalSystemPrompt}\n\n---\n\n${skillsBlock}`;
+      }
+    }
 
     // Helper to build combined user message
     const userContent = context
       ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
       : message;
+
+    // ── Native MCP tool-use (provider-agnostic) ──────────────────────────
+    // If the user has enabled MCP servers AND the active model is OpenAI-
+    // compatible or Gemini, route through Momor's own tool-use loop so the model
+    // can call those tools. Skipped for tiny internal prompts (classification)
+    // and multimodal turns. Claude falls through to the normal text path.
+    if (!isMultimodal && !isTinyPrompt) {
+      let hasMcp = false;
+      try {
+        const { DatabaseManager } = require("./db/DatabaseManager");
+        hasMcp = DatabaseManager.getInstance()
+          .getMcpServers()
+          .some((s: any) => s.enabled);
+      } catch {
+        /* ignore */
+      }
+      // Also engage the loop when the message looks like a manage/install
+      // request, so built-in tools (install skill/mcp) work even with no MCP
+      // server enabled — e.g. "install this skill https://github.com/owner/repo".
+      const toolIntent =
+        /\b(install|instal[ae]r?|adicion[ae]|configur[ae]|skill|mcp|servidor|extens|ferramenta)\b/i.test(
+          message,
+        ) || /https?:\/\/\S+/i.test(message);
+      if (hasMcp || toolIntent) {
+        const oai = this.resolveOpenAiCompatClient();
+        try {
+          if (oai) {
+            yield* this.streamWithMcpTools(finalSystemPrompt, userContent, oai);
+            return;
+          }
+          if (this.isGeminiActive()) {
+            yield* this.streamWithMcpToolsGemini(finalSystemPrompt, userContent);
+            return;
+          }
+        } catch (toolErr: any) {
+          console.warn(
+            "[LLMHelper] MCP tool loop failed, falling back to normal chat:",
+            toolErr?.message,
+          );
+          // fall through to the normal provider path below
+        }
+      }
+    }
 
     // GROQ FAST TEXT OVERRIDE (Text-Only)
     // Two paths: local Groq key → call Groq directly; momor API only → send fast_mode:true
@@ -4137,6 +4465,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         finalSystemPrompt,
         imagePaths,
       );
+      return;
+    }
+
+    // Execution mode: CLI Agent. When the selected model is an agent-cli model
+    // (e.g. "agent-cli:openclaude"), route the whole turn through the
+    // AgentOrchestrator — literally the user's CLI running under the hood, with
+    // tools/skills/MCP/filesystem — instead of a direct API call. Only the text
+    // stream is surfaced here; tool cards live in the dedicated Agent Console.
+    if (this.isAgentCliModel(this.currentModelId)) {
+      yield* this.streamWithAgentCli(userContent, finalSystemPrompt);
       return;
     }
 
@@ -5482,8 +5820,14 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     }
   }
 
-  public getCurrentProvider(): "ollama" | "gemini" | "custom" | "codex-cli" {
+  public getCurrentProvider():
+    | "ollama"
+    | "gemini"
+    | "custom"
+    | "codex-cli"
+    | "agent-cli" {
     if (this.customProvider) return "custom";
+    if (this.isAgentCliModel(this.currentModelId)) return "agent-cli";
     if (this.isCodexCliModel(this.currentModelId)) return "codex-cli";
     return this.useOllama ? "ollama" : "gemini";
   }

@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Increase max listeners to prevent warnings — multiple React components
+// legitimately subscribe to the same IPC channels (theme, meeting state, etc.)
+ipcRenderer.setMaxListeners(50);
+
 // Types for the exposed Electron API
 interface ElectronAPI {
   updateContentDimensions: (dimensions: {
@@ -537,6 +541,93 @@ interface ElectronAPI {
   ) => Promise<boolean>;
   onMeetingsUpdated: (callback: () => void) => () => void;
 
+  // Workspace (Notion-style folders + notes)
+  workspaceGetTree: () => Promise<{
+    folders: Array<{
+      id: string;
+      name: string;
+      parentId: string | null;
+      icon: string | null;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+    notes: Array<{
+      id: string;
+      folderId: string | null;
+      title: string;
+      icon: string | null;
+      sortOrder: number;
+      updatedAt: string;
+    }>;
+    meetings: Array<{
+      id: string;
+      folderId: string | null;
+      title: string;
+      date: string;
+      sortOrder: number;
+    }>;
+  }>;
+  folderCreate: (input: {
+    name: string;
+    parentId?: string | null;
+    icon?: string | null;
+    sortOrder?: number;
+  }) => Promise<any>;
+  folderRename: (
+    id: string,
+    name: string,
+    icon?: string | null,
+  ) => Promise<boolean>;
+  folderMove: (
+    id: string,
+    parentId: string | null,
+    sortOrder: number,
+  ) => Promise<boolean>;
+  folderDelete: (id: string) => Promise<boolean>;
+  noteGet: (id: string) => Promise<any>;
+  noteCreate: (input: {
+    title?: string;
+    folderId?: string | null;
+    icon?: string | null;
+    contentJson?: string;
+    contentText?: string;
+    sourceMeetingId?: string | null;
+    sortOrder?: number;
+  }) => Promise<any>;
+  noteUpdate: (
+    id: string,
+    updates: {
+      title?: string;
+      icon?: string | null;
+      cover?: string | null;
+      contentJson?: string;
+      contentText?: string;
+    },
+  ) => Promise<boolean>;
+  noteMove: (
+    id: string,
+    folderId: string | null,
+    sortOrder: number,
+  ) => Promise<boolean>;
+  noteDelete: (id: string) => Promise<boolean>;
+  notesSearch: (query: string) => Promise<any[]>;
+  meetingSetFolder: (
+    id: string,
+    folderId: string | null,
+  ) => Promise<boolean>;
+
+  // MCP servers + Skills (configurable abilities)
+  mcpGetAll: () => Promise<any[]>;
+  mcpCreate: (input: any) => Promise<any>;
+  mcpUpdate: (id: string, updates: any) => Promise<boolean>;
+  mcpDelete: (id: string) => Promise<boolean>;
+  skillGetAll: () => Promise<any[]>;
+  skillCreate: (input: any) => Promise<any>;
+  skillUpdate: (id: string, updates: any) => Promise<boolean>;
+  skillDelete: (id: string) => Promise<boolean>;
+  onAbilitiesUpdated: (callback: () => void) => () => void;
+
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (
     callback: (data: { insight: string }) => void,
@@ -734,6 +825,37 @@ interface ElectronAPI {
   onGeminiStreamToken: (callback: (token: string) => void) => () => void;
   onGeminiStreamDone: (callback: () => void) => () => void;
   onGeminiStreamError: (callback: (error: string) => void) => () => void;
+
+  // Agent CLI bridge
+  agentChatStream: (payload: {
+    message: string;
+    meetingId?: string;
+    meetingTitle?: string;
+    provider?: string;
+    model?: string;
+    systemPrompt?: string;
+  }) => Promise<void>;
+  agentCancel: () => Promise<{ cancelled: boolean }>;
+  agentGetProviders: () => Promise<{ providers: { provider: string; path: string }[]; error?: string }>;
+  agentGetConfig: () => Promise<{ config: Record<string, unknown> }>;
+  agentSetConfig: (config: Record<string, unknown>) => Promise<{ ok: boolean; config?: Record<string, unknown>; error?: string }>;
+  agentRespondPermission: (payload: { id: string; allow: boolean; message?: string }) => Promise<{ ok: boolean }>;
+  onAgentStreamToken: (callback: (token: string) => void) => () => void;
+  onAgentStreamThinking: (callback: (text: string) => void) => () => void;
+  onAgentToolCall: (
+    callback: (data: { toolId: string; name: string; args: Record<string, unknown> }) => void,
+  ) => () => void;
+  onAgentToolResult: (
+    callback: (data: { toolId: string; result: string; isError?: boolean }) => void,
+  ) => () => void;
+  onAgentStreamSession: (callback: (data: { sessionId: string }) => void) => () => void;
+  onAgentStreamDone: (
+    callback: (data: { fullText: string; costUsd?: number }) => void,
+  ) => () => void;
+  onAgentStreamError: (callback: (data: { error: string }) => void) => () => void;
+  onAgentPermissionRequest: (
+    callback: (data: { id: string; tool: string; input: Record<string, unknown> }) => void,
+  ) => () => void;
 
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void;
   onGroqFastTextChanged: (callback: (enabled: boolean) => void) => () => void;
@@ -1837,6 +1959,42 @@ contextBridge.exposeInMainWorld("electronAPI", {
     };
   },
 
+  // Workspace (Notion-style folders + notes)
+  workspaceGetTree: () => ipcRenderer.invoke("workspace-get-tree"),
+  folderCreate: (input: any) => ipcRenderer.invoke("folder-create", input),
+  folderRename: (id: string, name: string, icon?: string | null) =>
+    ipcRenderer.invoke("folder-rename", { id, name, icon }),
+  folderMove: (id: string, parentId: string | null, sortOrder: number) =>
+    ipcRenderer.invoke("folder-move", { id, parentId, sortOrder }),
+  folderDelete: (id: string) => ipcRenderer.invoke("folder-delete", id),
+  noteGet: (id: string) => ipcRenderer.invoke("note-get", id),
+  noteCreate: (input: any) => ipcRenderer.invoke("note-create", input),
+  noteUpdate: (id: string, updates: any) =>
+    ipcRenderer.invoke("note-update", { id, updates }),
+  noteMove: (id: string, folderId: string | null, sortOrder: number) =>
+    ipcRenderer.invoke("note-move", { id, folderId, sortOrder }),
+  noteDelete: (id: string) => ipcRenderer.invoke("note-delete", id),
+  notesSearch: (query: string) => ipcRenderer.invoke("notes-search", query),
+  meetingSetFolder: (id: string, folderId: string | null) =>
+    ipcRenderer.invoke("meeting-set-folder", { id, folderId }),
+
+  // MCP servers + Skills
+  mcpGetAll: () => ipcRenderer.invoke("mcp-get-all"),
+  mcpCreate: (input: any) => ipcRenderer.invoke("mcp-create", input),
+  mcpUpdate: (id: string, updates: any) =>
+    ipcRenderer.invoke("mcp-update", { id, updates }),
+  mcpDelete: (id: string) => ipcRenderer.invoke("mcp-delete", id),
+  skillGetAll: () => ipcRenderer.invoke("skill-get-all"),
+  skillCreate: (input: any) => ipcRenderer.invoke("skill-create", input),
+  skillUpdate: (id: string, updates: any) =>
+    ipcRenderer.invoke("skill-update", { id, updates }),
+  skillDelete: (id: string) => ipcRenderer.invoke("skill-delete", id),
+  onAbilitiesUpdated: (callback: () => void) => {
+    const sub = () => callback();
+    ipcRenderer.on("abilities-updated", sub);
+    return () => ipcRenderer.removeListener("abilities-updated", sub);
+  },
+
   // Window Mode
   setWindowMode: (mode: "launcher" | "overlay", inactive?: boolean) =>
     ipcRenderer.invoke("set-window-mode", mode, inactive),
@@ -2068,6 +2226,74 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => {
       ipcRenderer.removeListener("gemini-stream-error", subscription);
     };
+  },
+
+  // Agent CLI bridge
+  agentChatStream: (payload: {
+    message: string;
+    meetingId?: string;
+    meetingTitle?: string;
+    provider?: string;
+    model?: string;
+    systemPrompt?: string;
+  }) => ipcRenderer.invoke("agent-chat-stream", payload),
+
+  agentCancel: () => ipcRenderer.invoke("agent-cancel"),
+  agentGetProviders: () => ipcRenderer.invoke("agent-get-providers"),
+  agentGetConfig: () => ipcRenderer.invoke("agent-get-config"),
+  agentSetConfig: (config: Record<string, unknown>) =>
+    ipcRenderer.invoke("agent-set-config", config),
+  agentRespondPermission: (payload: { id: string; allow: boolean; message?: string }) =>
+    ipcRenderer.invoke("agent-permission-response", payload),
+
+  onAgentStreamToken: (callback: (token: string) => void) => {
+    const sub = (_: any, token: string) => callback(token);
+    ipcRenderer.on("agent-stream-token", sub);
+    return () => ipcRenderer.removeListener("agent-stream-token", sub);
+  },
+
+  onAgentStreamThinking: (callback: (text: string) => void) => {
+    const sub = (_: any, text: string) => callback(text);
+    ipcRenderer.on("agent-stream-thinking", sub);
+    return () => ipcRenderer.removeListener("agent-stream-thinking", sub);
+  },
+
+  onAgentToolCall: (callback: (data: { toolId: string; name: string; args: Record<string, unknown> }) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-tool-call", sub);
+    return () => ipcRenderer.removeListener("agent-tool-call", sub);
+  },
+
+  onAgentToolResult: (callback: (data: { toolId: string; result: string; isError?: boolean }) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-tool-result", sub);
+    return () => ipcRenderer.removeListener("agent-tool-result", sub);
+  },
+
+  onAgentStreamSession: (callback: (data: { sessionId: string }) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-stream-session", sub);
+    return () => ipcRenderer.removeListener("agent-stream-session", sub);
+  },
+
+  onAgentStreamDone: (callback: (data: { fullText: string; costUsd?: number }) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-stream-done", sub);
+    return () => ipcRenderer.removeListener("agent-stream-done", sub);
+  },
+
+  onAgentStreamError: (callback: (data: { error: string }) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-stream-error", sub);
+    return () => ipcRenderer.removeListener("agent-stream-error", sub);
+  },
+
+  onAgentPermissionRequest: (
+    callback: (data: { id: string; tool: string; input: Record<string, unknown> }) => void,
+  ) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on("agent-permission-request", sub);
+    return () => ipcRenderer.removeListener("agent-permission-request", sub);
   },
 
   // Model Management

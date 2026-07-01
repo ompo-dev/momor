@@ -21,6 +21,7 @@ interface NativeVecSearchChunksMessage {
     queryBlob: Buffer;
     dim: number;        // embedding dimension — selects vec_chunks_{dim} table
     meetingId?: string;
+    sourceIds?: string[];   // folder-scope filter (note/meeting ids)
     providerName?: string;
     limit: number;
     minSimilarity: number;
@@ -54,6 +55,9 @@ interface SearchChunksMessage {
         end_timestamp_ms: number;
         cleaned_text: string;
         token_count: number;
+        source_type?: string;
+        source_id?: string;
+        source_title?: string | null;
     }>;
     minSimilarity: number;
     limit: number;
@@ -140,6 +144,9 @@ parentPort.on('message', (message: WorkerMessage) => {
                     endMs: number;
                     text: string;
                     tokenCount: number;
+                    sourceType: string;
+                    sourceId: string;
+                    sourceTitle: string | null;
                     similarity: number;
                 }> = [];
 
@@ -156,6 +163,9 @@ parentPort.on('message', (message: WorkerMessage) => {
                             endMs: meta.end_timestamp_ms,
                             text: meta.cleaned_text,
                             tokenCount: meta.token_count,
+                            sourceType: meta.source_type ?? 'meeting',
+                            sourceId: meta.source_id ?? meta.meeting_id,
+                            sourceTitle: meta.source_title ?? null,
                             similarity
                         });
                     }
@@ -198,7 +208,7 @@ parentPort.on('message', (message: WorkerMessage) => {
             }
 
             case 'nativeVecSearch': {
-                const { requestId, dbPath, extPath, queryBlob, dim, meetingId, providerName, limit, minSimilarity, fetchMultiplier } = message;
+                const { requestId, dbPath, extPath, queryBlob, dim, meetingId, sourceIds, providerName, limit, minSimilarity, fetchMultiplier } = message;
                 // P1-4: validate dim is a positive integer before interpolating into the table name.
                 // This worker runs in a separate thread and receives messages from the main process,
                 // so it operates at a trust boundary — the value must be validated here independently.
@@ -207,7 +217,7 @@ parentPort.on('message', (message: WorkerMessage) => {
                     break;
                 }
                 const db = getDb(dbPath, extPath);
-                const fetchLimit = (meetingId || providerName) ? limit * fetchMultiplier : limit;
+                const fetchLimit = (meetingId || (sourceIds && sourceIds.length > 0)) ? limit * fetchMultiplier : limit;
                 const vecTable = `vec_chunks_${dim}`;
 
                 const vecRows = db.prepare(`
@@ -219,10 +229,16 @@ parentPort.on('message', (message: WorkerMessage) => {
 
                 const chunkIds = vecRows.map((r: any) => r.chunk_id);
                 const ph = chunkIds.map(() => '?').join(',');
-                let q = `SELECT c.* FROM chunks c JOIN meetings m ON c.meeting_id = m.id WHERE c.id IN (${ph})`;
+                // No JOIN to meetings: note chunks have no meetings row. The per-dimension
+                // vec table already guarantees embedding-dimension compatibility, so the
+                // provider filter (which excluded notes) is dropped here.
+                let q = `SELECT c.* FROM chunks c WHERE c.id IN (${ph})`;
                 const params: any[] = [...chunkIds];
                 if (meetingId) { q += ' AND c.meeting_id = ?'; params.push(meetingId); }
-                if (providerName) { q += ' AND m.embedding_provider = ?'; params.push(providerName); }
+                if (sourceIds && sourceIds.length > 0) {
+                    q += ` AND c.source_id IN (${sourceIds.map(() => '?').join(',')})`;
+                    params.push(...sourceIds);
+                }
 
                 const chunkRows = db.prepare(q).all(...params) as any[];
                 const chunkMap = new Map<number, any>();
@@ -236,7 +252,9 @@ parentPort.on('message', (message: WorkerMessage) => {
                     if (similarity >= minSimilarity) {
                         scored.push({ id: c.id, meetingId: c.meeting_id, chunkIndex: c.chunk_index,
                             speaker: c.speaker, startMs: c.start_timestamp_ms, endMs: c.end_timestamp_ms,
-                            text: c.cleaned_text, tokenCount: c.token_count, similarity });
+                            text: c.cleaned_text, tokenCount: c.token_count,
+                            sourceType: c.source_type ?? 'meeting', sourceId: c.source_id ?? c.meeting_id,
+                            sourceTitle: c.source_title ?? null, similarity });
                     }
                 }
                 parentPort!.postMessage({ type: 'result', requestId, data: scored.slice(0, limit) });

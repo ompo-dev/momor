@@ -313,7 +313,7 @@ ${meeting.detailedSummary.keyPoints?.map((item) => `- ${item}`).join("\n") || t(
           transition={{ delay: 0.1, duration: 0.3 }}
           className="max-w-4xl mx-auto px-6 py-8 pb-32"
         >
-          <LinearCard className="rounded-linear-xl">
+          <LinearCard className="rounded-lg">
             <LinearCardContent className="p-6">
           {/* Meta Info & Actions Row */}
           <div className="flex items-start justify-between mb-6">

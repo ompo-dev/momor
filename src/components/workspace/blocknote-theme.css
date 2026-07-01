@@ -1,0 +1,33 @@
+/* Neutralize Momor's aggressive global rules inside the BlockNote editor.
+   index.css forces `cursor: default !important` on [contenteditable] / *:hover
+   and paints a `*:focus-visible { outline: 2px solid accent }` ring — both leak
+   into the note editor. Scope overrides to .momor-note-editor only. */
+
+.momor-note-editor .bn-editor {
+  background: transparent;
+  padding-inline: 0;
+}
+
+/* Remove the blue focus outline around the editable area + title input */
+.momor-note-editor .bn-editor:focus-visible,
+.momor-note-editor [contenteditable]:focus,
+.momor-note-editor [contenteditable]:focus-visible,
+.momor-note-editor .ProseMirror:focus,
+.momor-note-editor .ProseMirror:focus-visible,
+.momor-note-editor input:focus,
+.momor-note-editor input:focus-visible {
+  outline: none !important;
+}
+
+/* Restore the text caret cursor (Momor forces `default !important` globally) */
+.momor-note-editor [contenteditable],
+.momor-note-editor [contenteditable] *,
+.momor-note-editor [contenteditable]:hover,
+.momor-note-editor [contenteditable] *:hover {
+  cursor: text !important;
+}
+
+/* Placeholder ("Enter text or type '/' for commands") in Momor's muted tone */
+.momor-note-editor .bn-inline-content[data-placeholder]::before {
+  color: var(--text-tertiary);
+}

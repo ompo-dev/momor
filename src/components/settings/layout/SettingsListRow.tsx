@@ -25,7 +25,7 @@ export function SettingsListRow({
     >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         {icon ? (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/50 text-muted-foreground">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground">
             {icon}
           </div>
         ) : null}

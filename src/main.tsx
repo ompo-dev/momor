@@ -38,10 +38,14 @@ if (window.electronAPI?.getThemeMode) {
     localStorage.setItem(THEME_CACHE_KEY, resolved);
   });
 
-  window.electronAPI?.onThemeChanged?.(({ resolved }) => {
+  // Store unsubscribe so this top-level listener can be replaced if re-run
+  const _unsubTheme = window.electronAPI?.onThemeChanged?.(({ resolved }) => {
     document.documentElement.setAttribute("data-theme", resolved);
     localStorage.setItem(THEME_CACHE_KEY, resolved);
   });
+  // Expose for cleanup in HMR/dev contexts
+  (window as any).__themeUnsubscribe?.();
+  (window as any).__themeUnsubscribe = _unsubTheme;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

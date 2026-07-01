@@ -3404,6 +3404,203 @@ export function initializeIpcHandlers(appState: AppState): void {
     },
   );
 
+  // ── Workspace: folders + notes (Notion-style home) ──────────────
+  safeHandle("workspace-get-tree", async () => {
+    return DatabaseManager.getInstance().getWorkspaceTree();
+  });
+
+  safeHandle(
+    "folder-create",
+    async (
+      _,
+      input: {
+        name: string;
+        parentId?: string | null;
+        icon?: string | null;
+        sortOrder?: number;
+      },
+    ) => {
+      return DatabaseManager.getInstance().createFolder(input);
+    },
+  );
+
+  safeHandle(
+    "folder-rename",
+    async (
+      _,
+      { id, name, icon }: { id: string; name: string; icon?: string | null },
+    ) => {
+      return DatabaseManager.getInstance().renameFolder(id, name, icon);
+    },
+  );
+
+  safeHandle(
+    "folder-move",
+    async (
+      _,
+      {
+        id,
+        parentId,
+        sortOrder,
+      }: { id: string; parentId: string | null; sortOrder: number },
+    ) => {
+      return DatabaseManager.getInstance().setFolderParent(
+        id,
+        parentId,
+        sortOrder,
+      );
+    },
+  );
+
+  safeHandle("folder-delete", async (_, id: string) => {
+    return DatabaseManager.getInstance().deleteFolder(id);
+  });
+
+  safeHandle("note-get", async (_, id: string) => {
+    return DatabaseManager.getInstance().getNote(id);
+  });
+
+  safeHandle(
+    "note-create",
+    async (
+      _,
+      input: {
+        title?: string;
+        folderId?: string | null;
+        icon?: string | null;
+        contentJson?: string;
+        contentText?: string;
+        sourceMeetingId?: string | null;
+        sortOrder?: number;
+      },
+    ) => {
+      return DatabaseManager.getInstance().createNote(input ?? {});
+    },
+  );
+
+  // Debounced note (re)indexing into RAG — one timer per note so rapid autosaves
+  // collapse into a single re-embed a few seconds after the user stops typing.
+  const noteIndexTimers = new Map<string, NodeJS.Timeout>();
+  const NOTE_INDEX_DEBOUNCE_MS = 3000;
+  const scheduleNoteIndex = (noteId: string) => {
+    const existing = noteIndexTimers.get(noteId);
+    if (existing) clearTimeout(existing);
+    noteIndexTimers.set(
+      noteId,
+      setTimeout(() => {
+        noteIndexTimers.delete(noteId);
+        const ragManager = appState.getRAGManager();
+        if (ragManager) {
+          ragManager
+            .indexNote(noteId)
+            .catch((e: any) =>
+              console.error("[IPC] note indexNote failed:", e),
+            );
+        }
+      }, NOTE_INDEX_DEBOUNCE_MS),
+    );
+  };
+
+  safeHandle(
+    "note-update",
+    async (
+      _,
+      {
+        id,
+        updates,
+      }: {
+        id: string;
+        updates: {
+          title?: string;
+          icon?: string | null;
+          cover?: string | null;
+          contentJson?: string;
+          contentText?: string;
+        };
+      },
+    ) => {
+      const result = DatabaseManager.getInstance().updateNote(id, updates);
+      // Re-index when the searchable text or title changed.
+      if (updates.contentText !== undefined || updates.title !== undefined) {
+        scheduleNoteIndex(id);
+      }
+      return result;
+    },
+  );
+
+  safeHandle(
+    "note-move",
+    async (
+      _,
+      {
+        id,
+        folderId,
+        sortOrder,
+      }: { id: string; folderId: string | null; sortOrder: number },
+    ) => {
+      return DatabaseManager.getInstance().moveNote(id, folderId, sortOrder);
+    },
+  );
+
+  safeHandle("note-delete", async (_, id: string) => {
+    const result = DatabaseManager.getInstance().deleteNote(id);
+    const existingTimer = noteIndexTimers.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      noteIndexTimers.delete(id);
+    }
+    appState.getRAGManager()?.deleteNoteData(id);
+    return result;
+  });
+
+  safeHandle("notes-search", async (_, query: string) => {
+    return DatabaseManager.getInstance().searchNotes(query);
+  });
+
+  safeHandle(
+    "meeting-set-folder",
+    async (
+      _,
+      { id, folderId }: { id: string; folderId: string | null },
+    ) => {
+      return DatabaseManager.getInstance().setMeetingFolder(id, folderId);
+    },
+  );
+
+  // ── MCP servers (configurable abilities) ────────────────────────
+  safeHandle("mcp-get-all", async () => {
+    return DatabaseManager.getInstance().getMcpServers();
+  });
+  safeHandle("mcp-create", async (_, input: any) => {
+    return DatabaseManager.getInstance().createMcpServer(input ?? {});
+  });
+  safeHandle(
+    "mcp-update",
+    async (_, { id, updates }: { id: string; updates: any }) => {
+      return DatabaseManager.getInstance().updateMcpServer(id, updates);
+    },
+  );
+  safeHandle("mcp-delete", async (_, id: string) => {
+    return DatabaseManager.getInstance().deleteMcpServer(id);
+  });
+
+  // ── Skills ──────────────────────────────────────────────────────
+  safeHandle("skill-get-all", async () => {
+    return DatabaseManager.getInstance().getSkills();
+  });
+  safeHandle("skill-create", async (_, input: any) => {
+    return DatabaseManager.getInstance().createSkill(input ?? {});
+  });
+  safeHandle(
+    "skill-update",
+    async (_, { id, updates }: { id: string; updates: any }) => {
+      return DatabaseManager.getInstance().updateSkill(id, updates);
+    },
+  );
+  safeHandle("skill-delete", async (_, id: string) => {
+    return DatabaseManager.getInstance().deleteSkill(id);
+  });
+
   safeHandle("seed-demo", async () => {
     DatabaseManager.getInstance().seedDemoMeeting();
 
@@ -4344,10 +4541,13 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
-  // Query global (cross-meeting search)
+  // Query global (cross-meeting + notes search; optional folder scope)
   safeHandle(
     "rag:query-global",
-    async (event, { query }: { query: string }) => {
+    async (
+      event,
+      { query, folderId }: { query: string; folderId?: string | null },
+    ) => {
       const ragManager = appState.getRAGManager();
 
       if (!ragManager || !ragManager.isReady()) {
@@ -4359,7 +4559,11 @@ export function initializeIpcHandlers(appState: AppState): void {
       activeRAGQueries.set(queryKey, abortController);
 
       try {
-        const stream = ragManager.queryGlobal(query, abortController.signal);
+        const stream = ragManager.queryGlobal(
+          query,
+          abortController.signal,
+          folderId ?? null,
+        );
 
         for await (const chunk of stream) {
           if (abortController.signal.aborted) break;
@@ -5376,6 +5580,274 @@ export function initializeIpcHandlers(appState: AppState): void {
     } catch (e: any) {
       console.error("[IPC] phone-mirror:rotate-token error:", e);
       return { error: e?.message || "failed to rotate token" };
+    }
+  });
+
+  // ── Agent Chat (CLI agents: openclaude / opencode / codex / claude) ──────────
+  //
+  // The renderer streams a turn through AgentOrchestrator, which spawns the
+  // user's chosen CLI (literally the same binary they'd run in a terminal) with
+  // the meeting MCP server injected, a per-meeting workspace as cwd, and a
+  // permission mode mapped to that CLI's sandbox. Events are normalized and
+  // forwarded over IPC. One run is in flight at a time.
+
+  let _agentAbortController: AbortController | null = null;
+  // Pending fine-grained approval requests (claude --permission-prompt-tool).
+  const _agentApprovals = new Map<
+    string,
+    (decision: { allow: boolean; message?: string }) => void
+  >();
+
+  function loadAgentSettings(): import("./services/agent/types").AgentCliSettings {
+    try {
+      const { SettingsManager } = require("./services/SettingsManager");
+      const { DEFAULT_AGENT_CLI_SETTINGS } = require("./services/agent/types");
+      const stored = SettingsManager.getInstance().get("agentCli") ?? {};
+      return { ...DEFAULT_AGENT_CLI_SETTINGS, ...stored };
+    } catch {
+      const { DEFAULT_AGENT_CLI_SETTINGS } = require("./services/agent/types");
+      return { ...DEFAULT_AGENT_CLI_SETTINGS };
+    }
+  }
+
+  // Shared approval bridge: sends a permission ask to the renderer modal and
+  // resolves with the user's decision (deny after 60s of silence).
+  function makePermissionRequester(sender?: Electron.WebContents) {
+    return (req: { tool: string; input: Record<string, unknown> }) =>
+      new Promise<{ allow: boolean; message?: string }>((resolve) => {
+        if (!sender || sender.isDestroyed()) {
+          return resolve({ allow: false, message: "No UI to approve" });
+        }
+        const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timeout = setTimeout(() => {
+          if (_agentApprovals.delete(id)) resolve({ allow: false, message: "Approval timed out" });
+        }, 60_000);
+        _agentApprovals.set(id, (decision) => {
+          clearTimeout(timeout);
+          resolve(decision);
+        });
+        sender.send("agent-permission-request", { id, tool: req.tool, input: req.input });
+      });
+  }
+
+  function wireMeetingContext(meetingId?: string, sender?: Electron.WebContents) {
+    const { MeetingMCPServer } = require("./services/MeetingMCPServer");
+    const intelligenceManager = appState.getIntelligenceManager();
+    const ragManager = appState.getRAGManager();
+
+    MeetingMCPServer.getInstance().setCallbacks({
+      getTranscript: (seconds = 180) =>
+        intelligenceManager.getSessionTracker?.()?.getFormattedContext(seconds) ?? "",
+      queryRAG: async (query: string, scopedMeetingId?: string) => {
+        if (!ragManager) return "[RAG not available]";
+        try {
+          const id = scopedMeetingId ?? meetingId ?? "";
+          if (!id) return "[No meeting ID for RAG query]";
+          let collected = "";
+          for await (const chunk of ragManager.queryMeeting(id, query)) collected += chunk;
+          return collected || "[No results]";
+        } catch {
+          return "[RAG query failed]";
+        }
+      },
+      getScreenContext: () => {
+        try {
+          const { getScreenUnderstandingService } = require("./services/screen/ScreenUnderstandingService");
+          const last = getScreenUnderstandingService().getLastResult?.();
+          if (!last) return "";
+          return (
+            last.visibleSummary ||
+            last.extractedText ||
+            (Array.isArray(last.codeBlocks) ? last.codeBlocks.join("\n\n") : "") ||
+            ""
+          );
+        } catch {
+          return "";
+        }
+      },
+      getMeetingMetadata: () => ({
+        title: intelligenceManager.getCurrentMeetingTitle?.() ?? "Active Meeting",
+        isActive: appState.getIsMeetingActive?.() ?? false,
+        meetingId,
+      }),
+      getMeetingSummary: () => {
+        try {
+          return intelligenceManager.getSessionTracker?.()?.getFormattedContext(600) ?? "";
+        } catch {
+          return "";
+        }
+      },
+      requestPermission: makePermissionRequester(sender),
+    });
+  }
+
+  safeHandle(
+    "agent-chat-stream",
+    async (
+      event,
+      payload: {
+        message: string;
+        meetingId?: string;
+        meetingTitle?: string;
+        provider?: string;
+        model?: string;
+        systemPrompt?: string;
+      },
+    ) => {
+      _agentAbortController?.abort();
+      _agentAbortController = new AbortController();
+      const signal = _agentAbortController.signal;
+
+      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const { WorkspaceManager } = require("./services/agent/WorkspaceManager");
+      const { MeetingMCPServer } = require("./services/MeetingMCPServer");
+
+      const settings = loadAgentSettings();
+      if (payload.provider) settings.provider = payload.provider as any;
+      if (payload.model) settings.model = payload.model;
+
+      wireMeetingContext(payload.meetingId, event.sender);
+
+      // Point save_artifact / list_meeting_files at this run's workspace.
+      try {
+        const ws = WorkspaceManager.getInstance().resolveWorkspace(settings, {
+          id: payload.meetingId,
+          title: payload.meetingTitle,
+        });
+        MeetingMCPServer.getInstance().setActiveWorkspace(ws);
+      } catch (err: any) {
+        event.sender.send("agent-stream-error", { error: err?.message ?? "Workspace error" });
+        return null;
+      }
+
+      try {
+        const requestPermission = makePermissionRequester(event.sender);
+        const stream = AgentOrchestrator.getInstance().run(
+          {
+            prompt: payload.message,
+            systemPrompt: payload.systemPrompt,
+            provider: settings.provider as any,
+            model: settings.model,
+            meetingId: payload.meetingId,
+            meetingTitle: payload.meetingTitle,
+            signal,
+            onPermissionRequest: async (req: any) => {
+              const decision = await requestPermission({
+                tool: req.tool,
+                input: req.input ?? {},
+              });
+              return { allow: decision.allow };
+            },
+          },
+          settings,
+        );
+
+        for await (const agentEvent of stream) {
+          if (signal.aborted) break;
+          switch (agentEvent.type) {
+            case "token":
+              event.sender.send("agent-stream-token", agentEvent.text ?? "");
+              break;
+            case "thinking":
+              event.sender.send("agent-stream-thinking", agentEvent.text ?? "");
+              break;
+            case "tool_call":
+              event.sender.send("agent-tool-call", {
+                toolId: agentEvent.toolId,
+                name: agentEvent.toolName,
+                args: agentEvent.toolArgs,
+              });
+              break;
+            case "tool_result":
+              event.sender.send("agent-tool-result", {
+                toolId: agentEvent.toolId,
+                result: agentEvent.toolResult,
+                isError: agentEvent.toolIsError,
+              });
+              break;
+            case "session":
+              event.sender.send("agent-stream-session", { sessionId: agentEvent.sessionId });
+              break;
+            case "done":
+              event.sender.send("agent-stream-done", {
+                fullText: agentEvent.fullText,
+                costUsd: agentEvent.costUsd,
+              });
+              break;
+            case "error":
+              event.sender.send("agent-stream-error", { error: agentEvent.error });
+              break;
+          }
+        }
+      } catch (err: any) {
+        console.error("[IPC] agent-chat-stream error:", err);
+        event.sender.send("agent-stream-error", { error: err?.message ?? "Agent failed" });
+      } finally {
+        try {
+          require("./services/MeetingMCPServer").MeetingMCPServer.getInstance().setActiveWorkspace(null);
+        } catch {}
+      }
+
+      return null;
+    },
+  );
+
+  safeHandle("agent-cancel", async () => {
+    _agentAbortController?.abort();
+    _agentAbortController = null;
+    try {
+      require("./services/agent/AgentOrchestrator").AgentOrchestrator.getInstance().cancel();
+    } catch {}
+    return { cancelled: true };
+  });
+
+  safeHandle(
+    "agent-permission-response",
+    async (_event, payload: { id: string; allow: boolean; message?: string }) => {
+      const resolver = _agentApprovals.get(payload.id);
+      if (resolver) {
+        _agentApprovals.delete(payload.id);
+        resolver({ allow: !!payload.allow, message: payload.message });
+        return { ok: true };
+      }
+      return { ok: false };
+    },
+  );
+
+  safeHandle("agent-get-providers", async () => {
+    try {
+      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const settings = loadAgentSettings();
+      const orchestrator = AgentOrchestrator.getInstance();
+      // Back-compat list + the full Zed-style catalog (name/transport/builtin).
+      return {
+        providers: orchestrator.detectAvailableProviders(settings),
+        agents: orchestrator.listExternalAgents(settings).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          transport: a.transport,
+          builtin: a.builtin,
+          available: a.available,
+        })),
+      };
+    } catch (e: any) {
+      return { providers: [], agents: [], error: e?.message };
+    }
+  });
+
+  safeHandle("agent-get-config", async () => {
+    return { config: loadAgentSettings() };
+  });
+
+  safeHandle("agent-set-config", async (_event, config: Record<string, unknown>) => {
+    try {
+      const { SettingsManager } = require("./services/SettingsManager");
+      const current = SettingsManager.getInstance().get("agentCli") ?? {};
+      const merged = { ...current, ...config };
+      SettingsManager.getInstance().set("agentCli", merged);
+      return { ok: true, config: merged };
+    } catch (e: any) {
+      return { ok: false, error: e?.message };
     }
   });
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Search, Sparkles, FileText } from 'lucide-react';
+import { Search, Sparkles, FileText, Mic } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useResolvedTheme } from '../hooks/useResolvedTheme';
 import { Input } from './ui/input';
@@ -24,10 +24,16 @@ interface Meeting {
 
 interface SearchResult {
     id: string;
-    type: 'meeting';
+    type: 'meeting' | 'note';
     title: string;
     subtitle?: string;
-    meetingId: string;
+    refId: string;
+}
+
+interface NoteHit {
+    id: string;
+    title: string;
+    contentText: string;
 }
 
 interface TopSearchPillProps {
@@ -35,6 +41,7 @@ interface TopSearchPillProps {
     onAIQuery: (query: string) => void;
     onLiteralSearch: (query: string) => void;
     onOpenMeeting: (meetingId: string) => void;
+    onOpenNote?: (noteId: string) => void;
     onExpansionChange?: (isExpanded: boolean) => void;
 }
 
@@ -75,14 +82,14 @@ function searchMeetings(
         if (titleMatch || summaryMatch) {
             seen.add(meeting.id);
             results.push({
-                id: meeting.id,
+                id: `meeting:${meeting.id}`,
                 type: 'meeting',
                 title: meeting.title,
                 subtitle: new Date(meeting.date).toLocaleDateString(dateLocale, {
                     month: 'short',
                     day: 'numeric'
                 }),
-                meetingId: meeting.id
+                refId: meeting.id
             });
         }
 
@@ -101,6 +108,7 @@ const TopSearchPill: React.FC<TopSearchPillProps> = ({
     onAIQuery,
     onLiteralSearch,
     onOpenMeeting,
+    onOpenNote,
     onExpansionChange
 }) => {
     const { t, i18n } = useTranslation();
@@ -112,19 +120,50 @@ const TopSearchPill: React.FC<TopSearchPillProps> = ({
 
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
 
     // Notify parent of expansion changes
     useEffect(() => {
         onExpansionChange?.(state !== 'idle');
     }, [state, onExpansionChange]);
 
-    // Compute results
-    const sessionResults = useMemo(() => {
-        if (state !== 'results' || !query.trim()) return [];
-        return searchMeetings(meetings, query, dateLocale);
-    }, [meetings, query, state, dateLocale]);
+    // Debounced note search via the workspace SQLite index.
+    useEffect(() => {
+        if (state !== 'results' || !query.trim() || !window.electronAPI?.notesSearch) {
+            setNoteHits([]);
+            return;
+        }
+        let cancelled = false;
+        const handle = setTimeout(() => {
+            window.electronAPI
+                .notesSearch(query)
+                .then((hits) => {
+                    if (!cancelled) setNoteHits(Array.isArray(hits) ? hits.slice(0, 5) : []);
+                })
+                .catch(() => {
+                    if (!cancelled) setNoteHits([]);
+                });
+        }, 180);
+        return () => {
+            cancelled = true;
+            clearTimeout(handle);
+        };
+    }, [query, state]);
 
-    // Total selectable items: 2 (Explore section) + sessions
+    // Compute results: notes first, then meetings.
+    const sessionResults = useMemo<SearchResult[]>(() => {
+        if (state !== 'results' || !query.trim()) return [];
+        const noteResults: SearchResult[] = noteHits.map((n) => ({
+            id: `note:${n.id}`,
+            type: 'note',
+            title: n.title || 'Untitled',
+            refId: n.id,
+        }));
+        const meetingResults = searchMeetings(meetings, query, dateLocale);
+        return [...noteResults, ...meetingResults];
+    }, [meetings, query, state, dateLocale, noteHits]);
+
+    // Total selectable items: 2 (Explore section) + results
     const totalItems = 2 + sessionResults.length;
 
     // State transitions
@@ -165,15 +204,19 @@ const TopSearchPill: React.FC<TopSearchPillProps> = ({
             onLiteralSearch(query);
             close();
         } else {
-            // Session result
+            // Note or meeting result
             const sessionIndex = index - 2;
             const result = sessionResults[sessionIndex];
             if (result) {
-                onOpenMeeting(result.meetingId);
+                if (result.type === 'note') {
+                    onOpenNote?.(result.refId);
+                } else {
+                    onOpenMeeting(result.refId);
+                }
                 close();
             }
         }
-    }, [query, sessionResults, onAIQuery, onLiteralSearch, onOpenMeeting, close]);
+    }, [query, sessionResults, onAIQuery, onLiteralSearch, onOpenMeeting, onOpenNote, close]);
 
     // Keyboard handling
     useEffect(() => {
@@ -404,7 +447,11 @@ const TopSearchPill: React.FC<TopSearchPillProps> = ({
                                                                         onMouseEnter={() => setSelectedIndex(index + 2)}
                                                                     >
                                                                         <div className="w-6 h-6 rounded-md bg-bg-item-surface flex items-center justify-center shrink-0">
-                                                                            <FileText size={12} className="text-text-secondary" />
+                                                                            {result.type === 'note' ? (
+                                                                                <FileText size={12} className="text-text-secondary" />
+                                                                            ) : (
+                                                                                <Mic size={12} className="text-text-secondary" />
+                                                                            )}
                                                                         </div>
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className="text-[13px] text-text-primary truncate">

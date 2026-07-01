@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3';
 import { LLMHelper } from '../LLMHelper';
 import { preprocessTranscript, RawSegment } from './TranscriptPreprocessor';
-import { chunkTranscript } from './SemanticChunker';
+import { chunkTranscript, chunkText } from './SemanticChunker';
 import { VectorStore } from './VectorStore';
 import { EmbeddingPipeline } from './EmbeddingPipeline';
 import { RAGRetriever } from './RAGRetriever';
@@ -200,14 +200,27 @@ export class RAGManager {
      */
     async *queryGlobal(
         query: string,
-        abortSignal?: AbortSignal
+        abortSignal?: AbortSignal,
+        folderId?: string | null
     ): AsyncGenerator<string, void, unknown> {
         if (!this.llmHelper) {
             throw new Error('LLM helper not initialized');
         }
 
-        // Retrieve from all meetings
-        const context = await this.retriever.retrieveGlobal(query);
+        // Folder scope: restrict retrieval to notes/meetings under this folder subtree.
+        let sourceIds: string[] | undefined;
+        if (folderId) {
+            try {
+                const { DatabaseManager } = require('../db/DatabaseManager');
+                sourceIds = DatabaseManager.getInstance().getSourceIdsInFolderSubtree(folderId);
+                if (sourceIds && sourceIds.length === 0) sourceIds = undefined; // empty folder → no scope
+            } catch (e) {
+                console.warn('[RAGManager] folder scope resolution failed:', e);
+            }
+        }
+
+        // Retrieve from notes + meetings (optionally folder-scoped)
+        const context = await this.retriever.retrieveGlobal(query, { sourceIds });
 
         if (context.chunks.length === 0) {
             yield NO_GLOBAL_CONTEXT_FALLBACK;
@@ -233,14 +246,74 @@ export class RAGManager {
     async *query(
         query: string,
         currentMeetingId?: string,
-        abortSignal?: AbortSignal
+        abortSignal?: AbortSignal,
+        folderId?: string | null
     ): AsyncGenerator<string, void, unknown> {
         const scope = this.retriever.detectScope(query, currentMeetingId);
 
         if (scope === 'meeting' && currentMeetingId) {
             yield* this.queryMeeting(currentMeetingId, query, abortSignal);
         } else {
-            yield* this.queryGlobal(query, abortSignal);
+            yield* this.queryGlobal(query, abortSignal, folderId);
+        }
+    }
+
+    // ─── Notes RAG ───────────────────────────────────────────────
+
+    /**
+     * (Re)index a note's content into the RAG store. Deletes prior chunks for
+     * the note, re-chunks its plaintext mirror, saves, and queues embeddings.
+     * Title + folder path are denormalized into the chunk for retrieval context.
+     */
+    async indexNote(noteId: string): Promise<void> {
+        const { DatabaseManager } = require('../db/DatabaseManager');
+        const dbm = DatabaseManager.getInstance();
+        const note = dbm.getNote(noteId);
+        if (!note) {
+            console.log(`[RAGManager] indexNote: note ${noteId} not found`);
+            return;
+        }
+
+        // Always clear old chunks first (handles edits + emptied notes).
+        this.vectorStore.deleteChunksForSource(noteId);
+        this.clearQueueForSource(noteId);
+
+        const text = (note.contentText || '').trim();
+        if (!text) {
+            console.log(`[RAGManager] indexNote: note ${noteId} is empty, cleared from RAG`);
+            return;
+        }
+
+        const folderPath = dbm.getFolderPath(note.folderId);
+        const title = note.title || 'Untitled';
+        const sourceTitle = folderPath ? `${folderPath} / ${title}` : title;
+        const baseTs = Date.parse(note.updatedAt) || Date.now();
+
+        const chunks = chunkText(noteId, sourceTitle, text, baseTs);
+        if (chunks.length === 0) return;
+
+        this.vectorStore.saveChunks(chunks);
+        if (this.embeddingPipeline.isReady()) {
+            await this.embeddingPipeline.queueNote(noteId);
+        } else {
+            console.log('[RAGManager] indexNote: embeddings not ready; chunks saved, will embed later');
+        }
+        console.log(`[RAGManager] Indexed note ${noteId} (${chunks.length} chunks)`);
+    }
+
+    /** Remove a note's RAG data (chunks + queue). */
+    deleteNoteData(noteId: string): void {
+        this.vectorStore.deleteChunksForSource(noteId);
+        this.clearQueueForSource(noteId);
+    }
+
+    private clearQueueForSource(sourceId: string): void {
+        try {
+            this.db
+                .prepare('DELETE FROM embedding_queue WHERE source_id = ? OR meeting_id = ?')
+                .run(sourceId, sourceId);
+        } catch (e) {
+            /* non-fatal */
         }
     }
 

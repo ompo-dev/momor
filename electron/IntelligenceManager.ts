@@ -296,4 +296,16 @@ export class IntelligenceManager extends EventEmitter {
         this.session.reset();
         this.engine.reset();
     }
+
+    // ============================================
+    // Agent Bridge accessors
+    // ============================================
+
+    getSessionTracker(): SessionTracker {
+        return this.session;
+    }
+
+    getCurrentMeetingTitle(): string {
+        return (this.session as any).currentMeetingMetadata?.title ?? "Active Meeting";
+    }
 }

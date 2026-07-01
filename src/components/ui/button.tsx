@@ -4,20 +4,38 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+// Faithful port of Zed's button system (crates/ui button_like.rs). Zed buttons
+// are flat, compact and tight-cornered — no drop shadows. Zed's *emphasis*
+// button is a translucent "Tinted Accent" (NOT a solid fill); the default is
+// "Subtle" (transparent → faint ghost hover); "Outlined" carries a border_variant.
+// All variants keep a 1px border (transparent where Zed has none) so every
+// button shares the same box metrics.
+//   default     → Zed Tinted(Accent)   — the emphasized action
+//   filled      → Zed Filled           — neutral element fill
+//   outline     → Zed Outlined         — element bg + border_variant
+//   secondary   → Zed Subtle on element
+//   ghost       → Zed Subtle           — transparent, ghost hover
+//   destructive → Zed Tinted(Error)
+//   tinted      → Zed Tinted(Accent)   — explicit alias of default
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+          "border border-primary/25 bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/30",
+        filled:
+          "border border-transparent bg-secondary text-secondary-foreground hover:bg-accent active:bg-bg-item-active",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "border border-destructive/30 bg-destructive/15 text-destructive hover:bg-destructive/25 active:bg-destructive/30",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
+          "border border-border bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground hover:border-border-muted",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+          "border border-transparent bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground",
+        tinted:
+          "border border-primary/25 bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/30",
+        ghost:
+          "border border-transparent hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

@@ -220,7 +220,7 @@ export class EmbeddingPipeline {
         });
 
         queueAll();
-        
+
         // NOTE: Provider metadata is written on the first successful embedding
         // for this meeting (inside embedChunk), not here — to avoid marking a
         // meeting as embedded if the queue crashes before any work is done.
@@ -228,6 +228,36 @@ export class EmbeddingPipeline {
         console.log(`[EmbeddingPipeline] Queued ${chunks.length} chunks + 1 summary for meeting ${meetingId}`);
 
         // Start processing in background
+        this.processQueue().catch(err => {
+            console.error('[EmbeddingPipeline] Queue processing error:', err);
+        });
+    }
+
+    /**
+     * Queue a note's chunks for embedding. Notes have no summary row.
+     * Reuses the generic chunk-embedding path (embedChunk keys on chunk_id).
+     */
+    async queueNote(noteId: string): Promise<void> {
+        const chunks = this.vectorStore.getChunksWithoutEmbeddingsForSource(noteId);
+        if (chunks.length === 0) {
+            console.log(`[EmbeddingPipeline] No chunks to embed for note ${noteId}`);
+            return;
+        }
+
+        const insert = this.db.prepare(`
+            INSERT OR IGNORE INTO embedding_queue (meeting_id, chunk_id, status, source_type, source_id)
+            VALUES (?, ?, 'pending', 'note', ?)
+        `);
+
+        const queueAll = this.db.transaction(() => {
+            // meeting_id carries the note id as a placeholder (FK is not enforced);
+            // the per-chunk fallback logic keys off it. No summary row for notes.
+            for (const chunk of chunks) insert.run(noteId, chunk.id, noteId);
+        });
+
+        queueAll();
+        console.log(`[EmbeddingPipeline] Queued ${chunks.length} chunks for note ${noteId}`);
+
         this.processQueue().catch(err => {
             console.error('[EmbeddingPipeline] Queue processing error:', err);
         });

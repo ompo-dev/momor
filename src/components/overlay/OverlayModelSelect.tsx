@@ -66,7 +66,7 @@ export function OverlayModelSelect({
           size="sm"
           data-model-selector-toggle="true"
           className={cn(
-            "h-7 max-w-[140px] gap-1.5 rounded-lg px-2.5 text-xs font-medium",
+            "h-7 max-w-[140px] gap-1.5 rounded-md px-2.5 text-xs font-medium",
             className,
           )}
           style={controlStyle}

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { app } from "electron";
 import fs from "fs";
+import { randomUUID } from "crypto";
 import * as sqliteVec from "sqlite-vec";
 
 // Interfaces for our data objects
@@ -51,6 +52,76 @@ export interface Meeting {
   calendarEventId?: string;
   source?: "manual" | "calendar";
   isProcessed?: boolean;
+  folderId?: string | null;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  icon: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Note {
+  id: string;
+  folderId: string | null;
+  title: string;
+  icon: string | null; // emoji char OR an image data-URL/URL
+  cover: string | null; // cover banner image data-URL/URL
+  contentJson: string; // serialized BlockNote blocks
+  contentText: string; // markdown/plaintext mirror for search
+  sourceMeetingId: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type McpTransport = "stdio" | "sse" | "http";
+
+export interface McpServer {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command: string | null; // stdio
+  args: string[]; // stdio
+  env: Record<string, string>; // stdio
+  url: string | null; // sse / http
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string; // instructions injected into the agent
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Lightweight node used to build the workspace sidebar tree in one IPC call. */
+export interface WorkspaceTree {
+  folders: Folder[];
+  notes: Array<{
+    id: string;
+    folderId: string | null;
+    title: string;
+    icon: string | null;
+    sortOrder: number;
+    updatedAt: string;
+  }>;
+  meetings: Array<{
+    id: string;
+    folderId: string | null;
+    title: string;
+    date: string;
+    sortOrder: number;
+  }>;
 }
 
 export class DatabaseManager {
@@ -131,10 +202,480 @@ export class DatabaseManager {
       }
 
       this.runMigrations();
+      // Self-healing: guarantee the workspace schema exists on every boot,
+      // independent of user_version. A DB can end up stamped at v15 without the
+      // tables (interrupted/partial migration), and the version gate would then
+      // never re-create them. CREATE TABLE IF NOT EXISTS is cheap and idempotent.
+      this.ensureWorkspaceSchema();
+      // Generalize the RAG chunk tables to a (source_type, source_id) model so
+      // notes can be indexed alongside meetings. Idempotent + backfills.
+      this.ensureRagSourceColumns();
+      // Skills + MCP servers (configurable abilities surfaced in the sidebar).
+      this.ensureSkillsMcpSchema();
     } catch (error) {
       console.error("[DatabaseManager] Failed to initialize database:", error);
       throw error;
     }
+  }
+
+  /**
+   * Idempotently ensure the Notion-style workspace schema exists.
+   * Runs unconditionally after migrations so a partially-migrated DB self-heals.
+   */
+  private ensureWorkspaceSchema(): void {
+    if (!this.db) return;
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT,
+            icon TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(parent_id) REFERENCES folders(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS notes (
+            id TEXT PRIMARY KEY,
+            folder_id TEXT,
+            title TEXT NOT NULL DEFAULT 'Untitled',
+            icon TEXT,
+            cover TEXT,
+            content_json TEXT NOT NULL DEFAULT '[]',
+            content_text TEXT NOT NULL DEFAULT '',
+            source_meeting_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+        CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
+      `);
+
+      // notes.cover — add only if missing (DBs created before cover existed).
+      const noteCols = this.db
+        .prepare("PRAGMA table_info(notes)")
+        .all() as Array<{ name: string }>;
+      if (!noteCols.some((c) => c.name === "cover")) {
+        this.db.exec("ALTER TABLE notes ADD COLUMN cover TEXT");
+      }
+
+      // meetings.folder_id — add only if the column is missing.
+      const cols = this.db
+        .prepare("PRAGMA table_info(meetings)")
+        .all() as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === "folder_id")) {
+        this.db.exec("ALTER TABLE meetings ADD COLUMN folder_id TEXT");
+      }
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_meetings_folder ON meetings(folder_id);",
+      );
+      console.log("[DatabaseManager] Workspace schema ensured ✓");
+    } catch (e) {
+      console.error("[DatabaseManager] ensureWorkspaceSchema failed:", e);
+    }
+  }
+
+  /**
+   * Add (source_type, source_id, source_title) to the RAG chunk tables so the
+   * pipeline can index notes alongside meetings. Existing rows are meetings, so
+   * source_id is backfilled from meeting_id. Idempotent — runs every boot.
+   */
+  private ensureRagSourceColumns(): void {
+    if (!this.db) return;
+    const addCol = (table: string, col: string, type: string) => {
+      try {
+        const cols = this.db!.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+          name: string;
+        }>;
+        if (!cols.some((c) => c.name === col)) {
+          this.db!.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+        }
+      } catch (e) {
+        /* table may not exist yet on a brand-new DB before migrations created it */
+      }
+    };
+    try {
+      addCol("chunks", "source_type", "TEXT NOT NULL DEFAULT 'meeting'");
+      addCol("chunks", "source_id", "TEXT");
+      addCol("chunks", "source_title", "TEXT");
+      addCol("chunk_summaries", "source_type", "TEXT NOT NULL DEFAULT 'meeting'");
+      addCol("chunk_summaries", "source_id", "TEXT");
+      addCol("embedding_queue", "source_type", "TEXT NOT NULL DEFAULT 'meeting'");
+      addCol("embedding_queue", "source_id", "TEXT");
+
+      // Backfill source_id from meeting_id for legacy meeting rows.
+      this.db.exec(
+        "UPDATE chunks SET source_id = meeting_id WHERE source_id IS NULL AND meeting_id IS NOT NULL",
+      );
+      this.db.exec(
+        "UPDATE chunk_summaries SET source_id = meeting_id WHERE source_id IS NULL AND meeting_id IS NOT NULL",
+      );
+      this.db.exec(
+        "UPDATE embedding_queue SET source_id = meeting_id WHERE source_id IS NULL AND meeting_id IS NOT NULL",
+      );
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source_id)",
+      );
+      console.log("[DatabaseManager] RAG source columns ensured ✓");
+    } catch (e) {
+      console.error("[DatabaseManager] ensureRagSourceColumns failed:", e);
+    }
+  }
+
+  // ── Folder helpers for RAG scope + context ────────────────────
+
+  /** Human-readable folder path, e.g. "Projects / Lírio". Empty for root. */
+  public getFolderPath(folderId: string | null): string {
+    if (!this.db || !folderId) return "";
+    const names: string[] = [];
+    let current: string | null = folderId;
+    const guard = new Set<string>();
+    while (current) {
+      if (guard.has(current)) break;
+      guard.add(current);
+      const row = this.db
+        .prepare("SELECT name, parent_id FROM folders WHERE id = ?")
+        .get(current) as { name: string; parent_id: string | null } | undefined;
+      if (!row) break;
+      names.unshift(row.name);
+      current = row.parent_id;
+    }
+    return names.join(" / ");
+  }
+
+  /** All folder ids in the subtree rooted at folderId (inclusive). */
+  public getFolderSubtreeIds(folderId: string): string[] {
+    if (!this.db) return [];
+    const result: string[] = [];
+    const queue: string[] = [folderId];
+    const guard = new Set<string>();
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (guard.has(id)) continue;
+      guard.add(id);
+      result.push(id);
+      const kids = this.db
+        .prepare("SELECT id FROM folders WHERE parent_id = ?")
+        .all(id) as Array<{ id: string }>;
+      for (const k of kids) queue.push(k.id);
+    }
+    return result;
+  }
+
+  /** Note + meeting source ids filed anywhere under a folder subtree. */
+  public getSourceIdsInFolderSubtree(folderId: string): string[] {
+    if (!this.db) return [];
+    const folderIds = this.getFolderSubtreeIds(folderId);
+    if (folderIds.length === 0) return [];
+    const ph = folderIds.map(() => "?").join(",");
+    try {
+      const noteRows = this.db
+        .prepare(`SELECT id FROM notes WHERE folder_id IN (${ph})`)
+        .all(...folderIds) as Array<{ id: string }>;
+      const meetingRows = this.db
+        .prepare(`SELECT id FROM meetings WHERE folder_id IN (${ph})`)
+        .all(...folderIds) as Array<{ id: string }>;
+      return [...noteRows.map((r) => r.id), ...meetingRows.map((r) => r.id)];
+    } catch (e) {
+      console.error("[DatabaseManager] getSourceIdsInFolderSubtree failed:", e);
+      return [];
+    }
+  }
+
+  // ============================================
+  // Skills & MCP servers (configurable abilities)
+  // ============================================
+
+  private ensureSkillsMcpSchema(): void {
+    if (!this.db) return;
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS mcp_servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            transport TEXT NOT NULL DEFAULT 'stdio',
+            command TEXT,
+            args TEXT NOT NULL DEFAULT '[]',
+            env TEXT NOT NULL DEFAULT '{}',
+            url TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS skills (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log("[DatabaseManager] Skills/MCP schema ensured ✓");
+    } catch (e) {
+      console.error("[DatabaseManager] ensureSkillsMcpSchema failed:", e);
+    }
+  }
+
+  private mapMcpRow(row: any): McpServer {
+    const parseJson = <T,>(s: string | null, fallback: T): T => {
+      if (!s) return fallback;
+      try {
+        return JSON.parse(s) as T;
+      } catch {
+        return fallback;
+      }
+    };
+    return {
+      id: row.id,
+      name: row.name,
+      transport: (row.transport ?? "stdio") as McpTransport,
+      command: row.command ?? null,
+      args: parseJson<string[]>(row.args, []),
+      env: parseJson<Record<string, string>>(row.env, {}),
+      url: row.url ?? null,
+      enabled: row.enabled !== 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getMcpServers(): McpServer[] {
+    if (!this.db) return [];
+    try {
+      const rows = this.db
+        .prepare("SELECT * FROM mcp_servers ORDER BY created_at ASC")
+        .all() as any[];
+      return rows.map((r) => this.mapMcpRow(r));
+    } catch (e) {
+      console.error("[DatabaseManager] getMcpServers failed:", e);
+      return [];
+    }
+  }
+
+  public createMcpServer(input: {
+    name: string;
+    transport?: McpTransport;
+    command?: string | null;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string | null;
+    enabled?: boolean;
+  }): McpServer | null {
+    if (!this.db) return null;
+    try {
+      const id = `mcp_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO mcp_servers (id, name, transport, command, args, env, url, enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.name,
+          input.transport ?? "stdio",
+          input.command ?? null,
+          JSON.stringify(input.args ?? []),
+          JSON.stringify(input.env ?? {}),
+          input.url ?? null,
+          input.enabled === false ? 0 : 1,
+        );
+      const row = this.db
+        .prepare("SELECT * FROM mcp_servers WHERE id = ?")
+        .get(id) as any;
+      return row ? this.mapMcpRow(row) : null;
+    } catch (e) {
+      console.error("[DatabaseManager] createMcpServer failed:", e);
+      return null;
+    }
+  }
+
+  public updateMcpServer(
+    id: string,
+    updates: {
+      name?: string;
+      transport?: McpTransport;
+      command?: string | null;
+      args?: string[];
+      env?: Record<string, string>;
+      url?: string | null;
+      enabled?: boolean;
+    },
+  ): boolean {
+    if (!this.db) return false;
+    try {
+      const sets: string[] = [];
+      const params: any[] = [];
+      const push = (col: string, val: any) => {
+        sets.push(`${col} = ?`);
+        params.push(val);
+      };
+      if (updates.name !== undefined) push("name", updates.name);
+      if (updates.transport !== undefined) push("transport", updates.transport);
+      if (updates.command !== undefined) push("command", updates.command);
+      if (updates.args !== undefined) push("args", JSON.stringify(updates.args));
+      if (updates.env !== undefined) push("env", JSON.stringify(updates.env));
+      if (updates.url !== undefined) push("url", updates.url);
+      if (updates.enabled !== undefined) push("enabled", updates.enabled ? 1 : 0);
+      if (sets.length === 0) return false;
+      sets.push("updated_at = datetime('now')");
+      params.push(id);
+      const info = this.db
+        .prepare(`UPDATE mcp_servers SET ${sets.join(", ")} WHERE id = ?`)
+        .run(...params);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] updateMcpServer failed:", e);
+      return false;
+    }
+  }
+
+  public deleteMcpServer(id: string): boolean {
+    if (!this.db) return false;
+    try {
+      return this.db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id)
+        .changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] deleteMcpServer failed:", e);
+      return false;
+    }
+  }
+
+  /** Enabled MCP servers as a claude-style { name: configEntry } map. */
+  public getEnabledMcpServersConfig(): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const s of this.getMcpServers()) {
+      if (!s.enabled) continue;
+      if (s.transport === "stdio") {
+        if (!s.command) continue;
+        out[s.name] = {
+          command: s.command,
+          args: s.args,
+          ...(Object.keys(s.env).length ? { env: s.env } : {}),
+        };
+      } else {
+        if (!s.url) continue;
+        out[s.name] = { type: s.transport, url: s.url };
+      }
+    }
+    return out;
+  }
+
+  // ── Skills ────────────────────────────────────────────────────
+
+  private mapSkillRow(row: any): Skill {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      content: row.content ?? "",
+      enabled: row.enabled !== 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getSkills(): Skill[] {
+    if (!this.db) return [];
+    try {
+      const rows = this.db
+        .prepare("SELECT * FROM skills ORDER BY created_at ASC")
+        .all() as any[];
+      return rows.map((r) => this.mapSkillRow(r));
+    } catch (e) {
+      console.error("[DatabaseManager] getSkills failed:", e);
+      return [];
+    }
+  }
+
+  public createSkill(input: {
+    name: string;
+    description?: string;
+    content?: string;
+    enabled?: boolean;
+  }): Skill | null {
+    if (!this.db) return null;
+    try {
+      const id = `skill_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO skills (id, name, description, content, enabled)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.name,
+          input.description ?? "",
+          input.content ?? "",
+          input.enabled === false ? 0 : 1,
+        );
+      const row = this.db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as any;
+      return row ? this.mapSkillRow(row) : null;
+    } catch (e) {
+      console.error("[DatabaseManager] createSkill failed:", e);
+      return null;
+    }
+  }
+
+  public updateSkill(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      content?: string;
+      enabled?: boolean;
+    },
+  ): boolean {
+    if (!this.db) return false;
+    try {
+      const sets: string[] = [];
+      const params: any[] = [];
+      if (updates.name !== undefined) {
+        sets.push("name = ?");
+        params.push(updates.name);
+      }
+      if (updates.description !== undefined) {
+        sets.push("description = ?");
+        params.push(updates.description);
+      }
+      if (updates.content !== undefined) {
+        sets.push("content = ?");
+        params.push(updates.content);
+      }
+      if (updates.enabled !== undefined) {
+        sets.push("enabled = ?");
+        params.push(updates.enabled ? 1 : 0);
+      }
+      if (sets.length === 0) return false;
+      sets.push("updated_at = datetime('now')");
+      params.push(id);
+      const info = this.db
+        .prepare(`UPDATE skills SET ${sets.join(", ")} WHERE id = ?`)
+        .run(...params);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] updateSkill failed:", e);
+      return false;
+    }
+  }
+
+  public deleteSkill(id: string): boolean {
+    if (!this.db) return false;
+    try {
+      return this.db.prepare("DELETE FROM skills WHERE id = ?").run(id).changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] deleteSkill failed:", e);
+      return false;
+    }
+  }
+
+  /** Enabled skills, for injection into the agent system prompt. */
+  public getEnabledSkills(): Skill[] {
+    return this.getSkills().filter((s) => s.enabled && s.content.trim());
   }
 
   // ============================================
@@ -845,6 +1386,57 @@ export class DatabaseManager {
                 INSERT OR IGNORE INTO profile_custom_notes (id, content) VALUES (1, '');
             `);
       this.db.pragma("user_version = 14");
+    }
+
+    // Version 14 → 15: Notion-style workspace — folders (nested) + standalone notes,
+    // and a folder_id column on meetings so meetings can be filed into folders too.
+    if (version < 15) {
+      console.log(
+        "[DatabaseManager] Applying migration v14 → v15: Add folders + notes (workspace)",
+      );
+      this.db.exec(`
+                CREATE TABLE IF NOT EXISTS folders (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    parent_id TEXT,
+                    icon TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(parent_id) REFERENCES folders(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS notes (
+                    id TEXT PRIMARY KEY,
+                    folder_id TEXT,
+                    title TEXT NOT NULL DEFAULT 'Untitled',
+                    icon TEXT,
+                    content_json TEXT NOT NULL DEFAULT '[]',
+                    content_text TEXT NOT NULL DEFAULT '',
+                    source_meeting_id TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+                CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
+            `);
+      // meetings.folder_id — guarded, since a fresh install may add it differently later.
+      try {
+        this.db.exec("ALTER TABLE meetings ADD COLUMN folder_id TEXT");
+      } catch (e) {
+        /* Column already exists */
+      }
+      try {
+        this.db.exec(
+          "CREATE INDEX IF NOT EXISTS idx_meetings_folder ON meetings(folder_id);",
+        );
+      } catch (e) {
+        /* ignore */
+      }
+      this.db.pragma("user_version = 15");
     }
 
     console.log("[DatabaseManager] Migrations completed.");
@@ -1670,6 +2262,376 @@ export class DatabaseManager {
     });
   }
 
+  // ============================================
+  // Workspace: Folders & Notes (Notion-style)
+  // ============================================
+
+  private mapFolderRow(row: any): Folder {
+    return {
+      id: row.id,
+      name: row.name,
+      parentId: row.parent_id ?? null,
+      icon: row.icon ?? null,
+      sortOrder: row.sort_order ?? 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private mapNoteRow(row: any): Note {
+    return {
+      id: row.id,
+      folderId: row.folder_id ?? null,
+      title: row.title,
+      icon: row.icon ?? null,
+      cover: row.cover ?? null,
+      contentJson: row.content_json ?? "[]",
+      contentText: row.content_text ?? "",
+      sourceMeetingId: row.source_meeting_id ?? null,
+      sortOrder: row.sort_order ?? 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ── Folders ───────────────────────────────────────────────────
+
+  public getFolders(): Folder[] {
+    if (!this.db) return [];
+    try {
+      const rows = this.db
+        .prepare("SELECT * FROM folders ORDER BY sort_order ASC, created_at ASC")
+        .all() as any[];
+      return rows.map((r) => this.mapFolderRow(r));
+    } catch (e) {
+      console.error("[DatabaseManager] getFolders failed:", e);
+      return [];
+    }
+  }
+
+  public createFolder(input: {
+    name: string;
+    parentId?: string | null;
+    icon?: string | null;
+    sortOrder?: number;
+  }): Folder | null {
+    if (!this.db) return null;
+    try {
+      const id = `folder_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO folders (id, name, parent_id, icon, sort_order)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.name,
+          input.parentId ?? null,
+          input.icon ?? null,
+          input.sortOrder ?? 0,
+        );
+      const row = this.db
+        .prepare("SELECT * FROM folders WHERE id = ?")
+        .get(id) as any;
+      return row ? this.mapFolderRow(row) : null;
+    } catch (e) {
+      console.error("[DatabaseManager] createFolder failed:", e);
+      return null;
+    }
+  }
+
+  public renameFolder(id: string, name: string, icon?: string | null): boolean {
+    if (!this.db) return false;
+    try {
+      const info =
+        icon === undefined
+          ? this.db
+              .prepare(
+                "UPDATE folders SET name = ?, updated_at = datetime('now') WHERE id = ?",
+              )
+              .run(name, id)
+          : this.db
+              .prepare(
+                "UPDATE folders SET name = ?, icon = ?, updated_at = datetime('now') WHERE id = ?",
+              )
+              .run(name, icon, id);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] renameFolder failed:", e);
+      return false;
+    }
+  }
+
+  /** Detects whether `candidateParentId` is `folderId` itself or a descendant of it. */
+  private isFolderDescendant(
+    folderId: string,
+    candidateParentId: string,
+  ): boolean {
+    if (!this.db) return false;
+    let current: string | null = candidateParentId;
+    const guard = new Set<string>();
+    while (current) {
+      if (current === folderId) return true;
+      if (guard.has(current)) break; // cycle safety
+      guard.add(current);
+      const row = this.db
+        .prepare("SELECT parent_id FROM folders WHERE id = ?")
+        .get(current) as any;
+      current = row?.parent_id ?? null;
+    }
+    return false;
+  }
+
+  public setFolderParent(
+    id: string,
+    parentId: string | null,
+    sortOrder: number,
+  ): boolean {
+    if (!this.db) return false;
+    // Block moving a folder into itself or one of its own descendants (would orphan a subtree).
+    if (parentId && this.isFolderDescendant(id, parentId)) {
+      console.warn(
+        `[DatabaseManager] setFolderParent rejected: ${parentId} is inside ${id}`,
+      );
+      return false;
+    }
+    try {
+      const info = this.db
+        .prepare(
+          "UPDATE folders SET parent_id = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .run(parentId, sortOrder, id);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] setFolderParent failed:", e);
+      return false;
+    }
+  }
+
+  public deleteFolder(id: string): boolean {
+    if (!this.db) return false;
+    try {
+      // Child folders cascade (FK ON DELETE CASCADE). Notes/meetings filed here
+      // fall back to root (folder_id → NULL) instead of being deleted, so users
+      // never lose content by removing an organizational folder.
+      const run = this.db.transaction(() => {
+        const childFolders = this.db!.prepare(
+          "SELECT id FROM folders WHERE parent_id = ?",
+        ).all(id) as Array<{ id: string }>;
+        for (const child of childFolders) this.deleteFolder(child.id);
+        this.db!.prepare("UPDATE notes SET folder_id = NULL WHERE folder_id = ?").run(id);
+        this.db!.prepare("UPDATE meetings SET folder_id = NULL WHERE folder_id = ?").run(id);
+        this.db!.prepare("DELETE FROM folders WHERE id = ?").run(id);
+      });
+      run();
+      return true;
+    } catch (e) {
+      console.error("[DatabaseManager] deleteFolder failed:", e);
+      return false;
+    }
+  }
+
+  // ── Notes ─────────────────────────────────────────────────────
+
+  public getNote(id: string): Note | null {
+    if (!this.db) return null;
+    try {
+      const row = this.db
+        .prepare("SELECT * FROM notes WHERE id = ?")
+        .get(id) as any;
+      return row ? this.mapNoteRow(row) : null;
+    } catch (e) {
+      console.error("[DatabaseManager] getNote failed:", e);
+      return null;
+    }
+  }
+
+  public createNote(input: {
+    title?: string;
+    folderId?: string | null;
+    icon?: string | null;
+    contentJson?: string;
+    contentText?: string;
+    sourceMeetingId?: string | null;
+    sortOrder?: number;
+  }): Note | null {
+    if (!this.db) return null;
+    try {
+      const id = `note_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO notes (id, folder_id, title, icon, content_json, content_text, source_meeting_id, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.folderId ?? null,
+          input.title ?? "Untitled",
+          input.icon ?? null,
+          input.contentJson ?? "[]",
+          input.contentText ?? "",
+          input.sourceMeetingId ?? null,
+          input.sortOrder ?? 0,
+        );
+      return this.getNote(id);
+    } catch (e) {
+      console.error("[DatabaseManager] createNote failed:", e);
+      return null;
+    }
+  }
+
+  public updateNote(
+    id: string,
+    updates: {
+      title?: string;
+      icon?: string | null;
+      cover?: string | null;
+      contentJson?: string;
+      contentText?: string;
+    },
+  ): boolean {
+    if (!this.db) return false;
+    try {
+      const sets: string[] = [];
+      const params: any[] = [];
+      if (updates.title !== undefined) {
+        sets.push("title = ?");
+        params.push(updates.title);
+      }
+      if (updates.icon !== undefined) {
+        sets.push("icon = ?");
+        params.push(updates.icon);
+      }
+      if (updates.cover !== undefined) {
+        sets.push("cover = ?");
+        params.push(updates.cover);
+      }
+      if (updates.contentJson !== undefined) {
+        sets.push("content_json = ?");
+        params.push(updates.contentJson);
+      }
+      if (updates.contentText !== undefined) {
+        sets.push("content_text = ?");
+        params.push(updates.contentText);
+      }
+      if (sets.length === 0) return false;
+      sets.push("updated_at = datetime('now')");
+      params.push(id);
+      const info = this.db
+        .prepare(`UPDATE notes SET ${sets.join(", ")} WHERE id = ?`)
+        .run(...params);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] updateNote failed:", e);
+      return false;
+    }
+  }
+
+  public moveNote(
+    id: string,
+    folderId: string | null,
+    sortOrder: number,
+  ): boolean {
+    if (!this.db) return false;
+    try {
+      const info = this.db
+        .prepare(
+          "UPDATE notes SET folder_id = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .run(folderId, sortOrder, id);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] moveNote failed:", e);
+      return false;
+    }
+  }
+
+  public deleteNote(id: string): boolean {
+    if (!this.db) return false;
+    try {
+      const info = this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] deleteNote failed:", e);
+      return false;
+    }
+  }
+
+  /** Lightweight literal search over note titles + plaintext mirror. */
+  public searchNotes(query: string, limit: number = 20): Note[] {
+    if (!this.db) return [];
+    const q = query.trim();
+    if (!q) return [];
+    try {
+      const like = `%${q}%`;
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM notes WHERE title LIKE ? OR content_text LIKE ?
+           ORDER BY updated_at DESC LIMIT ?`,
+        )
+        .all(like, like, limit) as any[];
+      return rows.map((r) => this.mapNoteRow(r));
+    } catch (e) {
+      console.error("[DatabaseManager] searchNotes failed:", e);
+      return [];
+    }
+  }
+
+  // ── Meeting filing ────────────────────────────────────────────
+
+  public setMeetingFolder(id: string, folderId: string | null): boolean {
+    if (!this.db) return false;
+    try {
+      const info = this.db
+        .prepare("UPDATE meetings SET folder_id = ? WHERE id = ?")
+        .run(folderId, id);
+      return info.changes > 0;
+    } catch (e) {
+      console.error("[DatabaseManager] setMeetingFolder failed:", e);
+      return false;
+    }
+  }
+
+  // ── Unified tree ──────────────────────────────────────────────
+
+  public getWorkspaceTree(): WorkspaceTree {
+    if (!this.db) return { folders: [], notes: [], meetings: [] };
+    try {
+      const folders = this.getFolders();
+      const noteRows = this.db
+        .prepare(
+          "SELECT id, folder_id, title, icon, sort_order, updated_at FROM notes ORDER BY sort_order ASC, updated_at DESC",
+        )
+        .all() as any[];
+      const meetingRows = this.db
+        .prepare(
+          "SELECT id, folder_id, title, created_at FROM meetings ORDER BY created_at DESC",
+        )
+        .all() as any[];
+      return {
+        folders,
+        notes: noteRows.map((r) => ({
+          id: r.id,
+          folderId: r.folder_id ?? null,
+          title: r.title,
+          icon: r.icon ?? null,
+          sortOrder: r.sort_order ?? 0,
+          updatedAt: r.updated_at,
+        })),
+        meetings: meetingRows.map((r) => ({
+          id: r.id,
+          folderId: r.folder_id ?? null,
+          title: r.title,
+          date: r.created_at,
+          sortOrder: 0,
+        })),
+      };
+    } catch (e) {
+      console.error("[DatabaseManager] getWorkspaceTree failed:", e);
+      return { folders: [], notes: [], meetings: [] };
+    }
+  }
+
   public clearAllData(): boolean {
     if (!this.db) return false;
 
@@ -1684,6 +2646,13 @@ export class DatabaseManager {
         this.db!.exec("DELETE FROM ai_interactions");
         this.db!.exec("DELETE FROM transcripts");
         this.db!.exec("DELETE FROM meetings");
+        // Workspace tables (guarded: pre-v15 DBs won't have them)
+        try {
+          this.db!.exec("DELETE FROM notes");
+        } catch (_) {}
+        try {
+          this.db!.exec("DELETE FROM folders");
+        } catch (_) {}
       })();
 
       console.log("[DatabaseManager] All data cleared from database.");
