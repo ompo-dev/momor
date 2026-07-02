@@ -12,6 +12,7 @@ export interface McpServer {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  source: "openclaude" | "momor";
 }
 
 export interface Skill {
@@ -22,6 +23,7 @@ export interface Skill {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  source: "openclaude" | "momor";
 }
 
 const MCPS_KEY = ["mcp-servers"] as const;

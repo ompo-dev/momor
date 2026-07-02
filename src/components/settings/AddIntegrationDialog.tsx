@@ -29,7 +29,7 @@ export function AddIntegrationDialog({
 }: AddIntegrationDialogProps) {
   const { t } = useTranslation();
   const available = (Object.keys(INTEGRATION_META) as IntegrationId[]).filter(
-    (id) => !hiddenIds.includes(id),
+    (id) => !hiddenIds.includes(id) && !INTEGRATION_META[id].hidden,
   );
 
   return (

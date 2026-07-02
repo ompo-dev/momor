@@ -1504,6 +1504,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     model: string;
   }) => ipcRenderer.invoke("setOpenClaudeConfig", config),
   getOpenClaudeConfig: () => ipcRenderer.invoke("getOpenClaudeConfig"),
+  getOpenClaudeStatus: () => ipcRenderer.invoke("openclaude:status"),
+  installOpenClaude: () => ipcRenderer.invoke("openclaude:install"),
   testOpenClaudeConnection: () =>
     ipcRenderer.invoke("testOpenClaudeConnection"),
   startCliOAuthLogin: (payload: {
@@ -1515,12 +1517,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openClaudeAuthLogout: (cliPath?: string) =>
     ipcRenderer.invoke("openclaude-auth-logout", cliPath),
   getOpenClaudeModels: () => ipcRenderer.invoke("get-openclaude-models"),
+  onOpenClaudeInstallProgress: (callback: (line: string) => void) => {
+    const sub = (_event: Electron.IpcRendererEvent, line: string) =>
+      callback(line);
+    ipcRenderer.on("openclaude-install-progress", sub);
+    return () => ipcRenderer.removeListener("openclaude-install-progress", sub);
+  },
   getmomorUsage: () => ipcRenderer.invoke("get-momor-usage"),
   getStoredCredentials: () => ipcRenderer.invoke("get-stored-credentials"),
 
   // Permissions
   checkPermissions: () => ipcRenderer.invoke("permissions:check"),
   requestMicPermission: () => ipcRenderer.invoke("permissions:request-mic"),
+  openScreenCaptureSettings: () =>
+    ipcRenderer.invoke("permissions:open-screen-capture-settings"),
 
   // STT Provider Management
   setSttProvider: (

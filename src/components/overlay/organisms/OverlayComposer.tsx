@@ -55,6 +55,7 @@ export default function OverlayComposer({
   onToggleMousePassthrough,
   appearance,
 }: Props) {
+  const mentionAnchorRef = React.useRef<HTMLDivElement>(null);
   const {
     inputValue,
     stealthTapActive,
@@ -119,9 +120,14 @@ export default function OverlayComposer({
       style={appearance.inputStyle}
     >
       {attachedCount === 0 && (
-        <div className="relative" data-stealth-engage="true">
+        <div
+          ref={mentionAnchorRef}
+          className="relative"
+          data-stealth-engage="true"
+        >
           {mention && (
             <MentionPopup
+              anchorRef={mentionAnchorRef}
               trigger={mention.trigger}
               items={mentionItems}
               activeIndex={mentionIndex}
@@ -178,7 +184,7 @@ export default function OverlayComposer({
         </div>
 
         {/* RIGHT: selectors + send */}
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
           <OverlayModelSelect
             currentModel={currentModel}
             onSelect={onSelectModel}

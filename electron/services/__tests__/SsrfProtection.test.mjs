@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'path';
+import path from 'node:path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,124 +11,80 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-/**
- * ISSUE 3 (P1): Custom cURL provider SSRF Protection
- *
- * The chatWithCurl function accepts a URL template from the cURL command and
- * performs variable substitution, then passes the resulting URL directly to axios
- * without validating it against internal/private address ranges.
- *
- * This allows SSRF attacks where an attacker could target:
- * - localhost (127.0.0.1, ::1)
- * - link-local (169.254.0.0/16)
- * - private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
- *
- * Fix: Add URL validation before making the request.
- */
-
-test('chatWithCurl validates URL against SSRF-protected address ranges', () => {
+test('custom provider execution no longer happens directly inside LLMHelper', () => {
   const source = read('electron/LLMHelper.ts');
 
-  // Find the chatWithCurl function
-  const chatWithCurlStart = source.indexOf('public async chatWithCurl(');
-  assert.ok(chatWithCurlStart >= 0, 'chatWithCurl function should exist');
-
-  // Extract the function body
-  const functionEnd = source.indexOf(/\n\s*\}/, chatWithCurlStart);
-  const nextFunction = source.indexOf('\n  public ', chatWithCurlStart + 10);
-  const functionBody = source.slice(chatWithCurlStart, nextFunction > -1 && nextFunction < functionEnd ? nextFunction : functionEnd);
-
-  // The function should validate URLs before making requests
-  // Look for SSRF protection patterns:
-  // - URL validation function imported or defined
-  // - isPrivate/isLocal check before axios call
-  // - hostname/IP extraction and range checking
-
-  const hasSSRFProtection =
-    /validateUrl|isPrivateUrl|isBlockedHost|checkUrlSafety|isInternalIp|isLoopback|isLinkLocal/.test(functionBody) ||
-    /url\.startsWith\(['"]https:\/\//.test(functionBody) || // HTTPS enforcement
-    /(hostname|host)\s*===\s*['"]127\.0\.0\.1['"|\s]/.test(functionBody) || // explicit localhost check
-    /\/\.\.\/|\.\.\\/.test(functionBody); // path traversal check
-
-  assert.ok(hasSSRFProtection, 'chatWithCurl should have SSRF protection (URL validation against private/internal ranges)');
+  assert.equal(
+    source.includes('public async chatWithCurl('),
+    false,
+    'legacy direct cURL execution should be removed from LLMHelper',
+  );
+  assert.equal(
+    source.includes('private async *streamWithCustom('),
+    false,
+    'legacy custom-provider streaming path should be removed from LLMHelper',
+  );
+  assert.equal(
+    source.includes('executeCustomProvider('),
+    false,
+    'LLMHelper should not execute custom provider requests directly anymore',
+  );
+  assert.ok(
+    source.includes('extractOpenClaudeCurlConfig('),
+    'custom provider configs should still be parsed for OpenClaude env wiring',
+  );
 });
 
-test('URL validation function exists for SSRF protection', () => {
+test('extractOpenClaudeCurlConfig is parse-only and does not issue network calls', () => {
   const source = read('electron/LLMHelper.ts');
-  const curlUtils = read('electron/utils/curlUtils.ts');
 
-  const combinedSource = source + '\n' + curlUtils;
+  const start = source.indexOf('private extractOpenClaudeCurlConfig(');
+  assert.ok(start >= 0, 'extractOpenClaudeCurlConfig should exist');
 
-  // Should have a function to validate URLs
-  const hasUrlValidation =
-    /function\s+validate(Ssrf|Url|Hostname|UrlSafety)/.test(combinedSource) ||
-    /const\s+validate(Ssrf|Url|Hostname|UrlSafety)/.test(combinedSource) ||
-    /export\s+(function|const)\s+(validateSsrf|validateUrl|isPrivateUrl|isBlockedHost)/.test(combinedSource);
+  const end = source.indexOf('\n  private resolveOpenClaudeInvocation(', start);
+  assert.ok(end > start, 'extractOpenClaudeCurlConfig should end before resolveOpenClaudeInvocation');
 
-  assert.ok(hasUrlValidation, 'Should have a URL validation function for SSRF protection');
+  const body = source.slice(start, end);
+
+  assert.ok(body.includes('curl2Json('), 'the helper should parse the cURL command');
+  assert.equal(body.includes('axios('), false, 'the helper should not call axios');
+  assert.equal(body.includes('fetch('), false, 'the helper should not call fetch');
 });
 
-test('axios call in chatWithCurl uses validated URL', () => {
-  const source = read('electron/LLMHelper.ts');
+test('curlUtils exports SSRF URL validation helper', () => {
+  const source = read('electron/utils/curlUtils.ts');
 
-  const chatWithCurlStart = source.indexOf('public async chatWithCurl(');
-  const nextFunction = source.indexOf('\n  public ', chatWithCurlStart + 10);
-  const functionBody = source.slice(chatWithCurlStart, nextFunction > -1 ? nextFunction : chatWithCurlStart + 3000);
-
-  // The axios call should be preceded by URL validation
-  const axiosIndex = functionBody.indexOf('axios({');
-  assert.ok(axiosIndex >= 0, 'axios call should exist in chatWithCurl');
-
-  // Check that there's validation before axios
-  const beforeAxios = functionBody.slice(0, axiosIndex);
-  const hasValidation =
-    /validate|check|isPrivate|isBlocked|isLocal|isLoopback|hostname/.test(beforeAxios) ||
-    /url\.startsWith|https:\/\//.test(beforeAxios);
-
-  assert.ok(hasValidation, 'URL should be validated before axios call');
+  assert.match(
+    source,
+    /export function validateUrlForSsrf/,
+    'validateUrlForSsrf should remain available for cURL validation flows',
+  );
 });
 
-test('path traversal is blocked in URL variable substitution', () => {
-  const source = read('electron/LLMHelper.ts');
+test('validateUrlForSsrf source covers private, loopback, and unsafe URL patterns', () => {
+  const source = read('electron/utils/curlUtils.ts');
 
-  const chatWithCurlStart = source.indexOf('public async chatWithCurl(');
-  const nextFunction = source.indexOf('\n  public ', chatWithCurlStart + 10);
-  const functionBody = source.slice(chatWithCurlStart, nextFunction > -1 ? nextFunction : chatWithCurlStart + 3000);
-
-  // Check that URL variable replacement doesn't allow path traversal
-  // The url should not contain ../ after variable replacement
-  const urlReplacementIndex = functionBody.indexOf('deepVariableReplacer(curlConfig.url');
-  assert.ok(urlReplacementIndex >= 0, 'URL should be processed through variable replacer');
-
-  // After URL replacement, there should be a validation step
-  const afterReplacement = functionBody.slice(urlReplacementIndex);
-  const hasValidationAfterReplacement =
-    /validate|check|isPrivate|isBlocked|isLocal/.test(afterReplacement.slice(0, afterReplacement.indexOf('axios(')));
-
-  assert.ok(hasValidationAfterReplacement, 'URL should be validated after variable replacement');
-});
-
-test('blocked SSRF hosts are explicitly rejected', () => {
-  const source = read('electron/LLMHelper.ts');
-  const curlUtils = read('electron/utils/curlUtils.ts');
-  const combined = source + '\n' + curlUtils;
-
-  // Check for blocked host patterns
-  const blockedPatterns = [
-    'localhost', '127.0.0.1', '0.0.0.0', '::1',
-    '169.254', 'link-local',
-    '10.', '172.16', '192.168'
+  const requiredSnippets = [
+    'localhost',
+    '127.0.0.1',
+    '::1',
+    '0.0.0.0',
+    '169.254.',
+    "hostname.startsWith('10.')",
+    "hostname.startsWith('192.168.')",
+    'secondOctet >= 16 && secondOctet <= 31',
+    "urlString.startsWith('//')",
+    "urlString.toLowerCase().startsWith('data:')",
+    "urlString.toLowerCase().startsWith('file:')",
+    "urlString.toLowerCase().startsWith('javascript:')",
+    "url.protocol !== 'https:'",
+    "urlString.includes('/../')",
   ];
 
-  const hasBlockedHosts = blockedPatterns.some(pattern =>
-    /isBlocked|isPrivate|isLocal|blockList|denyList/.test(combined) &&
-    combined.includes(pattern)
-  );
-
-  // Alternative: check for IP range validation
-  const hasIPRangeValidation =
-    /parseInt|Number\(.*\)\s*[<>]/.test(combined) ||
-    /ip2int|ipToNumber|isInRange/.test(combined);
-
-  assert.ok(hasBlockedHosts || hasIPRangeValidation, 'Should block SSRF targets: localhost, private ranges, link-local');
+  for (const snippet of requiredSnippets) {
+    assert.ok(
+      source.includes(snippet),
+      `validateUrlForSsrf should cover ${snippet}`,
+    );
+  }
 });

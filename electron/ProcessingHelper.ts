@@ -116,6 +116,23 @@ export class ProcessingHelper {
       this.llmHelper.setmomorKey(momorKey);
     }
 
+    try {
+      const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
+      const detectedOpenClaudePath =
+        OpenClaudeManager.getInstance().status().path || undefined;
+      this.llmHelper.setOpenClaudeConfig({
+        enabled: credManager.isOpenClaudeEnabled(),
+        executablePath:
+          credManager.getOpenClaudeCliPath()?.trim() || detectedOpenClaudePath,
+        model: credManager.getOpenClaudeModel() || undefined,
+      });
+    } catch (e: any) {
+      console.warn(
+        "[ProcessingHelper] Failed to hydrate OpenClaude config from CredentialsManager:",
+        e?.message,
+      );
+    }
+
     // CRITICAL: Re-initialize IntelligenceManager now that keys are loaded
     // This fixes the issue where buttons don't work in production because of late key loading
     this.appState.getIntelligenceManager().initializeLLMs();

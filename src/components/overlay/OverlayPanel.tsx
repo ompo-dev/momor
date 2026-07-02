@@ -27,6 +27,7 @@ import AttachedScreenshotPreview from "./molecules/AttachedScreenshotPreview";
 import RollingTranscript from "../ui/RollingTranscript";
 import GlassEffectLayer from "../ui/GlassEffectLayer";
 import { DynamicActionBar } from "../dynamic-actions/DynamicActionBar";
+import { Button } from "../ui/button";
 import type { DynamicActionPayload } from "../../types/electron";
 
 interface OverlayPanelProps {
@@ -79,6 +80,12 @@ interface OverlayPanelProps {
   userRollingTranscriptPreview: any;
 }
 
+type AgentPermissionRequest = {
+  id: string;
+  tool: string;
+  input: Record<string, unknown>;
+};
+
 /** Overlay render tree (presentational). All logic lives in MomorInterface hooks. */
 export default function OverlayPanel({
   overlayPanelClass,
@@ -129,6 +136,8 @@ export default function OverlayPanel({
   textInputRef,
   userRollingTranscriptPreview,
 }: OverlayPanelProps) {
+  const [permissionRequest, setPermissionRequest] =
+    useState<AgentPermissionRequest | null>(null);
   const {
     setAttachedContext,
     setInputValue,
@@ -165,6 +174,37 @@ export default function OverlayPanel({
     systemAudioWarning,
     voiceInput,
   } = useOverlayStore();
+
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onAgentPermissionRequest?.((data) => {
+      setPermissionRequest(data);
+    });
+    return () => cleanup?.();
+  }, []);
+
+  useEffect(() => {
+    const cleanups = [
+      window.electronAPI?.onGeminiStreamDone?.(() => setPermissionRequest(null)),
+      window.electronAPI?.onGeminiStreamError?.(() => setPermissionRequest(null)),
+      window.electronAPI?.onAgentStreamDone?.(() => setPermissionRequest(null)),
+      window.electronAPI?.onAgentStreamError?.(() => setPermissionRequest(null)),
+    ].filter(Boolean) as Array<() => void>;
+    return () => cleanups.forEach((fn) => fn());
+  }, []);
+
+  const respondPermission = useCallback(
+    (allow: boolean) => {
+      if (!permissionRequest) return;
+      void window.electronAPI?.agentRespondPermission?.({
+        id: permissionRequest.id,
+        allow,
+        message: allow ? undefined : "Denied by user",
+      });
+      setPermissionRequest(null);
+    },
+    [permissionRequest],
+  );
+
   return (
     <div
       ref={contentRef}
@@ -443,6 +483,60 @@ export default function OverlayPanel({
                   appearance={appearance}
                 />
               </div>
+
+              <AnimatePresence>
+                {permissionRequest && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-[70] flex items-center justify-center bg-black/55 p-4"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.96, y: 8 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.98, y: 4 }}
+                      className="w-full max-w-[420px] rounded-2xl border overlay-shell-surface p-5 shadow-2xl"
+                    >
+                      <div className="text-[14px] font-semibold overlay-text-primary">
+                        Permitir a acao do agente?
+                      </div>
+                      <div className="mt-1 text-[12px] overlay-text-secondary">
+                        O agente quer usar{" "}
+                        <span className="font-mono overlay-text-primary">
+                          {permissionRequest.tool}
+                        </span>
+                        .
+                      </div>
+                      {Object.keys(permissionRequest.input || {}).length > 0 && (
+                        <pre className="mt-3 max-h-40 overflow-y-auto rounded-xl border overlay-subtle-surface px-3 py-2 font-mono text-[11px] overlay-text-secondary whitespace-pre-wrap">
+                          {JSON.stringify(permissionRequest.input, null, 2).slice(
+                            0,
+                            900,
+                          )}
+                        </pre>
+                      )}
+                      <div className="mt-4 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => respondPermission(false)}
+                        >
+                          Negar
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => respondPermission(true)}
+                        >
+                          Permitir
+                        </Button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </motion.div>
         )}

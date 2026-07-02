@@ -12,7 +12,6 @@
 // intentionally lazy-import LLMHelper so tests can replace this registry
 // without booting the whole LLM stack.
 
-import fs from "node:fs/promises";
 import type {
   VisionProviderConfig,
   VisionInvocationParams,
@@ -85,7 +84,7 @@ function buildConfiguredVisionProvider(
       supportsVision: true,
       scopeAllowsScreenshots: true,
       hint: "ollama",
-      invoke: async (p) => callOllamaVision(baseUrl, ollamaModel, p),
+      invoke: async (p) => callConfiguredVision(`ollama-${ollamaModel}`, p),
     };
   }
 
@@ -315,7 +314,7 @@ function ollama(
     supportsVision: isVisionModel,
     scopeAllowsScreenshots: true,
     hint: "ollama",
-    invoke: async (p) => callOllamaVision(baseUrl!, ollamaModel!, p),
+    invoke: async (p) => callConfiguredVision(`ollama-${ollamaModel!}`, p),
   };
 }
 
@@ -439,61 +438,6 @@ async function callLLMHelperVision(
     params.systemPrompt,
     params.optimized.path,
   );
-}
-
-/**
- * Call a local Ollama vision model. Uses the OpenAI-compatible /v1/chat/completions
- * endpoint at `${baseUrl}/v1/` with an image_url data URL — supported by every
- * vision-capable Ollama model we care about (llava family, qwen2.5-vl, etc.).
- */
-async function callOllamaVision(
-  baseUrl: string,
-  model: string,
-  params: VisionInvocationParams,
-): Promise<string> {
-  const { optimized, systemPrompt, userPrompt, signal } = params;
-  const data = await fs.readFile(optimized.path);
-  const dataUrl = `data:${optimized.mimeType};base64,${data.toString("base64")}`;
-  const trimmedBase = baseUrl.replace(/\/+$/, "");
-  const url = `${trimmedBase}/v1/chat/completions`;
-
-  const body = {
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          { type: "image_url", image_url: { url: dataUrl } },
-        ],
-      },
-    ],
-    stream: false,
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    // Surface a classifiable error so VisionProviderFallbackChain can bucket it.
-    throw new Error(`Ollama ${res.status}: ${text.substring(0, 200)}`);
-  }
-
-  const json: any = await res.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part: any) => (typeof part === "string" ? part : part?.text || ""))
-      .join("");
-  }
-  throw new Error("Ollama returned empty content");
 }
 
 /**

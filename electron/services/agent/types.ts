@@ -70,6 +70,13 @@ export interface AgentRunOptions {
   signal?: AbortSignal;
 }
 
+/** How much agency the CLI gets this turn. */
+export type AgentToolMode =
+  /** Plain LLM: tools disabled — fast, structured (meeting assist / tiny prompts). */
+  | "plain"
+  /** Full agent: tools/MCP/skills/filesystem active (free-form chat). */
+  | "agentic";
+
 /** Everything an adapter needs to build a spawn, resolved by the orchestrator. */
 export interface AdapterContext {
   executablePath: string;
@@ -80,6 +87,10 @@ export interface AdapterContext {
   mcpConfigPath?: string;
   /** Fully-qualified MCP tool name for fine-grained approval prompts, when enabled. */
   approvalToolName?: string;
+  /** Provider env vars (openclaude backend selection) merged over process.env. */
+  providerEnv?: Record<string, string>;
+  /** Tool agency for this turn. Defaults to "agentic". */
+  toolMode?: AgentToolMode;
 }
 
 export interface AgentSpawnSpec {

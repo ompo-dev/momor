@@ -184,6 +184,7 @@ const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                 id: m.id,
                 name: m.name,
                 enabled: m.enabled,
+                source: m.source,
               }))}
               selectedId={selectedId}
               compositePrefix="mcp"
@@ -198,6 +199,7 @@ const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                 id: s.id,
                 name: s.name,
                 enabled: s.enabled,
+                source: s.source,
               }))}
               selectedId={selectedId}
               compositePrefix="skill"

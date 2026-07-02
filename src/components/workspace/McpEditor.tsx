@@ -225,6 +225,18 @@ const McpForm: React.FC<{ server: McpServer; onDeleted: () => void }> = ({
           </div>
         </div>
 
+        <div
+          className={`rounded-md border px-3 py-2 text-[12px] ${
+            server.source === "openclaude"
+              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          }`}
+        >
+          {server.source === "openclaude"
+            ? "This MCP server is synced and will be available in the next agentic chat."
+            : "This is a local Momor draft. Fill in a valid command or URL and save to publish it for agentic chats."}
+        </div>
+
         <div className="flex items-center justify-between">
           <label className={`${label} mb-0`}>{t("workspace.transport")}</label>
           <button

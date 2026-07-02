@@ -16,6 +16,7 @@ export interface OpenClaudeRunOptions {
   timeoutMs?: number;
   imagePaths?: string[];
   signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface OpenClaudeAuthStatus {
@@ -432,9 +433,10 @@ export class OpenClaudeService {
 
     return new Promise<string>((resolve, reject) => {
       const proc = spawn(cmd, args, {
-        env: { ...process.env },
+        env: { ...process.env, ...(options.env ?? {}) },
         stdio: ["pipe", "pipe", "pipe"],
         shell: process.platform === "win32",
+        windowsHide: true,
       });
 
       let stdout = "";

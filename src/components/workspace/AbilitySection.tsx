@@ -6,6 +6,7 @@ interface AbilityItem {
   id: string;
   name: string;
   enabled: boolean;
+  source: "openclaude" | "momor";
 }
 
 interface AbilitySectionProps {
@@ -93,6 +94,21 @@ const AbilitySection: React.FC<AbilitySectionProps> = ({
                   <span className="shrink-0 text-text-secondary">{icon}</span>
                   <span className="flex-1 min-w-0 truncate text-[13px] text-text-primary">
                     {item.name || "Untitled"}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                      item.source === "openclaude"
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                    )}
+                    title={
+                      item.source === "openclaude"
+                        ? "Synced and ready"
+                        : "Legacy Momor draft"
+                    }
+                  >
+                    {item.source === "openclaude" ? "Synced" : "Draft"}
                   </span>
                 </button>
               );

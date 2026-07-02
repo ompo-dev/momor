@@ -5,7 +5,7 @@
  * Invocation:
  *   [node] cli.mjs --print --output-format stream-json --verbose
  *     --include-partial-messages --model <m> --mcp-config <tmp.json>
- *     [--append-system-prompt <s>] [--resume <sessionId>] [permission flags]
+ *     [--resume <sessionId>] [permission flags]
  *
  * The prompt is written to stdin (claude -p reads stdin when no inline prompt
  * is given) so user text never goes through shell quoting.
@@ -19,6 +19,7 @@
  *   {type:"result",...}                                → done (cost, session)
  */
 
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
@@ -32,6 +33,14 @@ import {
 } from "./types";
 import { permissionArgsForClaude } from "./PermissionEngine";
 
+/**
+ * Built-in Claude-Code tools blocked in "plain" mode so meeting-assist turns
+ * behave like a raw LLM call (no filesystem/exec/agent loop) — fast, and the
+ * output stays parseable structured text. Verified against the openclaude fork.
+ */
+const PLAIN_MODE_DISALLOWED_TOOLS =
+  "Bash Edit Write Read Glob Grep WebFetch WebSearch NotebookEdit Task TodoWrite";
+
 function contentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -41,6 +50,67 @@ function contentToText(content: unknown): string {
       .join("\n");
   }
   return content == null ? "" : String(content);
+}
+
+function imageMimeTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    default:
+      return "image/png";
+  }
+}
+
+function buildPromptWithSystemContext(
+  prompt: string,
+  systemPrompt?: string,
+): string {
+  if (!systemPrompt?.trim()) return prompt;
+  return `<system-context>\n${systemPrompt.trim()}\n</system-context>\n\n${prompt}`;
+}
+
+function buildStructuredPrompt(
+  prompt: string,
+  imagePaths?: string[],
+  systemPrompt?: string,
+): string {
+  const textPrompt = buildPromptWithSystemContext(prompt, systemPrompt);
+  const content: Array<Record<string, unknown>> = [
+    { type: "text", text: textPrompt },
+  ];
+
+  for (const imagePath of imagePaths ?? []) {
+    if (!imagePath || !fs.existsSync(imagePath)) continue;
+    try {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: imageMimeTypeFromPath(imagePath),
+          data: fs.readFileSync(imagePath).toString("base64"),
+        },
+      });
+    } catch {
+      // Ignore unreadable images and keep the text turn alive.
+    }
+  }
+
+  return (
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: content.length === 1 ? textPrompt : content,
+      },
+      parent_tool_use_id: null,
+    }) + "\n"
+  );
 }
 
 export class ClaudeCodeAdapter implements AgentAdapter {
@@ -54,12 +124,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   defaultPaths(): string[] {
     if (this.provider === "openclaude") {
-      return [
-        "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs",
-        path.join(os.homedir(), ".npm", "openclaude", "dist", "cli.mjs"),
-        path.join(os.homedir(), "AppData", "Roaming", "npm", "openclaude.cmd"),
-        "openclaude",
-      ];
+      // Delegate to the manager (npm-global resolution + install-on-demand);
+      // fall back to bare command if it can't resolve a concrete path.
+      try {
+        const { OpenClaudeManager } = require("../../openclaude/OpenClaudeManager");
+        const resolved = OpenClaudeManager.getInstance().resolvePath();
+        return resolved ? [resolved] : ["openclaude"];
+      } catch {
+        return ["openclaude"];
+      }
     }
     return [
       path.join(os.homedir(), ".local", "bin", "claude"),
@@ -80,6 +153,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       "--verbose",
       "--include-partial-messages",
     );
+    const useStructuredInput = (options.imagePaths?.length ?? 0) > 0;
+    if (useStructuredInput) {
+      args.push("--input-format=stream-json");
+    }
 
     // Zed-style model handling: the CLI runs with ITS OWN configured default
     // model (the user may have it pointed at DeepSeek, a local model, etc.).
@@ -87,11 +164,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const model = options.model || ctx.model;
     if (model) args.push("--model", model);
 
-    if (ctx.mcpConfigPath) {
+    // Plain mode (meeting assist / tiny prompts): disable tools so openclaude
+    // answers like a raw LLM — no MCP config, no agent loop.
+    const plainMode = ctx.toolMode === "plain";
+    if (ctx.mcpConfigPath && !plainMode) {
       args.push("--mcp-config", ctx.mcpConfigPath);
     }
-    if (options.systemPrompt) {
-      args.push("--append-system-prompt", options.systemPrompt);
+    if (plainMode) {
+      args.push("--disallowed-tools", PLAIN_MODE_DISALLOWED_TOOLS);
     }
     if (options.cliSessionId) {
       args.push("--resume", options.cliSessionId);
@@ -109,13 +189,22 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // ELECTRON_RUN_AS_NODE makes Electron behave as plain Node for the child —
     // without it, launching cli.mjs would open another app instance and the
     // agent would silently "do nothing".
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    // Provider selection for openclaude is driven purely by env vars (Anthropic
+    // key / CLAUDE_CODE_USE_OPENAI + OpenAI-compat / Gemini). ctx.providerEnv is
+    // resolved from the user's Momor integration settings and layered on top.
+    const env: NodeJS.ProcessEnv = { ...process.env, ...(ctx.providerEnv ?? {}) };
     if (isNodeScript) env.ELECTRON_RUN_AS_NODE = "1";
 
     return {
       cmd,
       args,
-      stdinPrompt: options.prompt,
+      stdinPrompt: useStructuredInput
+        ? buildStructuredPrompt(
+            options.prompt,
+            options.imagePaths,
+            options.systemPrompt,
+          )
+        : buildPromptWithSystemContext(options.prompt, options.systemPrompt),
       cwd: ctx.workspaceDir,
       env,
       useShell,

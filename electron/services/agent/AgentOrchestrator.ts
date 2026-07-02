@@ -51,6 +51,12 @@ export interface OrchestratorRunInput {
   meetingId?: string;
   meetingTitle?: string;
   signal?: AbortSignal;
+  /** Screenshot/image paths for multimodal turns. */
+  imagePaths?: string[];
+  /** Provider env vars (openclaude backend) resolved by the caller. */
+  providerEnv?: Record<string, string>;
+  /** Tool agency: "plain" (LLM only) or "agentic" (tools/MCP). Default agentic. */
+  toolMode?: "plain" | "agentic";
   /** UI approval bridge for permission asks (ACP + claude prompt tool). */
   onPermissionRequest?: (
     req: AcpPermissionRequest,
@@ -232,8 +238,14 @@ export class AgentOrchestrator {
     // Stop any prior run.
     this.cancel();
 
-    // Inject enabled skills into the system prompt for every transport (ACP + adapters).
-    const skillsBlock = this.buildSkillsSystemBlock();
+    // Inject enabled skills into free-form agentic turns only. Structured/plain
+    // turns stay lean, and callers that already appended a skills block won't
+    // get it duplicated here.
+    const skillsBlock =
+      input.toolMode === "plain" ||
+      input.systemPrompt?.includes("# Available skills")
+        ? ""
+        : this.buildSkillsSystemBlock();
     const effectiveSystemPrompt =
       [input.systemPrompt, skillsBlock].filter(Boolean).join("\n\n---\n\n") ||
       undefined;
@@ -267,6 +279,27 @@ export class AgentOrchestrator {
     const provider = agentId as AgentProvider;
     const adapter = buildAdapter(provider);
 
+    if (provider === "openclaude") {
+      try {
+        const { OpenClaudeManager } = require("../../openclaude/OpenClaudeManager");
+        const status = await OpenClaudeManager.getInstance().ensureInstalled();
+        if (!status.installed) {
+          yield {
+            type: "error",
+            error:
+              "OpenClaude is not installed and automatic installation failed.",
+          };
+          return;
+        }
+      } catch (err: any) {
+        yield {
+          type: "error",
+          error: `OpenClaude install failed: ${err?.message ?? "unknown error"}`,
+        };
+        return;
+      }
+    }
+
     const executablePath = this.resolveExecutable(
       provider,
       settings.executablePaths?.[provider],
@@ -285,9 +318,10 @@ export class AgentOrchestrator {
     // a model they have no key for makes the agent fail silently.
     const model = input.model || settings.model || "";
 
-    // MCP injection per provider capability.
+    // MCP injection per provider capability. Skipped in plain mode — a raw-LLM
+    // turn (meeting assist) has no tools, so there's nothing to wire.
     let mcpConfigPath: string | undefined;
-    if (adapter.capabilities.mcp === "flag") {
+    if (adapter.capabilities.mcp === "flag" && input.toolMode !== "plain") {
       mcpConfigPath = this.writeClaudeMcpConfig();
     } else if (adapter.capabilities.mcp === "config-file") {
       const mcpUrl = `http://127.0.0.1:${MEETING_MCP_PORT}/sse`;
@@ -310,6 +344,8 @@ export class AgentOrchestrator {
       workspaceDir,
       permissionMode,
       mcpConfigPath,
+      providerEnv: input.providerEnv,
+      toolMode: input.toolMode,
       approvalToolName:
         settings.approvalsEnabled !== false && adapter.capabilities.finePermissionPrompt
           ? APPROVAL_TOOL_NAME
@@ -321,6 +357,7 @@ export class AgentOrchestrator {
       systemPrompt: input.systemPrompt,
       model,
       meetingId: input.meetingId,
+      imagePaths: input.imagePaths,
       cliSessionId: input.meetingId
         ? this.sessionByMeeting.get(input.meetingId)
         : undefined,

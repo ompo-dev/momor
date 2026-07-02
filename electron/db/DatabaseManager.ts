@@ -4,6 +4,7 @@ import { app } from "electron";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import * as sqliteVec from "sqlite-vec";
+import { OpenClaudeConfig } from "../openclaude/OpenClaudeConfig";
 
 // Interfaces for our data objects
 export interface Meeting {
@@ -80,6 +81,7 @@ export interface Note {
 }
 
 export type McpTransport = "stdio" | "sse" | "http";
+export type AbilitySource = "openclaude" | "momor";
 
 export interface McpServer {
   id: string;
@@ -92,6 +94,7 @@ export interface McpServer {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  source: AbilitySource;
 }
 
 export interface Skill {
@@ -102,6 +105,7 @@ export interface Skill {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  source: AbilitySource;
 }
 
 /** Lightweight node used to build the workspace sidebar tree in one IPC call. */
@@ -441,20 +445,147 @@ export class DatabaseManager {
       enabled: row.enabled !== 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      source: "momor",
     };
   }
 
-  public getMcpServers(): McpServer[] {
+  private getStoredMcpServers(): McpServer[] {
     if (!this.db) return [];
+    const rows = this.db
+      .prepare("SELECT * FROM mcp_servers ORDER BY created_at ASC")
+      .all() as any[];
+    return rows.map((r) => this.mapMcpRow(r));
+  }
+
+  public getMcpServers(): McpServer[] {
     try {
-      const rows = this.db
-        .prepare("SELECT * FROM mcp_servers ORDER BY created_at ASC")
-        .all() as any[];
-      return rows.map((r) => this.mapMcpRow(r));
+      const overlayRows = this.getStoredMcpServers();
+      const openClaudeServers = OpenClaudeConfig.getInstance().listMcpServers();
+      const overlayByName = new Map<string, McpServer>();
+      for (const row of overlayRows) {
+        const key = normalizeAbilityName(row.name);
+        if (!overlayByName.has(key)) {
+          overlayByName.set(key, row);
+        }
+      }
+
+      const merged = openClaudeServers.map((server) => {
+        const overlay = overlayByName.get(normalizeAbilityName(server.name));
+        return {
+          id: overlay?.id ?? syntheticAbilityId("mcp", server.name),
+          name: server.name,
+          transport: server.transport,
+          command: server.command,
+          args: server.args,
+          env: server.env,
+          url: server.url,
+          enabled: overlay?.enabled ?? server.enabled,
+          createdAt: overlay?.createdAt ?? server.createdAt,
+          updatedAt: overlay?.updatedAt ?? server.updatedAt,
+          source: "openclaude" as const,
+        };
+      });
+
+      const openClaudeNames = new Set(
+        openClaudeServers.map((server) => normalizeAbilityName(server.name)),
+      );
+      const legacyRows = overlayRows.filter(
+        (row) => !openClaudeNames.has(normalizeAbilityName(row.name)),
+      );
+
+      return [...merged, ...legacyRows];
     } catch (e) {
       console.error("[DatabaseManager] getMcpServers failed:", e);
       return [];
     }
+  }
+
+  private saveMcpOverlay(server: McpServer): void {
+    if (!this.db) return;
+    const existing = this.db
+      .prepare("SELECT id FROM mcp_servers WHERE id = ?")
+      .get(server.id) as { id: string } | undefined;
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE mcp_servers
+             SET name = ?,
+                 transport = ?,
+                 command = ?,
+                 args = ?,
+                 env = ?,
+                 url = ?,
+                 enabled = ?,
+                 updated_at = datetime('now')
+           WHERE id = ?`,
+        )
+        .run(
+          server.name,
+          server.transport,
+          server.command,
+          JSON.stringify(server.args),
+          JSON.stringify(server.env),
+          server.url,
+          server.enabled ? 1 : 0,
+          server.id,
+        );
+      return;
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO mcp_servers (id, name, transport, command, args, env, url, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        server.id,
+        server.name,
+        server.transport,
+        server.command,
+        JSON.stringify(server.args),
+        JSON.stringify(server.env),
+        server.url,
+        server.enabled ? 1 : 0,
+      );
+  }
+
+  private syncMcpWithOpenClaude(
+    previousName: string | null,
+    next: Pick<
+      McpServer,
+      "name" | "transport" | "command" | "args" | "env" | "url"
+    >,
+  ): void {
+    const config = OpenClaudeConfig.getInstance();
+    const isValid =
+      next.transport === "stdio"
+        ? Boolean(next.command?.trim())
+        : Boolean(next.url?.trim());
+
+    if (previousName && normalizeAbilityName(previousName) !== normalizeAbilityName(next.name)) {
+      config.removeMcpServer(previousName);
+    }
+
+    if (!isValid) {
+      if (previousName && normalizeAbilityName(previousName) === normalizeAbilityName(next.name)) {
+        config.removeMcpServer(previousName);
+      }
+      return;
+    }
+
+    if (next.transport === "stdio") {
+      config.installMcpServer(next.name, {
+        command: next.command!.trim(),
+        args: next.args,
+        env: next.env,
+      });
+      return;
+    }
+
+    config.installMcpServer(next.name, {
+      type: next.transport,
+      url: next.url!.trim(),
+    });
   }
 
   public createMcpServer(input: {
@@ -469,25 +600,23 @@ export class DatabaseManager {
     if (!this.db) return null;
     try {
       const id = `mcp_${randomUUID()}`;
-      this.db
-        .prepare(
-          `INSERT INTO mcp_servers (id, name, transport, command, args, env, url, enabled)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id,
-          input.name,
-          input.transport ?? "stdio",
-          input.command ?? null,
-          JSON.stringify(input.args ?? []),
-          JSON.stringify(input.env ?? {}),
-          input.url ?? null,
-          input.enabled === false ? 0 : 1,
-        );
-      const row = this.db
-        .prepare("SELECT * FROM mcp_servers WHERE id = ?")
-        .get(id) as any;
-      return row ? this.mapMcpRow(row) : null;
+      const server: McpServer = {
+        id,
+        name: (input.name ?? "mcp").trim() || "mcp",
+        transport: input.transport ?? "stdio",
+        command: typeof input.command === "string" ? input.command.trim() || null : null,
+        args: input.args ?? [],
+        env: input.env ?? {},
+        url: typeof input.url === "string" ? input.url.trim() || null : null,
+        enabled: input.enabled !== false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: "momor",
+      };
+
+      this.syncMcpWithOpenClaude(null, server);
+      this.saveMcpOverlay(server);
+      return this.getMcpServers().find((item) => item.id === id) ?? server;
     } catch (e) {
       console.error("[DatabaseManager] createMcpServer failed:", e);
       return null;
@@ -506,28 +635,35 @@ export class DatabaseManager {
       enabled?: boolean;
     },
   ): boolean {
-    if (!this.db) return false;
     try {
-      const sets: string[] = [];
-      const params: any[] = [];
-      const push = (col: string, val: any) => {
-        sets.push(`${col} = ?`);
-        params.push(val);
+      const current = this.getMcpServers().find((item) => item.id === id);
+      if (!current) return false;
+
+      const next: McpServer = {
+        ...current,
+        name:
+          updates.name !== undefined
+            ? updates.name.trim() || current.name
+            : current.name,
+        transport: updates.transport ?? current.transport,
+        command:
+          updates.command !== undefined
+            ? updates.command?.trim() || null
+            : current.command,
+        args: updates.args ?? current.args,
+        env: updates.env ?? current.env,
+        url:
+          updates.url !== undefined ? updates.url?.trim() || null : current.url,
+        enabled: updates.enabled ?? current.enabled,
+        updatedAt: new Date().toISOString(),
       };
-      if (updates.name !== undefined) push("name", updates.name);
-      if (updates.transport !== undefined) push("transport", updates.transport);
-      if (updates.command !== undefined) push("command", updates.command);
-      if (updates.args !== undefined) push("args", JSON.stringify(updates.args));
-      if (updates.env !== undefined) push("env", JSON.stringify(updates.env));
-      if (updates.url !== undefined) push("url", updates.url);
-      if (updates.enabled !== undefined) push("enabled", updates.enabled ? 1 : 0);
-      if (sets.length === 0) return false;
-      sets.push("updated_at = datetime('now')");
-      params.push(id);
-      const info = this.db
-        .prepare(`UPDATE mcp_servers SET ${sets.join(", ")} WHERE id = ?`)
-        .run(...params);
-      return info.changes > 0;
+
+      this.syncMcpWithOpenClaude(
+        current.source === "openclaude" ? current.name : null,
+        next,
+      );
+      this.saveMcpOverlay({ ...next, source: "momor" });
+      return true;
     } catch (e) {
       console.error("[DatabaseManager] updateMcpServer failed:", e);
       return false;
@@ -535,10 +671,17 @@ export class DatabaseManager {
   }
 
   public deleteMcpServer(id: string): boolean {
-    if (!this.db) return false;
     try {
-      return this.db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id)
-        .changes > 0;
+      const current =
+        this.getMcpServers().find((item) => item.id === id) ??
+        this.getStoredMcpServers().find((item) => item.id === id);
+      const removedOpenClaude = current
+        ? OpenClaudeConfig.getInstance().removeMcpServer(current.name)
+        : false;
+      const removedOverlay = this.db
+        ? this.db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id).changes > 0
+        : false;
+      return removedOpenClaude || removedOverlay;
     } catch (e) {
       console.error("[DatabaseManager] deleteMcpServer failed:", e);
       return false;
@@ -576,20 +719,111 @@ export class DatabaseManager {
       enabled: row.enabled !== 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      source: "momor",
     };
   }
 
-  public getSkills(): Skill[] {
+  private getStoredSkills(): Skill[] {
     if (!this.db) return [];
+    const rows = this.db
+      .prepare("SELECT * FROM skills ORDER BY created_at ASC")
+      .all() as any[];
+    return rows.map((r) => this.mapSkillRow(r));
+  }
+
+  public getSkills(): Skill[] {
     try {
-      const rows = this.db
-        .prepare("SELECT * FROM skills ORDER BY created_at ASC")
-        .all() as any[];
-      return rows.map((r) => this.mapSkillRow(r));
+      const overlayRows = this.getStoredSkills();
+      const openClaudeSkills = OpenClaudeConfig.getInstance().listSkills();
+      const overlayByName = new Map<string, Skill>();
+      for (const row of overlayRows) {
+        const key = normalizeAbilityName(row.name);
+        if (!overlayByName.has(key)) {
+          overlayByName.set(key, row);
+        }
+      }
+
+      const merged = openClaudeSkills.map((skill) => {
+        const overlay = overlayByName.get(normalizeAbilityName(skill.name));
+        return {
+          id: overlay?.id ?? syntheticAbilityId("skill", skill.name),
+          name: skill.name,
+          description: skill.description,
+          content: skill.content,
+          enabled: overlay?.enabled ?? skill.enabled,
+          createdAt: overlay?.createdAt ?? skill.createdAt,
+          updatedAt: overlay?.updatedAt ?? skill.updatedAt,
+          source: "openclaude" as const,
+        };
+      });
+
+      const openClaudeNames = new Set(
+        openClaudeSkills.map((skill) => normalizeAbilityName(skill.name)),
+      );
+      const legacyRows = overlayRows.filter(
+        (row) => !openClaudeNames.has(normalizeAbilityName(row.name)),
+      );
+
+      return [...merged, ...legacyRows];
     } catch (e) {
       console.error("[DatabaseManager] getSkills failed:", e);
       return [];
     }
+  }
+
+  private saveSkillOverlay(skill: Skill): void {
+    if (!this.db) return;
+    const existing = this.db
+      .prepare("SELECT id FROM skills WHERE id = ?")
+      .get(skill.id) as { id: string } | undefined;
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE skills
+             SET name = ?,
+                 description = ?,
+                 content = ?,
+                 enabled = ?,
+                 updated_at = datetime('now')
+           WHERE id = ?`,
+        )
+        .run(
+          skill.name,
+          skill.description,
+          skill.content,
+          skill.enabled ? 1 : 0,
+          skill.id,
+        );
+      return;
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO skills (id, name, description, content, enabled)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        skill.id,
+        skill.name,
+        skill.description,
+        skill.content,
+        skill.enabled ? 1 : 0,
+      );
+  }
+
+  private syncSkillWithOpenClaude(
+    previousName: string | null,
+    next: Pick<Skill, "name" | "description" | "content">,
+  ): void {
+    const config = OpenClaudeConfig.getInstance();
+    if (previousName && normalizeAbilityName(previousName) !== normalizeAbilityName(next.name)) {
+      config.removeSkill(previousName);
+    }
+    config.installSkill({
+      name: next.name,
+      description: next.description,
+      content: next.content,
+    });
   }
 
   public createSkill(input: {
@@ -598,23 +832,22 @@ export class DatabaseManager {
     content?: string;
     enabled?: boolean;
   }): Skill | null {
-    if (!this.db) return null;
     try {
       const id = `skill_${randomUUID()}`;
-      this.db
-        .prepare(
-          `INSERT INTO skills (id, name, description, content, enabled)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id,
-          input.name,
-          input.description ?? "",
-          input.content ?? "",
-          input.enabled === false ? 0 : 1,
-        );
-      const row = this.db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as any;
-      return row ? this.mapSkillRow(row) : null;
+      const skill: Skill = {
+        id,
+        name: (input.name ?? "skill").trim() || "skill",
+        description: input.description ?? "",
+        content: input.content ?? "",
+        enabled: input.enabled !== false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: "momor",
+      };
+
+      this.syncSkillWithOpenClaude(null, skill);
+      this.saveSkillOverlay(skill);
+      return this.getSkills().find((item) => item.id === id) ?? skill;
     } catch (e) {
       console.error("[DatabaseManager] createSkill failed:", e);
       return null;
@@ -630,33 +863,28 @@ export class DatabaseManager {
       enabled?: boolean;
     },
   ): boolean {
-    if (!this.db) return false;
     try {
-      const sets: string[] = [];
-      const params: any[] = [];
-      if (updates.name !== undefined) {
-        sets.push("name = ?");
-        params.push(updates.name);
-      }
-      if (updates.description !== undefined) {
-        sets.push("description = ?");
-        params.push(updates.description);
-      }
-      if (updates.content !== undefined) {
-        sets.push("content = ?");
-        params.push(updates.content);
-      }
-      if (updates.enabled !== undefined) {
-        sets.push("enabled = ?");
-        params.push(updates.enabled ? 1 : 0);
-      }
-      if (sets.length === 0) return false;
-      sets.push("updated_at = datetime('now')");
-      params.push(id);
-      const info = this.db
-        .prepare(`UPDATE skills SET ${sets.join(", ")} WHERE id = ?`)
-        .run(...params);
-      return info.changes > 0;
+      const current = this.getSkills().find((item) => item.id === id);
+      if (!current) return false;
+
+      const next: Skill = {
+        ...current,
+        name:
+          updates.name !== undefined
+            ? updates.name.trim() || current.name
+            : current.name,
+        description: updates.description ?? current.description,
+        content: updates.content ?? current.content,
+        enabled: updates.enabled ?? current.enabled,
+        updatedAt: new Date().toISOString(),
+      };
+
+      this.syncSkillWithOpenClaude(
+        current.source === "openclaude" ? current.name : null,
+        next,
+      );
+      this.saveSkillOverlay({ ...next, source: "momor" });
+      return true;
     } catch (e) {
       console.error("[DatabaseManager] updateSkill failed:", e);
       return false;
@@ -664,9 +892,17 @@ export class DatabaseManager {
   }
 
   public deleteSkill(id: string): boolean {
-    if (!this.db) return false;
     try {
-      return this.db.prepare("DELETE FROM skills WHERE id = ?").run(id).changes > 0;
+      const current =
+        this.getSkills().find((item) => item.id === id) ??
+        this.getStoredSkills().find((item) => item.id === id);
+      const removedOpenClaude = current
+        ? OpenClaudeConfig.getInstance().removeSkill(current.name)
+        : false;
+      const removedOverlay = this.db
+        ? this.db.prepare("DELETE FROM skills WHERE id = ?").run(id).changes > 0
+        : false;
+      return removedOpenClaude || removedOverlay;
     } catch (e) {
       console.error("[DatabaseManager] deleteSkill failed:", e);
       return false;
@@ -2919,4 +3155,18 @@ momor.contact@gmail.com`;
     this.saveMeeting(demoMeeting, today.getTime(), durationMs);
     console.log("[DatabaseManager] Seeded demo meeting.");
   }
+}
+
+function normalizeAbilityName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function syntheticAbilityId(kind: "mcp" | "skill", name: string): string {
+  const slug =
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || kind;
+  return `openclaude-${kind}:${slug}`;
 }

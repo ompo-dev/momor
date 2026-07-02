@@ -82,30 +82,18 @@ test("routeLLMProviders keeps providers available when scopes are allowed", asyn
   );
 });
 
-test("LLMHelper guards every outbound provider with assertOutboundScopes", () => {
+test("LLMHelper guards outbound OpenClaude turns with assertOutboundScopes", () => {
   const src = read("electron/LLMHelper.ts");
 
-  for (const guardSite of [
-    "this.assertOutboundScopes('groq'",
-    "this.assertOutboundScopes('openai'",
-    "this.assertOutboundScopes('claude'",
-    "this.assertOutboundScopes('gemini'",
-    "this.assertOutboundScopes('momor'",
-    "this.assertOutboundScopes('custom_curl'",
-    "this.assertOutboundScopes('custom_provider'",
-  ]) {
-    assert.ok(
-      src.includes(guardSite),
-      `LLMHelper missing scope guard for ${guardSite}`,
-    );
-  }
+  assert.match(src, /this\.assertOutboundScopes\(/);
+  assert.match(src, /invocation\.scopeProvider/);
 });
 
-test("LLMHelper passes data scopes and policy to routeLLMProviders for fallback rotation", () => {
+test("LLMHelper routes chat through OpenClaude instead of routeLLMProviders fallback rotation", () => {
   const src = read("electron/LLMHelper.ts");
 
-  assert.match(src, /dataScopes: outboundScopes/);
-  assert.match(src, /scopePolicy,/);
+  assert.doesNotMatch(src, /routeLLMProviders\(/);
+  assert.match(src, /yield\* this\.streamWithOpenClaude\(/);
 });
 
 test("Embedding provider resolver fails closed when embeddings scope is denied", () => {
@@ -139,14 +127,14 @@ test("IPC handlers expose get/set provider-data-scopes and broadcast updates", (
   const ipc = read("electron/ipcHandlers.ts");
 
   assert.match(ipc, /safeHandle\("get-provider-data-scopes"/);
-  assert.match(ipc, /safeHandle\("set-provider-data-scopes"/);
+  assert.match(ipc, /safeHandle\(\s*"set-provider-data-scopes"/);
   assert.match(
     ipc,
-    /webContents\.send\('provider-data-scopes-changed', sanitized\)/,
+    /webContents\.send\("provider-data-scopes-changed", sanitized\)/,
   );
   assert.match(
     ipc,
-    /SettingsManager\.getInstance\(\)\.set\('providerDataScopes'/,
+    /SettingsManager\.getInstance\(\)\.set\("providerDataScopes"/,
   );
 });
 
@@ -157,26 +145,25 @@ test("preload and renderer types expose provider data scope controls", () => {
   assert.match(preload, /getProviderDataScopes:/);
   assert.match(preload, /setProviderDataScopes:/);
   assert.match(preload, /onProviderDataScopesChanged:/);
-  assert.match(preload, /ipcRenderer\.invoke\('get-provider-data-scopes'\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("get-provider-data-scopes"\)/);
   assert.match(
     preload,
-    /ipcRenderer\.invoke\('set-provider-data-scopes', scopes\)/,
+    /ipcRenderer\.invoke\("set-provider-data-scopes", scopes\)/,
   );
 
   assert.match(types, /getProviderDataScopes:\s*\(\)\s*=>\s*Promise/);
   assert.match(types, /setProviderDataScopes:\s*\(scopes:/);
 });
 
-test("SettingsOverlay renders cloud provider data scope controls wired to real IPC", () => {
-  const src = read("src/components/SettingsOverlay.tsx");
+test("GeneralSettingsTab wires provider data scope controls to real IPC", () => {
+  const src = read("src/components/settings/GeneralSettingsTab.tsx");
 
-  assert.match(src, /Cloud provider data scopes/);
   assert.match(
     src,
     /getProviderDataScopes\?\.\(\)\.then\(setProviderDataScopes\)/,
   );
-  assert.match(src, /setProviderDataScopes\?\.\(next\)/);
-  assert.match(src, /onProviderDataScopesChanged\(setProviderDataScopes\)/);
+  assert.match(src, /window\.electronAPI\?\.setProviderDataScopes\?\.\(next\)/);
+  assert.match(src, /setProviderDataScopes\(next\)/);
 });
 
 test("main and ProcessingHelper hydrate ragManager.initializeEmbeddings with policy", () => {
@@ -185,4 +172,13 @@ test("main and ProcessingHelper hydrate ragManager.initializeEmbeddings with pol
 
   assert.match(main, /providerDataScopes/);
   assert.match(ph, /providerDataScopes/);
+});
+
+test("ProcessingHelper hydrates stored OpenClaude config on boot", () => {
+  const ph = read("electron/ProcessingHelper.ts");
+
+  assert.match(ph, /setOpenClaudeConfig\(\{/);
+  assert.match(ph, /getOpenClaudeCliPath\(\)/);
+  assert.match(ph, /isOpenClaudeEnabled\(\)/);
+  assert.match(ph, /getOpenClaudeModel\(\)/);
 });

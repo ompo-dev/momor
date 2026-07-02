@@ -48,6 +48,29 @@ export function initializeIpcHandlers(appState: AppState): void {
    */
   const isProOrTrialActive = (): boolean => true;
 
+  const broadcastRendererEvent = (channel: string, payload?: unknown): void => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(channel, payload);
+      }
+    });
+  };
+
+  const broadcastAbilitiesUpdated = (): void => {
+    broadcastRendererEvent("abilities-updated");
+  };
+
+  const resolveOpenClaudeCliPath = (): string => {
+    const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
+    const cm = CredentialsManager.getInstance();
+    return (
+      cm.getOpenClaudeCliPath()?.trim() ||
+      OpenClaudeManager.getInstance().status().path ||
+      OpenClaudeManager.getInstance().resolvePath() ||
+      "openclaude"
+    );
+  };
+
   // Clears the active mode when the pro license is lost so non-general mode prompts
   // and reference files stop being injected into LLM calls.
   const clearActiveModeOnLicenseLoss = (): void => {
@@ -476,197 +499,234 @@ export function initializeIpcHandlers(appState: AppState): void {
           "[IPC] gemini-chat-stream started using LLMHelper.streamChat",
         );
         const llmHelper = appState.processingHelper.getLLMHelper();
+        const intelligenceManager = appState.getIntelligenceManager();
+
+        // Free-form overlay chat can route through the OpenClaude agentic path
+        // under the hood. Wire the same meeting-context + approval bridge used
+        // by the dedicated agent console so tool permissions (Read/Bash/etc.)
+        // can be surfaced to the overlay instead of silently failing.
+        let releaseAgentWorkspace = () => {};
+        try {
+          const settings = loadAgentSettings();
+          const { WorkspaceManager } = require("./services/agent/WorkspaceManager");
+          const { MeetingMCPServer } = require("./services/MeetingMCPServer");
+          const meetingTitle =
+            intelligenceManager.getCurrentMeetingTitle?.() ??
+            (appState.getIsMeetingActive() ? "Active Meeting" : "Overlay Chat");
+          wireMeetingContext(undefined, event.sender);
+          const workspace = WorkspaceManager.getInstance().resolveWorkspace(
+            settings,
+            { title: meetingTitle },
+          );
+          MeetingMCPServer.getInstance().setActiveWorkspace(workspace);
+          releaseAgentWorkspace = () => {
+            try {
+              MeetingMCPServer.getInstance().setActiveWorkspace(null);
+            } catch {
+              /* noop */
+            }
+          };
+        } catch (workspaceErr: any) {
+          console.error(
+            "[IPC] Failed to prepare OpenClaude overlay workspace:",
+            workspaceErr,
+          );
+          throw new Error(
+            workspaceErr?.message || "Failed to prepare agent workspace",
+          );
+        }
 
         // Claim a new stream ID — any prior stream will detect this and stop emitting.
         const myStreamId = ++_chatStreamId;
-
-        const intelligenceManager = appState.getIntelligenceManager();
-
-        // Identity probe short-circuit — bypasses the LLM entirely so small models can't
-        // reframe the canned reply or misfire it on coding asks (the original bug).
-        // Regex is `^...$` anchored, so non-probe questions cannot match.
-        if (!imagePaths?.length && typeof message === "string") {
-          const identityHit = CREATOR_PROBE_RE.test(message)
-            ? "I was developed by Evin John."
-            : IDENTITY_PROBE_RE.test(message)
-              ? "I'm momor, an AI assistant."
-              : null;
-          if (identityHit) {
-            intelligenceManager.addTranscript(
-              {
-                text: message,
-                speaker: "user",
-                timestamp: Date.now(),
-                final: true,
-              },
-              true,
-            );
-            try {
-              PhoneMirrorService.getInstance().publishUserMessage(
-                String(myStreamId),
-                message,
+        try {
+          // Identity probe short-circuit — bypasses the LLM entirely so small models can't
+          // reframe the canned reply or misfire it on coding asks (the original bug).
+          // Regex is `^...$` anchored, so non-probe questions cannot match.
+          if (!imagePaths?.length && typeof message === "string") {
+            const identityHit = CREATOR_PROBE_RE.test(message)
+              ? "I was developed by Evin John."
+              : IDENTITY_PROBE_RE.test(message)
+                ? "I'm momor, an AI assistant."
+                : null;
+            if (identityHit) {
+              intelligenceManager.addTranscript(
+                {
+                  text: message,
+                  speaker: "user",
+                  timestamp: Date.now(),
+                  final: true,
+                },
+                true,
               );
-            } catch (_) {
-              /* noop */
-            }
-            // Guard against a newer chat stream having taken over while we were computing
-            // the canned reply — matches the protection the LLM path uses around its token
-            // loop. Prevents cross-stream UI bleed.
-            if (_chatStreamId !== myStreamId) {
-              console.log(
-                `[IPC] gemini-chat-stream ${myStreamId} (identity probe) superseded by ${_chatStreamId}, skipping emit.`,
-              );
+              try {
+                PhoneMirrorService.getInstance().publishUserMessage(
+                  String(myStreamId),
+                  message,
+                );
+              } catch (_) {
+                /* noop */
+              }
+              // Guard against a newer chat stream having taken over while we were computing
+              // the canned reply — matches the protection the LLM path uses around its token
+              // loop. Prevents cross-stream UI bleed.
+              if (_chatStreamId !== myStreamId) {
+                console.log(
+                  `[IPC] gemini-chat-stream ${myStreamId} (identity probe) superseded by ${_chatStreamId}, skipping emit.`,
+                );
+                return null;
+              }
+              event.sender.send("gemini-stream-token", identityHit);
+              event.sender.send("gemini-stream-done");
+              try {
+                PhoneMirrorService.getInstance().publishToken(
+                  String(myStreamId),
+                  identityHit,
+                );
+              } catch (_) {
+                /* noop */
+              }
+              try {
+                PhoneMirrorService.getInstance().publishDone(
+                  String(myStreamId),
+                  identityHit,
+                );
+              } catch (_) {
+                /* noop */
+              }
+              intelligenceManager.addAssistantMessage(identityHit);
+              intelligenceManager.logUsage("chat", message, identityHit);
               return null;
             }
-            event.sender.send("gemini-stream-token", identityHit);
-            event.sender.send("gemini-stream-done");
-            try {
-              PhoneMirrorService.getInstance().publishToken(
-                String(myStreamId),
-                identityHit,
-              );
-            } catch (_) {
-              /* noop */
-            }
-            try {
-              PhoneMirrorService.getInstance().publishDone(
-                String(myStreamId),
-                identityHit,
-              );
-            } catch (_) {
-              /* noop */
-            }
-            intelligenceManager.addAssistantMessage(identityHit);
-            intelligenceManager.logUsage("chat", message, identityHit);
-            return null;
-          }
-        }
-
-        // Capture rolling transcript BEFORE adding the typed chat message — otherwise
-        // the just-typed question would appear twice (as message + in context).
-        let liveTranscriptSnapshot: string | undefined;
-        try {
-          if (appState.getIsMeetingActive()) {
-            liveTranscriptSnapshot =
-              intelligenceManager.getLiveMeetingTranscriptForChat();
-          } else {
-            const snap = intelligenceManager.getFormattedContext(180);
-            if (snap?.trim()) liveTranscriptSnapshot = snap;
-          }
-        } catch (ctxErr) {
-          console.warn("[IPC] Failed to capture live meeting transcript:", ctxErr);
-        }
-
-        // Now add USER message to IntelligenceManager (after context snapshot)
-        intelligenceManager.addTranscript(
-          {
-            text: message,
-            speaker: "user",
-            timestamp: Date.now(),
-            final: true,
-          },
-          true,
-        );
-
-        // Mirror to phone (no-op if PhoneMirrorService isn't running).
-        try {
-          PhoneMirrorService.getInstance().publishUserMessage(
-            String(myStreamId),
-            message,
-          );
-        } catch (_) {
-          /* noop */
-        }
-
-        let fullResponse = "";
-
-        if (liveTranscriptSnapshot?.trim()) {
-          context = mergeLiveMeetingTranscriptIntoContext(
-            context,
-            liveTranscriptSnapshot,
-          );
-          console.log(
-            `[IPC] Merged live meeting transcript into gemini-chat-stream (${liveTranscriptSnapshot.length} chars)`,
-          );
-        }
-
-        context = UserSessionContextService.getInstance().mergeIfNeeded(context);
-
-        // Use CHAT_MODE_PROMPT for general chat — bypasses the interview-copilot
-        // framing in HARD_SYSTEM_PROMPT/ASSIST_MODE_PROMPT that was causing coding
-        // questions to be answered with "At Aetherbot AI, I was responsible for..."
-        // (resume hijack via CONTEXT_INTELLIGENCE_LAYER's "you ARE the user").
-        const systemPromptOverride: string | undefined =
-          options?.skipSystemPrompt ? "" : CHAT_MODE_PROMPT;
-
-        try {
-          // USE streamChat which handles routing
-          const stream = llmHelper.streamChat(
-            message,
-            imagePaths,
-            context,
-            systemPromptOverride,
-            options?.ignoreKnowledgeMode,
-          );
-
-          for await (const token of stream) {
-            // Bail if a newer stream has taken over (user triggered a new request)
-            if (_chatStreamId !== myStreamId) {
-              console.log(
-                `[IPC] gemini-chat-stream ${myStreamId} superseded by ${_chatStreamId}, stopping.`,
-              );
-              return null;
-            }
-            event.sender.send("gemini-stream-token", token);
-            try {
-              PhoneMirrorService.getInstance().publishToken(
-                String(myStreamId),
-                token,
-              );
-            } catch (_) {
-              /* noop */
-            }
-            fullResponse += token;
           }
 
-          // Final check: only send done if we are still the active stream
-          if (_chatStreamId === myStreamId) {
-            event.sender.send("gemini-stream-done");
-            try {
-              PhoneMirrorService.getInstance().publishDone(
-                String(myStreamId),
-                fullResponse,
-              );
-            } catch (_) {
-              /* noop */
+          // Capture rolling transcript BEFORE adding the typed chat message — otherwise
+          // the just-typed question would appear twice (as message + in context).
+          let liveTranscriptSnapshot: string | undefined;
+          try {
+            if (appState.getIsMeetingActive()) {
+              liveTranscriptSnapshot =
+                intelligenceManager.getLiveMeetingTranscriptForChat();
+            } else {
+              const snap = intelligenceManager.getFormattedContext(180);
+              if (snap?.trim()) liveTranscriptSnapshot = snap;
             }
-
-            // Update IntelligenceManager with ASSISTANT message after completion
-            if (fullResponse.trim().length > 0) {
-              intelligenceManager.addAssistantMessage(fullResponse);
-              // Log Usage for streaming chat
-              intelligenceManager.logUsage("chat", message, fullResponse);
-            }
+          } catch (ctxErr) {
+            console.warn("[IPC] Failed to capture live meeting transcript:", ctxErr);
           }
-        } catch (streamError: any) {
-          console.error("[IPC] Streaming error:", streamError);
-          if (_chatStreamId === myStreamId) {
-            event.sender.send(
-              "gemini-stream-error",
-              streamError.message || "Unknown streaming error",
+
+          // Now add USER message to IntelligenceManager (after context snapshot)
+          intelligenceManager.addTranscript(
+            {
+              text: message,
+              speaker: "user",
+              timestamp: Date.now(),
+              final: true,
+            },
+            true,
+          );
+
+          // Mirror to phone (no-op if PhoneMirrorService isn't running).
+          try {
+            PhoneMirrorService.getInstance().publishUserMessage(
+              String(myStreamId),
+              message,
             );
-            try {
-              PhoneMirrorService.getInstance().publishError(
-                String(myStreamId),
-                streamError?.message || "Unknown streaming error",
+          } catch (_) {
+            /* noop */
+          }
+
+          let fullResponse = "";
+
+          if (liveTranscriptSnapshot?.trim()) {
+            context = mergeLiveMeetingTranscriptIntoContext(
+              context,
+              liveTranscriptSnapshot,
+            );
+            console.log(
+              `[IPC] Merged live meeting transcript into gemini-chat-stream (${liveTranscriptSnapshot.length} chars)`,
+            );
+          }
+
+          context = UserSessionContextService.getInstance().mergeIfNeeded(context);
+
+          // Use CHAT_MODE_PROMPT for general chat — bypasses the interview-copilot
+          // framing in HARD_SYSTEM_PROMPT/ASSIST_MODE_PROMPT that was causing coding
+          // questions to be answered with "At Aetherbot AI, I was responsible for..."
+          // (resume hijack via CONTEXT_INTELLIGENCE_LAYER's "you ARE the user").
+          const systemPromptOverride: string | undefined =
+            options?.skipSystemPrompt ? "" : CHAT_MODE_PROMPT;
+
+          try {
+            // USE streamChat which handles routing
+            const stream = llmHelper.streamChat(
+              message,
+              imagePaths,
+              context,
+              systemPromptOverride,
+              options?.ignoreKnowledgeMode,
+            );
+
+            for await (const token of stream) {
+              // Bail if a newer stream has taken over (user triggered a new request)
+              if (_chatStreamId !== myStreamId) {
+                console.log(
+                  `[IPC] gemini-chat-stream ${myStreamId} superseded by ${_chatStreamId}, stopping.`,
+                );
+                return null;
+              }
+              event.sender.send("gemini-stream-token", token);
+              try {
+                PhoneMirrorService.getInstance().publishToken(
+                  String(myStreamId),
+                  token,
+                );
+              } catch (_) {
+                /* noop */
+              }
+              fullResponse += token;
+            }
+
+            // Final check: only send done if we are still the active stream
+            if (_chatStreamId === myStreamId) {
+              event.sender.send("gemini-stream-done");
+              try {
+                PhoneMirrorService.getInstance().publishDone(
+                  String(myStreamId),
+                  fullResponse,
+                );
+              } catch (_) {
+                /* noop */
+              }
+
+              // Update IntelligenceManager with ASSISTANT message after completion
+              if (fullResponse.trim().length > 0) {
+                intelligenceManager.addAssistantMessage(fullResponse);
+                // Log Usage for streaming chat
+                intelligenceManager.logUsage("chat", message, fullResponse);
+              }
+            }
+          } catch (streamError: any) {
+            console.error("[IPC] Streaming error:", streamError);
+            if (_chatStreamId === myStreamId) {
+              event.sender.send(
+                "gemini-stream-error",
+                streamError.message || "Unknown streaming error",
               );
-            } catch (_) {
-              /* noop */
+              try {
+                PhoneMirrorService.getInstance().publishError(
+                  String(myStreamId),
+                  streamError?.message || "Unknown streaming error",
+                );
+              } catch (_) {
+                /* noop */
+              }
             }
           }
-        }
 
-        return null; // Return null as data is sent via events
+          return null; // Return null as data is sent via events
+        } finally {
+          releaseAgentWorkspace();
+        }
       } catch (error: any) {
         console.error("[IPC] Error in gemini-chat-stream setup:", error);
         throw error;
@@ -1327,43 +1387,71 @@ export function initializeIpcHandlers(appState: AppState): void {
   safeHandle(
     "setOpenClaudeConfig",
     async (_, config: { path: string; enabled: boolean; model: string }) => {
-      const { CredentialsManager } = require("./services/CredentialsManager");
       const cm = CredentialsManager.getInstance();
-      cm.setOpenClaudeCliPath(config.path);
+      const normalizedPath = config.path.trim() || resolveOpenClaudeCliPath();
+      cm.setOpenClaudeCliPath(normalizedPath);
       cm.setOpenClaudeEnabled(config.enabled);
       cm.setOpenClaudeModel(config.model);
       appState.processingHelper.getLLMHelper().setOpenClaudeConfig({
         enabled: config.enabled,
-        executablePath: config.path,
+        executablePath: normalizedPath,
         model: config.model,
       });
-      return { success: true };
+      return {
+        success: true,
+        config: {
+          path: normalizedPath,
+          enabled: config.enabled,
+          model: config.model,
+        },
+      };
     },
   );
 
   safeHandle("getOpenClaudeConfig", async () => {
-    const { CredentialsManager } = require("./services/CredentialsManager");
     const cm = CredentialsManager.getInstance();
     return {
-      path:
-        cm.getOpenClaudeCliPath() ??
-        "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs",
+      path: resolveOpenClaudeCliPath(),
       enabled: cm.isOpenClaudeEnabled(),
       model: cm.getOpenClaudeModel() ?? "claude-sonnet-4-6",
     };
   });
 
+  safeHandle("openclaude:status", async () => {
+    const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
+    return OpenClaudeManager.getInstance().status();
+  });
+
+  safeHandle("openclaude:install", async () => {
+    const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
+    const manager = OpenClaudeManager.getInstance();
+    const status = await manager.ensureInstalled((line: string) => {
+      broadcastRendererEvent("openclaude-install-progress", line);
+    });
+
+    if (status.path) {
+      const cm = CredentialsManager.getInstance();
+      if (!cm.getOpenClaudeCliPath()?.trim()) {
+        cm.setOpenClaudeCliPath(status.path);
+      }
+      appState.processingHelper.getLLMHelper().setOpenClaudeConfig({
+        enabled: cm.isOpenClaudeEnabled(),
+        executablePath: cm.getOpenClaudeCliPath()?.trim() || status.path,
+        model: cm.getOpenClaudeModel() ?? "claude-sonnet-4-6",
+      });
+    }
+
+    return status;
+  });
+
   safeHandle("testOpenClaudeConnection", async () => {
     try {
-      const { CredentialsManager } = require("./services/CredentialsManager");
       const { OpenClaudeService } =
         await import("./services/OpenClaudeService");
       const cm = CredentialsManager.getInstance();
       const config = {
         enabled: true,
-        executablePath:
-          cm.getOpenClaudeCliPath() ??
-          "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs",
+        executablePath: resolveOpenClaudeCliPath(),
         model: cm.getOpenClaudeModel() ?? "claude-sonnet-4-6",
         timeoutMs: 15_000,
       };
@@ -1384,7 +1472,9 @@ export function initializeIpcHandlers(appState: AppState): void {
       payload: { kind: "openclaude" | "codex"; executablePath: string },
     ) => {
       try {
-        const cliPath = (payload.executablePath || "").trim();
+        const cliPath =
+          (payload.executablePath || "").trim() ||
+          (payload.kind === "openclaude" ? resolveOpenClaudeCliPath() : "");
         if (!cliPath) {
           return { success: false, error: "CLI path is required" };
         }
@@ -1409,14 +1499,11 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("get-openclaude-auth-status", async (_, cliPath?: string) => {
     try {
-      const { CredentialsManager } = require("./services/CredentialsManager");
       const { OpenClaudeService } =
         await import("./services/OpenClaudeService");
       const cm = CredentialsManager.getInstance();
       const executablePath =
-        (typeof cliPath === "string" && cliPath.trim()) ||
-        cm.getOpenClaudeCliPath() ||
-        "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs";
+        (typeof cliPath === "string" && cliPath.trim()) || resolveOpenClaudeCliPath();
       const status = await OpenClaudeService.getAuthStatus({
         enabled: true,
         executablePath,
@@ -1431,14 +1518,11 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("openclaude-auth-logout", async (_, cliPath?: string) => {
     try {
-      const { CredentialsManager } = require("./services/CredentialsManager");
       const { OpenClaudeService } =
         await import("./services/OpenClaudeService");
       const cm = CredentialsManager.getInstance();
       const executablePath =
-        (typeof cliPath === "string" && cliPath.trim()) ||
-        cm.getOpenClaudeCliPath() ||
-        "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs";
+        (typeof cliPath === "string" && cliPath.trim()) || resolveOpenClaudeCliPath();
       return await OpenClaudeService.authLogout({
         enabled: true,
         executablePath,
@@ -2849,38 +2933,191 @@ export function initializeIpcHandlers(appState: AppState): void {
         `[IPC] Received test-llm-connection request for provider: ${provider}`,
       );
       try {
+        const { CredentialsManager } = require("./services/CredentialsManager");
+        const creds = CredentialsManager.getInstance();
+        const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
+        const { OpenClaudeService } = await import("./services/OpenClaudeService");
+        const { buildOpenClaudeEnv } = await import("./openclaude/OpenClaudeEnv");
+        const curl2Json = (await import("@bany/curl-to-json")).default;
+
+        const normalizeOpenAiCompatBaseUrl = (rawUrl?: string): string | undefined => {
+          if (!rawUrl || /\{\{[^}]+\}\}/.test(rawUrl)) return undefined;
+          try {
+            const parsed = new URL(rawUrl);
+            let pathname = parsed.pathname.replace(/\/+$/, "");
+            pathname = pathname
+              .replace(/\/chat\/completions$/i, "")
+              .replace(/\/responses$/i, "")
+              .replace(/\/completions$/i, "");
+            parsed.pathname = pathname || "/";
+            parsed.search = "";
+            parsed.hash = "";
+            return parsed.toString().replace(/\/$/, "");
+          } catch {
+            return undefined;
+          }
+        };
+
+        const extractCustomProviderConfig = (curlCommand: string) => {
+          try {
+            const requestConfig = curl2Json(curlCommand);
+            const baseUrl = normalizeOpenAiCompatBaseUrl(requestConfig.url);
+            const data =
+              requestConfig.data && typeof requestConfig.data === "object"
+                ? requestConfig.data
+                : {};
+            const model =
+              typeof data.model === "string" && !/\{\{[^}]+\}\}/.test(data.model)
+                ? data.model
+                : undefined;
+
+            let apiKey: string | undefined;
+            let authHeader: string | undefined;
+            let authHeaderValue: string | undefined;
+            let authScheme: string | undefined;
+
+            const headers =
+              requestConfig.header && typeof requestConfig.header === "object"
+                ? Object.entries(requestConfig.header)
+                : [];
+
+            for (const [rawName, rawValue] of headers) {
+              if (typeof rawValue !== "string") continue;
+              const headerName = rawName.trim();
+              const headerValue = rawValue.trim();
+              if (
+                !headerName ||
+                !headerValue ||
+                /\{\{[^}]+\}\}/.test(headerValue)
+              ) {
+                continue;
+              }
+
+              if (/^authorization$/i.test(headerName)) {
+                const match = headerValue.match(/^(\S+)\s+(.+)$/);
+                if (match) {
+                  authScheme = match[1];
+                  apiKey = match[2];
+                  if (!/^bearer$/i.test(authScheme)) {
+                    authHeader = headerName;
+                    authHeaderValue = match[2];
+                  }
+                } else {
+                  authHeader = headerName;
+                  authHeaderValue = headerValue;
+                }
+                continue;
+              }
+
+              if (/^(x-api-key|api-key)$/i.test(headerName)) {
+                apiKey = headerValue;
+                authHeader = headerName;
+                authHeaderValue = headerValue;
+                continue;
+              }
+
+              if (!authHeader) {
+                authHeader = headerName;
+                authHeaderValue = headerValue;
+              }
+            }
+
+            return { apiKey, baseUrl, model, authHeader, authHeaderValue, authScheme };
+          } catch {
+            return {};
+          }
+        };
+
+        const status = await OpenClaudeManager.getInstance().ensureInstalled();
+        if (!status.installed) {
+          return {
+            success: false,
+            error: "OpenClaude is not installed and automatic installation failed.",
+          };
+        }
+
+        const openClaudeConfig = {
+          enabled: true,
+          executablePath: resolveOpenClaudeCliPath(),
+          model: creds.getOpenClaudeModel() ?? "claude-sonnet-4-6",
+          timeoutMs: 15_000,
+        };
+
+        const runOpenClaudeProbe = async (env?: NodeJS.ProcessEnv, model?: string) => {
+          return OpenClaudeService.run(openClaudeConfig, {
+            prompt: 'Reply with "OK" and nothing else.',
+            timeoutMs: 15_000,
+            env,
+            model,
+          });
+        };
+
         if (provider === "ollama") {
-          const llmHelper = appState.processingHelper.getLLMHelper();
-          return await llmHelper.testOllamaConnection();
+          const rawBaseUrl =
+            ((creds.getAllCredentials() as any)?.ollamaBaseUrl as string | undefined) ||
+            process.env.OLLAMA_URL ||
+            "http://localhost:11434";
+          const trimmedBase = rawBaseUrl.trim().replace(/\/+$/, "");
+          const baseUrl = /\/v1$/i.test(trimmedBase)
+            ? trimmedBase
+            : `${trimmedBase}/v1`;
+          const model =
+            ((creds.getAllCredentials() as any)?.ollamaModel as string | undefined) ||
+            undefined;
+
+          try {
+            const response = await runOpenClaudeProbe(
+              buildOpenClaudeEnv({ provider: "ollama", baseUrl, model }),
+              model,
+            );
+            if (response.trim()) return { success: true };
+            return { success: false, error: "Empty response from Ollama via OpenClaude" };
+          } catch (error: any) {
+            return {
+              success: false,
+              error: sanitizeErrorMessage(error?.message || "Ollama connection failed"),
+            };
+          }
         }
 
         if (provider === "custom") {
           if (!customProviderId) {
             return { success: false, error: "Custom provider ID required" };
           }
-          const { CredentialsManager } = require("./services/CredentialsManager");
-          const custom = CredentialsManager.getInstance()
-            .getCustomProviders()
-            .find((p: { id: string }) => p.id === customProviderId);
-          if (!custom) {
+          const custom = [
+            ...(creds.getCurlProviders() || []),
+            ...(creds.getCustomProviders() || []),
+          ].find((p: { id: string }) => p.id === customProviderId) as
+            | { curlCommand?: string }
+            | undefined;
+          if (!custom?.curlCommand) {
             return { success: false, error: "Custom provider not found" };
           }
-          const llmHelper = appState.processingHelper.getLLMHelper();
-          const response = await llmHelper.executeCustomProvider(
-            custom.curlCommand,
-            "Hello",
-            "",
-            "Hello",
-            "",
-          );
-          if (response && String(response).trim()) {
-            return { success: true };
-          }
-          return { success: false, error: "Empty response from custom provider" };
-        }
 
-        const { CredentialsManager } = require("./services/CredentialsManager");
-        const creds = CredentialsManager.getInstance();
+          const parsed = extractCustomProviderConfig(custom.curlCommand);
+          if (!parsed.baseUrl && !parsed.apiKey && !parsed.authHeader) {
+            return {
+              success: false,
+              error: "Custom provider could not be mapped to OpenClaude.",
+            };
+          }
+
+          try {
+            const response = await runOpenClaudeProbe(
+              buildOpenClaudeEnv({ provider: "custom", ...parsed }),
+              parsed.model,
+            );
+            if (response.trim()) return { success: true };
+            return { success: false, error: "Empty response from custom provider via OpenClaude" };
+          } catch (error: any) {
+            return {
+              success: false,
+              error: sanitizeErrorMessage(
+                error?.message || "Custom provider connection failed",
+              ),
+            };
+          }
+        }
 
         let keysToTest: string[] = [];
         if (Array.isArray(apiKeysArg)) {
@@ -2900,8 +3137,6 @@ export function initializeIpcHandlers(appState: AppState): void {
         if (!keysToTest.length) {
           return { success: false, error: "No API key provided" };
         }
-
-        const axios = require("axios");
         const keyResults: Array<{
           index: number;
           success: boolean;
@@ -2910,82 +3145,56 @@ export function initializeIpcHandlers(appState: AppState): void {
 
         for (let keyIndex = 0; keyIndex < keysToTest.length; keyIndex++) {
           const apiKey = keysToTest[keyIndex];
-          let response;
           try {
-            if (provider === "deepseek") {
-              response = await axios.post(
-                "https://api.deepseek.com/chat/completions",
-                {
-                  model: "deepseek-chat",
-                  messages: [{ role: "user", content: "Hello" }],
-                  max_tokens: 5,
-                },
-                {
-                  headers: { Authorization: `Bearer ${apiKey}` },
-                  timeout: 15000,
-                },
-              );
-            } else if (provider === "gemini") {
-              const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent`;
-              response = await axios.post(
-                url,
-                {
-                  contents: [{ parts: [{ text: "Hello" }] }],
-                },
-                {
-                  headers: { "x-goog-api-key": apiKey },
-                  timeout: 15000,
-                },
-              );
-            } else if (provider === "groq") {
-              response = await axios.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                {
-                  model: "llama-3.3-70b-versatile",
-                  messages: [{ role: "user", content: "Hello" }],
-                },
-                {
-                  headers: { Authorization: `Bearer ${apiKey}` },
-                  timeout: 15000,
-                },
-              );
-            } else if (provider === "openai") {
-              response = await axios.post(
-                "https://api.openai.com/v1/chat/completions",
-                {
-                  model: "gpt-4o-mini",
-                  messages: [{ role: "user", content: "Hello" }],
-                },
-                {
-                  headers: { Authorization: `Bearer ${apiKey}` },
-                  timeout: 15000,
-                },
-              );
-            } else if (provider === "claude") {
-              response = await axios.post(
-                "https://api.anthropic.com/v1/messages",
-                {
-                  model: "claude-sonnet-4-6",
-                  max_tokens: 10,
-                  messages: [{ role: "user", content: "Hello" }],
-                },
-                {
-                  headers: {
-                    "x-api-key": apiKey,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                  },
-                  timeout: 15000,
-                },
-              );
-            }
+            const env =
+              provider === "deepseek"
+                ? buildOpenClaudeEnv({
+                    provider: "deepseek",
+                    apiKey,
+                    model: creds.getDeepseekPreferredModel() || "deepseek-chat",
+                  })
+                : provider === "gemini"
+                  ? buildOpenClaudeEnv({
+                      provider: "gemini",
+                      apiKey,
+                      model: "gemini-3.1-flash-lite-preview",
+                    })
+                  : provider === "groq"
+                    ? buildOpenClaudeEnv({
+                        provider: "groq",
+                        apiKey,
+                        model: "llama-3.3-70b-versatile",
+                      })
+                    : provider === "openai"
+                      ? buildOpenClaudeEnv({
+                          provider: "openai",
+                          apiKey,
+                          model: "gpt-4o-mini",
+                        })
+                      : buildOpenClaudeEnv({
+                          provider: "anthropic",
+                          apiKey,
+                          model: "claude-sonnet-4-6",
+                        });
 
-            if (response && (response.status === 200 || response.status === 201)) {
+            const model =
+              provider === "deepseek"
+                ? creds.getDeepseekPreferredModel() || "deepseek-chat"
+                : provider === "gemini"
+                  ? "gemini-3.1-flash-lite-preview"
+                  : provider === "groq"
+                    ? "llama-3.3-70b-versatile"
+                    : provider === "openai"
+                      ? "gpt-4o-mini"
+                      : "claude-sonnet-4-6";
+
+            const response = await runOpenClaudeProbe(env, model);
+            if (response.trim()) {
               keyResults.push({ index: keyIndex, success: true });
               continue;
             }
 
-            const failMsg = "Request failed with status " + response?.status;
+            const failMsg = "Empty response from OpenClaude probe";
             keyResults.push({ index: keyIndex, success: false, error: failMsg });
             return {
               success: false,
@@ -2997,21 +3206,12 @@ export function initializeIpcHandlers(appState: AppState): void {
             const safeInfo = {
               provider,
               keyIndex,
-              status: error?.response?.status,
-              statusText: error?.response?.statusText,
               code: error?.code,
               message: error?.message,
-              responseError:
-                error?.response?.data?.error?.message ||
-                error?.response?.data?.message,
             };
             console.error("LLM connection test failed:", safeInfo);
             const rawMsg =
-              error?.response?.data?.error?.message ||
-              error?.response?.data?.message ||
-              (error.response?.data?.error?.type
-                ? `${error.response.data.error.type}: ${error.response.data.error.message}`
-                : error.message) ||
+              error?.message ||
               "Connection failed";
             const msg = sanitizeErrorMessage(rawMsg);
             keyResults.push({ index: keyIndex, success: false, error: msg });
@@ -3544,16 +3744,22 @@ export function initializeIpcHandlers(appState: AppState): void {
     return DatabaseManager.getInstance().getMcpServers();
   });
   safeHandle("mcp-create", async (_, input: any) => {
-    return DatabaseManager.getInstance().createMcpServer(input ?? {});
+    const result = DatabaseManager.getInstance().createMcpServer(input ?? {});
+    if (result) broadcastAbilitiesUpdated();
+    return result;
   });
   safeHandle(
     "mcp-update",
     async (_, { id, updates }: { id: string; updates: any }) => {
-      return DatabaseManager.getInstance().updateMcpServer(id, updates);
+      const result = DatabaseManager.getInstance().updateMcpServer(id, updates);
+      if (result) broadcastAbilitiesUpdated();
+      return result;
     },
   );
   safeHandle("mcp-delete", async (_, id: string) => {
-    return DatabaseManager.getInstance().deleteMcpServer(id);
+    const result = DatabaseManager.getInstance().deleteMcpServer(id);
+    if (result) broadcastAbilitiesUpdated();
+    return result;
   });
 
   // ── Skills ──────────────────────────────────────────────────────
@@ -3561,16 +3767,22 @@ export function initializeIpcHandlers(appState: AppState): void {
     return DatabaseManager.getInstance().getSkills();
   });
   safeHandle("skill-create", async (_, input: any) => {
-    return DatabaseManager.getInstance().createSkill(input ?? {});
+    const result = DatabaseManager.getInstance().createSkill(input ?? {});
+    if (result) broadcastAbilitiesUpdated();
+    return result;
   });
   safeHandle(
     "skill-update",
     async (_, { id, updates }: { id: string; updates: any }) => {
-      return DatabaseManager.getInstance().updateSkill(id, updates);
+      const result = DatabaseManager.getInstance().updateSkill(id, updates);
+      if (result) broadcastAbilitiesUpdated();
+      return result;
     },
   );
   safeHandle("skill-delete", async (_, id: string) => {
-    return DatabaseManager.getInstance().deleteSkill(id);
+    const result = DatabaseManager.getInstance().deleteSkill(id);
+    if (result) broadcastAbilitiesUpdated();
+    return result;
   });
 
   safeHandle("seed-demo", async () => {
@@ -5012,6 +5224,33 @@ export function initializeIpcHandlers(appState: AppState): void {
     } catch {
       return false;
     }
+  });
+
+  safeHandle("permissions:open-screen-capture-settings", async () => {
+    if (process.platform === "darwin") {
+      try {
+        await shell.openExternal(
+          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        );
+        return { opened: true, target: "system" };
+      } catch (error) {
+        console.warn(
+          "[IPC] Failed to open macOS screen capture settings:",
+          error,
+        );
+        return { opened: false, target: "system" };
+      }
+    }
+
+    const launcherWin = appState.getWindowHelper().getLauncherWindow();
+    if (launcherWin && !launcherWin.isDestroyed()) {
+      launcherWin.webContents.send("settings:open-tab", "integrations");
+      launcherWin.show();
+      launcherWin.focus();
+      return { opened: true, target: "integrations" };
+    }
+
+    return { opened: false, target: "integrations" };
   });
 
   // ==========================================

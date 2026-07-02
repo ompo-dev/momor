@@ -123,9 +123,7 @@ export const PermissionsToaster: React.FC<Props> = ({ isOpen, onDismiss }) => {
   };
 
   const openScreenSettings = () => {
-    window.electronAPI?.openExternal?.(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-    );
+    void window.electronAPI?.openScreenCaptureSettings?.();
   };
 
   const handleDismiss = () => {

@@ -232,11 +232,26 @@ export interface ElectronAPI {
     path: string;
     enabled: boolean;
     model: string;
-  }) => Promise<{ success: boolean }>;
+  }) => Promise<{
+    success: boolean;
+    config?: { path: string; enabled: boolean; model: string };
+  }>;
   getOpenClaudeConfig: () => Promise<{
     path: string;
     enabled: boolean;
     model: string;
+  }>;
+  getOpenClaudeStatus: () => Promise<{
+    installed: boolean;
+    path: string | null;
+    concrete: boolean;
+    version?: string;
+  }>;
+  installOpenClaude: () => Promise<{
+    installed: boolean;
+    path: string | null;
+    concrete: boolean;
+    version?: string;
   }>;
   testOpenClaudeConnection: () => Promise<{
     success: boolean;
@@ -280,6 +295,7 @@ export interface ElectronAPI {
     activeProfileId?: string | null;
     error?: string;
   }>;
+  onOpenClaudeInstallProgress: (callback: (line: string) => void) => () => void;
   getmomorUsage: () => Promise<{
     ok: boolean;
     error?: string;
@@ -352,6 +368,10 @@ export interface ElectronAPI {
     platform: string;
   }>;
   requestMicPermission: () => Promise<boolean>;
+  openScreenCaptureSettings: () => Promise<{
+    opened: boolean;
+    target: "system" | "integrations";
+  }>;
 
 
   // STT Provider Management
@@ -876,6 +896,7 @@ export interface ElectronAPI {
       enabled: boolean;
       createdAt: string;
       updatedAt: string;
+      source: "openclaude" | "momor";
     }>
   >;
   mcpCreate: (input: {
@@ -910,6 +931,7 @@ export interface ElectronAPI {
       enabled: boolean;
       createdAt: string;
       updatedAt: string;
+      source: "openclaude" | "momor";
     }>
   >;
   skillCreate: (input: {

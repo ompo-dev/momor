@@ -1,52 +1,18 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { MessageSquare, Link, Camera, Zap, Heart } from "lucide-react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MessageSquare, Camera } from "lucide-react";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { useResolvedTheme } from "../hooks/useResolvedTheme";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
-import { Switch } from "./ui/switch";
-import { Label } from "./ui/label";
 
 const SettingsPopup = () => {
   const { shortcuts } = useShortcuts();
   const isLightTheme = useResolvedTheme() === "light";
   const [isUndetectable, setIsUndetectable] = useState(false);
-  const [useGroqFastText, setUseGroqFastText] = useState(() => {
-    return localStorage.getItem("momor_groq_fast_text") === "true";
+  const [showTranscript, setShowTranscript] = useState(() => {
+    const stored = localStorage.getItem("momor_interviewer_transcript");
+    return stored !== "false";
   });
-  const isFirstRender = React.useRef(true);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  const [hasStoredKey, setHasStoredKey] = useState<Record<string, boolean>>({});
-
-  // Load credentials func
-  const loadCredentials = async () => {
-    try {
-      // @ts-ignore
-      const creds = await window.electronAPI?.getStoredCredentials?.();
-      if (creds) {
-        setHasStoredKey({
-          gemini: !!creds.hasGeminiKey,
-          groq: !!creds.hasGroqKey,
-          openai: !!creds.hasOpenaiKey,
-          claude: !!creds.hasClaudeKey,
-          momor: !!creds.hasmomorKey,
-        });
-      }
-    } catch (e) {
-      console.error("Failed to load settings:", e);
-    }
-  };
-
-  // Load Initial Data and refresh on focus
-  useEffect(() => {
-    loadCredentials();
-    const handleFocus = () => loadCredentials();
-    window.addEventListener("focus", handleFocus);
-
-    return () => window.removeEventListener("focus", handleFocus);
-  }, []);
-
-  // Fetch initial undetectable state from main process (source of truth)
   useEffect(() => {
     if (window.electronAPI?.getUndetectable) {
       window.electronAPI.getUndetectable().then((state: boolean) => {
@@ -55,64 +21,16 @@ const SettingsPopup = () => {
     }
   }, []);
 
-  // One-way listener: receive state changes from main process, never echo back
   useEffect(() => {
-    if (window.electronAPI?.onUndetectableChanged) {
-      const unsubscribe = window.electronAPI.onUndetectableChanged(
-        (newState: boolean) => {
-          setIsUndetectable(newState);
-          localStorage.setItem("momor_undetectable", String(newState));
-        },
-      );
-      return () => unsubscribe();
-    }
+    if (!window.electronAPI?.onUndetectableChanged) return;
+    const unsubscribe = window.electronAPI.onUndetectableChanged(
+      (newState: boolean) => {
+        setIsUndetectable(newState);
+        localStorage.setItem("momor_undetectable", String(newState));
+      },
+    );
+    return () => unsubscribe();
   }, []);
-
-  useEffect(() => {
-    // Listen for changes from other windows (2-way sync)
-    if (window.electronAPI?.onGroqFastTextChanged) {
-      const unsubscribe = window.electronAPI.onGroqFastTextChanged(
-        (enabled: boolean) => {
-          setUseGroqFastText(enabled);
-          localStorage.setItem("momor_groq_fast_text", String(enabled));
-        },
-      );
-      return () => unsubscribe();
-    }
-  }, []);
-
-  useEffect(() => {
-    // Skip initial render to avoid unnecessary IPC calls
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      // Ensure backend is synced on mount (even if no change)
-      try {
-        // @ts-ignore
-        window.electronAPI?.invoke("set-groq-fast-text-mode", useGroqFastText);
-      } catch (e) {
-        console.error(e);
-      }
-      return;
-    }
-
-    // Apply Groq Text Mode
-    localStorage.setItem("momor_groq_fast_text", String(useGroqFastText));
-    try {
-      // @ts-ignore - electronAPI not typed in this file yet
-      window.electronAPI?.invoke("set-groq-fast-text-mode", useGroqFastText);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [useGroqFastText]);
-
-  const [actionButtonMode, setActionButtonModeState] = useState<
-    "recap" | "brainstorm"
-  >("recap");
-
-  const [showTranscript, setShowTranscript] = useState(() => {
-    const stored = localStorage.getItem("momor_interviewer_transcript");
-    return stored !== "false"; // Default to true if not set
-  });
 
   useEffect(() => {
     const handleStorage = () => {
@@ -124,38 +42,13 @@ const SettingsPopup = () => {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  // Load action button mode and subscribe to changes from other windows
-  useEffect(() => {
-    // @ts-ignore
-    window.electronAPI
-      ?.getActionButtonMode?.()
-      ?.then((mode: "recap" | "brainstorm") => {
-        setActionButtonModeState(mode ?? "recap");
-      })
-      .catch(() => {});
-    // @ts-ignore
-    if (!window.electronAPI?.onActionButtonModeChanged) return;
-    // @ts-ignore
-    const unsubscribe = window.electronAPI.onActionButtonModeChanged(
-      (mode: "recap" | "brainstorm") => {
-        setActionButtonModeState(mode);
-      },
-    );
-    return () => unsubscribe();
-  }, []);
-
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  // Auto-resize Window
   useLayoutEffect(() => {
     if (!contentRef.current) return;
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const rect = entry.target.getBoundingClientRect();
-        // Send exact dimensions to Electron
         try {
-          // @ts-ignore
           window.electronAPI?.updateContentDimensions({
             width: Math.ceil(rect.width),
             height: Math.ceil(rect.height),
@@ -170,9 +63,6 @@ const SettingsPopup = () => {
     return () => observer.disconnect();
   }, []);
 
-  const popupPanelClass = isLightTheme
-    ? "bg-[#F3F4F6]/92 border-black/10 shadow-black/10"
-    : "bg-[#1E1E1E]/80 border-white/10 shadow-black/40";
   const itemHoverClass = isLightTheme
     ? "hover:bg-black/[0.04]"
     : "hover:bg-white/5";
@@ -182,7 +72,6 @@ const SettingsPopup = () => {
   const iconInactiveClass = isLightTheme
     ? "text-slate-500 group-hover:text-slate-700"
     : "text-slate-500 group-hover:text-slate-300";
-  const dividerClass = isLightTheme ? "bg-black/[0.06]" : "bg-white/[0.04]";
   const shortcutKeyClass = isLightTheme
     ? "border-black/10 bg-black/[0.04] text-slate-600"
     : "border-white/10 bg-white/5 text-slate-500";
@@ -194,19 +83,18 @@ const SettingsPopup = () => {
     : "bg-black shadow-sm";
 
   return (
-    <div className="w-fit h-fit bg-transparent flex flex-col">
+    <div className="flex h-fit w-fit flex-col bg-transparent">
       <div
         ref={contentRef}
-        className="w-[200px] max-h-[280px] backdrop-blur-md border border-border rounded-[16px] overflow-hidden shadow-2xl p-2 flex flex-col animate-scale-in origin-top-left bg-card/95"
+        className="flex w-[200px] max-h-[280px] flex-col overflow-hidden rounded-[16px] border border-border bg-card/95 p-2 shadow-2xl backdrop-blur-md animate-scale-in origin-top-left"
       >
-        <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col min-h-0">
-          {/* Undetectability */}
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group cursor-default ${itemHoverClass}`}
+            className={`group flex cursor-default items-center justify-between rounded-lg px-3 py-2 transition-colors duration-200 ${itemHoverClass}`}
           >
             <div className="flex items-center gap-3">
               <CustomGhost
-                className={`w-4 h-4 transition-colors ${isUndetectable ? (isLightTheme ? "text-slate-900" : "text-white") : iconInactiveClass}`}
+                className={`h-4 w-4 transition-colors ${isUndetectable ? (isLightTheme ? "text-slate-900" : "text-white") : iconInactiveClass}`}
                 fill={isUndetectable ? "currentColor" : "none"}
                 stroke={isUndetectable ? "none" : "currentColor"}
                 eyeColor={
@@ -232,7 +120,7 @@ const SettingsPopup = () => {
                 localStorage.setItem("momor_undetectable", String(newState));
                 window.electronAPI?.setUndetectable(newState);
               }}
-              className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${
+              className={`h-[18px] w-[30px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${
                 isUndetectable
                   ? isLightTheme
                     ? "bg-slate-900 shadow-[0_2px_8px_rgba(15,23,42,0.18)]"
@@ -241,52 +129,17 @@ const SettingsPopup = () => {
               }`}
             >
               <div
-                className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${isUndetectable ? "translate-x-[12px]" : "translate-x-0"}`}
+                className={`h-[15px] w-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${isUndetectable ? "translate-x-[12px]" : "translate-x-0"}`}
               />
             </button>
           </div>
 
-          {/* Groq (Fast Text) Toggle — enabled with Groq key OR Momor API key */}
           <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${!(hasStoredKey.groq || hasStoredKey.momor) ? "opacity-50 grayscale cursor-not-allowed" : `${itemHoverClass} cursor-default`}`}
-            title={
-              !(hasStoredKey.groq || hasStoredKey.momor)
-                ? "Requires Groq or Momor API key"
-                : ""
-            }
-          >
-            <div className="flex items-center gap-3">
-              <Zap
-                className={`w-4 h-4 transition-colors ${useGroqFastText ? "text-orange-500" : iconInactiveClass}`}
-                fill={useGroqFastText ? "currentColor" : "none"}
-              />
-              <span
-                className={`text-[12px] font-medium transition-colors ${useGroqFastText ? (isLightTheme ? "text-slate-950" : "text-white") : labelInactiveClass}`}
-              >
-                Fast Response
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                if (!(hasStoredKey.groq || hasStoredKey.momor)) return;
-                setUseGroqFastText(!useGroqFastText);
-              }}
-              className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${useGroqFastText ? "bg-orange-500 shadow-[0_2px_10px_rgba(249,115,22,0.3)]" : defaultToggleTrackClass}`}
-              disabled={!(hasStoredKey.groq || hasStoredKey.momor)}
-            >
-              <div
-                className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${useGroqFastText ? "translate-x-[12px]" : "translate-x-0"}`}
-              />
-            </button>
-          </div>
-
-          {/* Interviewer Transcript Toggle */}
-          <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group cursor-default ${itemHoverClass}`}
+            className={`group flex cursor-default items-center justify-between rounded-lg px-3 py-2 transition-colors duration-200 ${itemHoverClass}`}
           >
             <div className="flex items-center gap-3">
               <MessageSquare
-                className={`w-3.5 h-3.5 transition-colors ${showTranscript ? "text-emerald-400" : iconInactiveClass}`}
+                className={`h-3.5 w-3.5 transition-colors ${showTranscript ? "text-emerald-400" : iconInactiveClass}`}
                 fill={showTranscript ? "currentColor" : "none"}
               />
               <span
@@ -303,70 +156,22 @@ const SettingsPopup = () => {
                   "momor_interviewer_transcript",
                   String(newState),
                 );
-                // Dispatch event for same-window listeners
                 window.dispatchEvent(new Event("storage"));
               }}
-              className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${showTranscript ? "bg-emerald-500 shadow-[0_2px_10px_rgba(16,185,129,0.3)]" : defaultToggleTrackClass}`}
+              className={`h-[18px] w-[30px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${showTranscript ? "bg-emerald-500 shadow-[0_2px_10px_rgba(16,185,129,0.3)]" : defaultToggleTrackClass}`}
             >
               <div
-                className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${showTranscript ? "translate-x-[12px]" : "translate-x-0"}`}
+                className={`h-[15px] w-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${showTranscript ? "translate-x-[12px]" : "translate-x-0"}`}
               />
             </button>
           </div>
 
-          {/* Interview Mode (Brainstorm) Toggle */}
           <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group cursor-default ${itemHoverClass}`}
-          >
-            <div className="flex items-center gap-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`w-3.5 h-3.5 transition-colors ${actionButtonMode === "brainstorm" ? "text-violet-400" : iconInactiveClass}`}
-              >
-                <line x1="6" y1="3" x2="6" y2="15" />
-                <circle cx="18" cy="6" r="3" />
-                <circle cx="6" cy="18" r="3" />
-                <path d="M18 9a9 9 0 0 1-9 9" />
-              </svg>
-              <span
-                className={`text-[12px] font-medium transition-colors ${actionButtonMode === "brainstorm" ? (isLightTheme ? "text-slate-950" : "text-white") : labelInactiveClass}`}
-              >
-                Interview Mode
-              </span>
-            </div>
-            <button
-              onClick={async () => {
-                const newMode: "recap" | "brainstorm" =
-                  actionButtonMode === "brainstorm" ? "recap" : "brainstorm";
-                setActionButtonModeState(newMode);
-                try {
-                  // @ts-ignore
-                  await window.electronAPI?.setActionButtonMode?.(newMode);
-                } catch (e) {
-                  console.error(e);
-                }
-              }}
-              className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${actionButtonMode === "brainstorm" ? "bg-violet-500 shadow-[0_2px_10px_rgba(139,92,246,0.3)]" : defaultToggleTrackClass}`}
-            >
-              <div
-                className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${actionButtonMode === "brainstorm" ? "translate-x-[12px]" : "translate-x-0"}`}
-              />
-            </button>
-          </div>
-
-          {/* Show/Hide Momor */}
-          <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group interaction-base interaction-press ${itemHoverClass}`}
+            className={`group interaction-base interaction-press flex items-center justify-between rounded-lg px-3 py-2 transition-colors duration-200 ${itemHoverClass}`}
           >
             <div className="flex items-center gap-3">
               <MessageSquare
-                className={`w-3.5 h-3.5 transition-colors ${iconInactiveClass}`}
+                className={`h-3.5 w-3.5 transition-colors ${iconInactiveClass}`}
               />
               <span
                 className={`text-[12px] transition-colors ${labelInactiveClass}`}
@@ -374,12 +179,11 @@ const SettingsPopup = () => {
                 Show/Hide
               </span>
             </div>
-            <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-              {/* Dynamic Keys for Toggle Visibility */}
+            <div className="flex gap-1 opacity-60 transition-opacity group-hover:opacity-100">
               {(shortcuts.toggleVisibility || ["⌘", "B"]).map((key, index) => (
                 <div
                   key={index}
-                  className={`px-1.5 py-0.5 rounded border text-[10px] font-medium min-w-[20px] text-center ${shortcutKeyClass}`}
+                  className={`min-w-[20px] rounded border px-1.5 py-0.5 text-center text-[10px] font-medium ${shortcutKeyClass}`}
                 >
                   {key}
                 </div>
@@ -387,13 +191,12 @@ const SettingsPopup = () => {
             </div>
           </div>
 
-          {/* Screenshot */}
           <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group interaction-base interaction-press ${itemHoverClass}`}
+            className={`group interaction-base interaction-press flex items-center justify-between rounded-lg px-3 py-2 transition-colors duration-200 ${itemHoverClass}`}
           >
             <div className="flex items-center gap-3">
               <Camera
-                className={`w-3.5 h-3.5 transition-colors ${iconInactiveClass}`}
+                className={`h-3.5 w-3.5 transition-colors ${iconInactiveClass}`}
               />
               <span
                 className={`text-[12px] transition-colors ${labelInactiveClass}`}
@@ -401,43 +204,15 @@ const SettingsPopup = () => {
                 Screenshot
               </span>
             </div>
-            <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-              {/* Dynamic Keys for Take Screenshot */}
+            <div className="flex gap-1 opacity-60 transition-opacity group-hover:opacity-100">
               {(shortcuts.takeScreenshot || ["⌘", "H"]).map((key, index) => (
                 <div
                   key={index}
-                  className={`px-1.5 py-0.5 rounded border text-[10px] font-medium min-w-[20px] text-center ${shortcutKeyClass}`}
+                  className={`min-w-[20px] rounded border px-1.5 py-0.5 text-center text-[10px] font-medium ${shortcutKeyClass}`}
                 >
                   {key}
                 </div>
               ))}
-            </div>
-          </div>
-
-          <div className={`h-px my-0.5 mx-2 ${dividerClass}`} />
-
-          {/* Donate */}
-          <div
-            // @ts-ignore
-            onClick={() =>
-              window.electronAPI.openExternal(
-                "https://buymeacoffee.com/evinjohnn",
-              )
-            }
-            className="flex items-center justify-between px-3 py-2 hover:bg-pink-500/10 rounded-lg transition-colors duration-200 group interaction-base interaction-press"
-          >
-            <div className="flex items-center gap-3">
-              <Heart className="w-3.5 h-3.5 text-pink-400 group-hover:fill-pink-400 transition-all duration-300" />
-              <span
-                className={`text-[12px] transition-colors ${isLightTheme ? "text-slate-700 group-hover:text-pink-700" : "text-slate-400 group-hover:text-pink-100"}`}
-              >
-                Donate
-              </span>
-            </div>
-            <div className="opacity-60 group-hover:opacity-100 transition-opacity">
-              <Link
-                className={`w-3 h-3 group-hover:text-pink-400 ${isLightTheme ? "text-slate-600" : "text-slate-500"}`}
-              />
             </div>
           </div>
         </div>
@@ -453,7 +228,6 @@ interface CustomGhostProps {
   eyeColor?: string;
 }
 
-// Custom Ghost with dynamic eye color support
 const CustomGhost = ({
   className,
   fill,
@@ -470,13 +244,11 @@ const CustomGhost = ({
     strokeLinejoin="round"
     className={className}
   >
-    {/* Body */}
     <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
-    {/* Eyes - No stroke, just fill */}
     <path
       d="M9 10h.01 M15 10h.01"
       stroke={eyeColor || "currentColor"}
-      strokeWidth="2.5" // Slightly bolder for visibility
+      strokeWidth="2.5"
       fill="none"
     />
   </svg>

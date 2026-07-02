@@ -48,14 +48,30 @@ test("claude buildSpawn: node script routes through process.execPath + stream-js
   assert.ok(!spec.args.includes("--bare"));
 });
 
-test("claude buildSpawn: resume + system prompt threaded as flags", () => {
+test("claude buildSpawn: resume kept in args and system prompt moves to stdin", () => {
   const adapter = new ClaudeCodeAdapter("claude");
   const spec = adapter.buildSpawn(
     { prompt: "hi", systemPrompt: "ctx", cliSessionId: "sess-123" },
     ctx(),
   );
   assert.equal(spec.args[spec.args.indexOf("--resume") + 1], "sess-123");
-  assert.equal(spec.args[spec.args.indexOf("--append-system-prompt") + 1], "ctx");
+  assert.ok(!spec.args.includes("--append-system-prompt"));
+  assert.match(spec.stdinPrompt, /<system-context>/);
+  assert.match(spec.stdinPrompt, /ctx/);
+  assert.match(spec.stdinPrompt, /hi/);
+});
+
+test("claude buildSpawn: structured stdin also carries system context", () => {
+  const adapter = new ClaudeCodeAdapter("claude");
+  const spec = adapter.buildSpawn(
+    { prompt: "look at this", systemPrompt: "ctx", imagePaths: ["missing.png"] },
+    ctx(),
+  );
+  assert.ok(spec.args.includes("--input-format=stream-json"));
+  assert.ok(!spec.args.includes("--append-system-prompt"));
+  assert.match(spec.stdinPrompt, /<system-context>/);
+  assert.match(spec.stdinPrompt, /ctx/);
+  assert.match(spec.stdinPrompt, /look at this/);
 });
 
 test("claude parseLine: init→session, delta→token, tool_use→tool_call, result→done", () => {

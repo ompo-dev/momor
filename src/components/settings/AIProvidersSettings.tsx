@@ -69,6 +69,13 @@ interface ModelSelectProps {
   placeholder?: string;
 }
 
+type OpenClaudeRuntimeStatus = {
+  installed: boolean;
+  path: string | null;
+  concrete: boolean;
+  version?: string;
+};
+
 const ModelSelect: React.FC<ModelSelectProps> = ({
   value,
   options,
@@ -254,7 +261,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
 
   // --- OpenClaude ---
   const [openClaudeConfig, setOpenClaudeConfig] = useState({
-    path: "C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs",
+    path: "openclaude",
     enabled: false,
     model: "claude-sonnet-4-6",
   });
@@ -275,6 +282,17 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
   const [openClaudeModelOptions, setOpenClaudeModelOptions] = useState<
     { value: string; label: string }[]
   >([]);
+  const [openClaudeRuntime, setOpenClaudeRuntime] =
+    useState<OpenClaudeRuntimeStatus>({
+      installed: false,
+      path: null,
+      concrete: false,
+    });
+  const [openClaudeInstallStatus, setOpenClaudeInstallStatus] = useState<
+    "idle" | "testing" | "success" | "error"
+  >("idle");
+  const [openClaudeInstallError, setOpenClaudeInstallError] = useState("");
+  const [openClaudeInstallMessage, setOpenClaudeInstallMessage] = useState("");
 
   // --- Default Model ---
   const [defaultModel, setDefaultModel] = useState<string>("");
@@ -298,6 +316,17 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
   const codexCliConfigRef = useRef(codexCliConfig);
   openClaudeConfigRef.current = openClaudeConfig;
   codexCliConfigRef.current = codexCliConfig;
+
+  const refreshOpenClaudeRuntime = useCallback(async () => {
+    try {
+      const status = await window.electronAPI?.getOpenClaudeStatus?.();
+      if (status) {
+        setOpenClaudeRuntime(status);
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
 
   const loadCredentials = useCallback(async () => {
     try {
@@ -352,8 +381,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       if ((storedKeysForVisible.claude?.length ?? 0) > 0) autoVisible.push("claude");
       if (deepseekConfigured) autoVisible.push("deepseek");
       if (cliConfig?.enabled) autoVisible.push("codex-cli");
-      if (ocConfig?.enabled) autoVisible.push("openclaude");
-
       const pinned = readPinnedIntegrations();
       if (pinned.length > 0) {
         setVisibleIntegrations(pinned);
@@ -377,13 +404,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       const fastMode = await window.electronAPI?.getGroqFastTextMode?.();
       if (fastMode) setFastResponseMode(fastMode.enabled);
 
+      await refreshOpenClaudeRuntime();
       checkOllama();
     } catch (e) {
       console.error("Failed to load settings:", e);
     } finally {
       setCredentialsLoaded(true);
     }
-  }, []);
+  }, [refreshOpenClaudeRuntime]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -400,9 +428,15 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       },
     );
 
+    const unsubOpenClaudeInstall =
+      window.electronAPI?.onOpenClaudeInstallProgress?.((line: string) => {
+        setOpenClaudeInstallMessage(line);
+      });
+
     return () => {
       unsubCred?.();
       unsubFast?.();
+      unsubOpenClaudeInstall?.();
     };
   }, [isOpen, loadCredentials]);
 
@@ -437,15 +471,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     }
     if (deepseekHasKey) {
       opts.push({ id: deepseekModel, name: `DeepSeek (${deepseekModel})`, kind: "llm" });
-    }
-    if (openClaudeConfig.enabled) {
-      // Route through the CLI agent, not the Anthropic API. The displayed model
-      // is what the CLI is logged into; the agent layer resolves the executable.
-      opts.push({
-        id: "agent-cli:openclaude",
-        name: `Claude Code · OpenClaude (${prettifyModelId(openClaudeConfig.model)})`,
-        kind: "agent",
-      });
     }
     if (codexCliConfig.enabled) {
       opts.push({
@@ -628,7 +653,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     } catch {
       /* agent settings unavailable — default paths still resolve */
     }
-    if (patch.enabled) pinIntegration("openclaude");
     return next;
   };
 
@@ -665,6 +689,39 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       }
     } catch {
       /* non-fatal */
+    }
+  };
+
+  const handleInstallOpenClaude = async () => {
+    setOpenClaudeInstallStatus("testing");
+    setOpenClaudeInstallError("");
+    setOpenClaudeInstallMessage("Installing Claude runtime...");
+    try {
+      const status = await window.electronAPI?.installOpenClaude?.();
+      await refreshOpenClaudeRuntime();
+      if (status?.installed) {
+        if (status.path) {
+          await persistOpenClaudeConfig({ path: status.path });
+          await refreshOpenClaudeAuth(status.path);
+        }
+        await refreshOpenClaudeModels();
+        setOpenClaudeInstallStatus("success");
+        setOpenClaudeInstallMessage(
+          status.path
+            ? `Claude runtime ready at ${status.path}${status.version ? ` (v${status.version})` : ""}.`
+            : "Claude runtime installed successfully.",
+        );
+      } else {
+        setOpenClaudeInstallStatus("error");
+        setOpenClaudeInstallError("Claude runtime installation failed.");
+      }
+    } catch (e: unknown) {
+      setOpenClaudeInstallStatus("error");
+      setOpenClaudeInstallError(
+        e instanceof Error ? e.message : "Claude runtime installation failed.",
+      );
+    } finally {
+      setTimeout(() => setOpenClaudeInstallStatus("idle"), 5000);
     }
   };
 
@@ -726,6 +783,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
 
   useEffect(() => {
     if (!visibleIntegrations.includes("openclaude")) return;
+    void refreshOpenClaudeRuntime();
     void refreshOpenClaudeAuth(openClaudeConfig.path);
     void refreshOpenClaudeModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1032,7 +1090,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                       )}
                       {modelOptions.some((o) => o.kind === "agent") && (
                         <SelectGroup>
-                          <SelectLabel>Agentes CLI (rodam no seu PC)</SelectLabel>
+                          <SelectLabel>{t("providers.localConnectionsSelectLabel")}</SelectLabel>
                           {modelOptions
                             .filter((o) => o.kind === "agent")
                             .map((o) => (
@@ -1113,10 +1171,15 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           {(isVisible("gemini") || isVisible("groq") || isVisible("openai") || isVisible("claude") || isVisible("deepseek")) && (
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                LLMs · API & local
+                {t("providers.providersSectionLabel")}
               </span>
               <span className="h-px flex-1 bg-border/60" />
             </div>
+          )}
+          {(isVisible("gemini") || isVisible("groq") || isVisible("openai") || isVisible("claude") || isVisible("deepseek")) && (
+            <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              {t("providers.providersUnifiedNote")}
+            </p>
           )}
           {isVisible("gemini") && (
           <ProviderCard
@@ -1203,7 +1266,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             savingStatus={!!savingStatus.claude}
             savedStatus={!!savedStatus.claude}
             keyUrl="https://console.anthropic.com/settings/keys"
-            oauthAlternativeNote={t("providers.claudeApiOptional")}
             onPreferredModelChange={(model) =>
               setPreferredModels((prev) => ({ ...prev, claude: model }))
             }
@@ -1249,7 +1311,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           {(isVisible("openclaude") || isVisible("codex-cli")) && (
             <div className="mt-2 flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Agentes CLI · rodam no seu PC
+                {t("providers.localConnectionsSectionLabel")}
               </span>
               <span className="h-px flex-1 bg-border/60" />
             </div>
@@ -1268,11 +1330,32 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             onPathChange={(path) => {
               void persistOpenClaudeConfig({ path });
             }}
-            pathPlaceholder="C:\\Projects\\Teste\\openclaude\\dist\\cli.mjs"
+            pathPlaceholder="auto-detect or C:\\path\\to\\dist\\cli.mjs"
             buildHint={
               openClaudeConfig.path?.endsWith(".mjs")
-                ? "Build: cd C:\\Projects\\Teste\\openclaude && bun run build"
+                ? "Build the local runtime and point this field to its dist cli."
                 : undefined
+            }
+            statusPanel={
+              <div className="rounded-lg border border-border/60 bg-muted/40 px-3 py-3 text-[11px] text-muted-foreground">
+                <p className="font-medium text-foreground">
+                  Runtime:{" "}
+                  {openClaudeRuntime.installed
+                    ? `Installed${openClaudeRuntime.version ? ` · v${openClaudeRuntime.version}` : ""}`
+                    : "Not installed"}
+                </p>
+                <p className="mt-1 break-all">
+                  Resolved path: {openClaudeRuntime.path ?? "not found"}
+                </p>
+                <p className="mt-1">
+                  {openClaudeRuntime.concrete
+                    ? "Using a concrete CLI path on disk."
+                    : "Using PATH lookup or waiting for installation."}
+                </p>
+                {openClaudeInstallMessage ? (
+                  <p className="mt-2 text-foreground/80">{openClaudeInstallMessage}</p>
+                ) : null}
+              </div>
             }
             modelFields={[
               {
@@ -1334,6 +1417,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               }
               setTimeout(() => setOpenClaudeTestStatus("idle"), 5000);
             }}
+            onSecondaryTest={async () => {
+              await handleInstallOpenClaude();
+            }}
+            secondaryTestLabel={
+              openClaudeRuntime.installed ? "Repair runtime" : "Install runtime"
+            }
+            secondaryTestStatus={openClaudeInstallStatus}
+            secondaryTestError={openClaudeInstallError}
             onLogin={() => void handleCliOAuthLogin("openclaude")}
             onLogout={() => void handleOpenClaudeLogout()}
             onRefreshAuth={() => {

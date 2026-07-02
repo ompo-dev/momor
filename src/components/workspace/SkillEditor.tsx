@@ -78,6 +78,18 @@ const SkillForm: React.FC<{ skill: Skill; onDeleted: () => void }> = ({
           </div>
         </div>
 
+        <div
+          className={`rounded-md border px-3 py-2 text-[12px] ${
+            skill.source === "openclaude"
+              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          }`}
+        >
+          {skill.source === "openclaude"
+            ? "This skill is synced and will be available in the next chat turn."
+            : "This is a local Momor draft. Saving it will publish the skill for the next chat turn."}
+        </div>
+
         <div>
           <label className={label}>{t("workspace.skillDescription")}</label>
           <input

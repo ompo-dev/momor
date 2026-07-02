@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import type { GoogleGenAI } from "@google/genai";
 
 /**
  * Process-local manager for Gemini explicit context caches (caches.create).
@@ -72,7 +71,7 @@ export class GeminiPromptCache {
    * callers must fall back to passing `systemInstruction` directly.
    */
   async getOrCreate(
-    client: GoogleGenAI,
+    client: any,
     model: string,
     systemPrompt: string,
   ): Promise<string | null> {
@@ -123,7 +122,7 @@ export class GeminiPromptCache {
   }
 
   private async create(
-    client: GoogleGenAI,
+    client: any,
     model: string,
     systemPrompt: string,
     key: string,

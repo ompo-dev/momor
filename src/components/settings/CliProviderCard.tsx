@@ -65,6 +65,7 @@ export interface CliProviderCardProps {
   authMethod?: string;
   authBusy?: boolean;
   authMessage?: string;
+  statusPanel?: React.ReactNode;
   saving?: boolean;
   saved?: boolean;
   testStatus: IntegrationTestStatus;
@@ -100,6 +101,7 @@ export function CliProviderCard({
   authMethod,
   authBusy,
   authMessage,
+  statusPanel,
   saving,
   saved,
   testStatus,
@@ -265,6 +267,8 @@ export function CliProviderCard({
           {authMessage && <p className="mt-1 text-muted-foreground">{authMessage}</p>}
         </div>
       )}
+
+      {statusPanel}
 
       <IntegrationCardSection>
         <IntegrationField label={t("providers.cliPath")}>

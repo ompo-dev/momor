@@ -1985,10 +1985,10 @@ export const HelpSettings: React.FC<{ onNavigate?: (tab: string) => void }> = ({
                     Icon: Lightbulb,
                     color: "violet",
                     title: "Brainstorm",
-                    badge: "Interview ON",
-                    bc: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+                    badge: null,
+                    bc: "",
                     kbd: ["⌘", "3"],
-                    desc: "Recap becomes Brainstorm when Interview Mode is ON — deep multi-step strategies.",
+                    desc: "Explores deeper multi-step strategies when you need broader options.",
                   },
                   {
                     Icon: HelpCircle,
