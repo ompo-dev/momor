@@ -30,11 +30,11 @@ userData path:
 ```
 node -e "
 const { validateImagePath } = require('./dist-electron/electron/utils/curlUtils.js');
-const userData = '/Users/evin/Library/Application Support/momor';
+const userData = '/Users/ompo-dev/Library/Application Support/momor';
 [
-  '/Users/evin/Library/Application Support/momor/screenshots/abc.png',
-  '/Users/evin/Library/Application Support/momor/extra_screenshots/sel.png',
-  '/Users/evin/Desktop/screenshots/img.png',
+  '/Users/ompo-dev/Library/Application Support/momor/screenshots/abc.png',
+  '/Users/ompo-dev/Library/Application Support/momor/extra_screenshots/sel.png',
+  '/Users/ompo-dev/Desktop/screenshots/img.png',
   '/etc/passwd',
   'C:\\Users\\v\\evil.png',
 ].forEach(p => console.log(p, validateImagePath(p, userData)));
@@ -44,11 +44,11 @@ const userData = '/Users/evin/Library/Application Support/momor';
 Output:
 
 ```
-/Users/evin/Library/Application Support/momor/screenshots/abc.png
+/Users/ompo-dev/Library/Application Support/momor/screenshots/abc.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
-/Users/evin/Library/Application Support/momor/extra_screenshots/sel.png
+/Users/ompo-dev/Library/Application Support/momor/extra_screenshots/sel.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
-/Users/evin/Desktop/screenshots/img.png
+/Users/ompo-dev/Desktop/screenshots/img.png
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }
 /etc/passwd
   → { isValid: false, reason: 'Paths outside app directory are not allowed' }

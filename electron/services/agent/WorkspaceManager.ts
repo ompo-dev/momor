@@ -15,7 +15,17 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { AgentCliSettings } from "./types";
+import type { AgentCliSettings, AgentToolMode } from "./types";
+import {
+  extractLatestUserTurnText,
+  extractPathTargetsFromText,
+  pickExplicitWorkspaceDir,
+} from "./LocalPathAccess";
+
+export interface ResolvedAgentWorkspace {
+  dir: string;
+  source: "configured" | "referenced-path";
+}
 
 function sanitizeSlug(input: string): string {
   const cleaned = (input || "")
@@ -85,6 +95,47 @@ export class WorkspaceManager {
 
     fs.mkdirSync(dir, { recursive: true });
     return dir;
+  }
+
+  /** Prepare an explicitly shared project folder as the active workspace. */
+  prepareExplicitWorkspace(targetDir: string): string {
+    const dir = path.resolve(targetDir);
+    if (dir === path.parse(dir).root || this.isDenied(dir)) {
+      throw new Error(
+        `Workspace path "${dir}" is a protected system directory. Pick a project folder.`,
+      );
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  /**
+   * Resolve the active workspace for one turn, promoting an explicitly shared
+   * local path to the workspace root when the latest user request points at a
+   * single project folder.
+   */
+  resolveTurnWorkspace(
+    settings: AgentCliSettings,
+    meeting?: { id?: string; title?: string },
+    promptText?: string,
+    toolMode: AgentToolMode = "agentic",
+  ): ResolvedAgentWorkspace {
+    if (toolMode !== "plain") {
+      const explicitDir = pickExplicitWorkspaceDir(
+        extractPathTargetsFromText(extractLatestUserTurnText(promptText)),
+      );
+      if (explicitDir) {
+        return {
+          dir: this.prepareExplicitWorkspace(explicitDir),
+          source: "referenced-path",
+        };
+      }
+    }
+
+    return {
+      dir: this.resolveWorkspace(settings, meeting),
+      source: "configured",
+    };
   }
 
   /** True iff `target` is inside `workspace` (after resolving symlinks/..). */

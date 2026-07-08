@@ -1,485 +1,670 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { useTranslation } from 'react-i18next';
-import { Search, Sparkles, FileText, Mic } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useResolvedTheme } from '../hooks/useResolvedTheme';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
-import { cn } from '@/lib/utils';
-
-// ============================================
-// Types
-// ============================================
-
-type PillState = 'idle' | 'focused' | 'typing' | 'results';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Search,
+  Sparkles,
+  FileText,
+  Mic,
+  Clock3,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { ZedKeyBinding } from "./zed/ZedKeyBinding";
+import { ZedListItem } from "./zed/ZedListItem";
+import { isMac } from "../utils/platformUtils";
 
 interface Meeting {
-    id: string;
-    title: string;
-    date: string;
-    summary?: string;
+  id: string;
+  title: string;
+  date: string;
+  summary?: string;
 }
 
 interface SearchResult {
-    id: string;
-    type: 'meeting' | 'note';
-    title: string;
-    subtitle?: string;
-    refId: string;
+  id: string;
+  type: "meeting" | "note";
+  title: string;
+  subtitle?: string;
+  refId: string;
 }
 
 interface NoteHit {
-    id: string;
-    title: string;
-    contentText: string;
+  id: string;
+  title: string;
+  contentText: string;
 }
 
 interface TopSearchPillProps {
-    meetings: Meeting[];
-    onAIQuery: (query: string) => void;
-    onLiteralSearch: (query: string) => void;
-    onOpenMeeting: (meetingId: string) => void;
-    onOpenNote?: (noteId: string) => void;
-    onExpansionChange?: (isExpanded: boolean) => void;
+  meetings: Meeting[];
+  onAIQuery: (query: string) => void;
+  onLiteralSearch: (query: string) => void;
+  onOpenMeeting: (meetingId: string) => void;
+  onOpenNote?: (noteId: string) => void;
+  onExpansionChange?: (isExpanded: boolean) => void;
 }
 
-// ============================================
-// Fuzzy Search Helper
-// ============================================
-
 function fuzzyMatch(text: string, query: string): boolean {
-    const normalizedText = text.toLowerCase();
-    const normalizedQuery = query.toLowerCase();
-
-    // Simple contains match for now
-    if (normalizedText.includes(normalizedQuery)) return true;
-
-    // Fuzzy character match
-    // Fuzzy match removed for stricter accuracy
-    // Only return true if exact substring match (already checked above)
-    return false;
+  const normalizedText = text.toLowerCase();
+  const normalizedQuery = query.toLowerCase();
+  return normalizedText.includes(normalizedQuery);
 }
 
 function searchMeetings(
-    meetings: Meeting[],
-    query: string,
-    dateLocale: string,
+  meetings: Meeting[],
+  query: string,
+  dateLocale: string,
 ): SearchResult[] {
-    if (!query.trim()) return [];
+  if (!query.trim()) return [];
 
-    const results: SearchResult[] = [];
-    const seen = new Set<string>();
+  const results: SearchResult[] = [];
+  const seen = new Set<string>();
 
-    for (const meeting of meetings) {
-        if (seen.has(meeting.id)) continue;
+  for (const meeting of meetings) {
+    if (seen.has(meeting.id)) continue;
 
-        // Match against title and summary
-        const titleMatch = fuzzyMatch(meeting.title, query);
-        const summaryMatch = meeting.summary && fuzzyMatch(meeting.summary, query);
+    const titleMatch = fuzzyMatch(meeting.title, query);
+    const summaryMatch = meeting.summary && fuzzyMatch(meeting.summary, query);
 
-        if (titleMatch || summaryMatch) {
-            seen.add(meeting.id);
-            results.push({
-                id: `meeting:${meeting.id}`,
-                type: 'meeting',
-                title: meeting.title,
-                subtitle: new Date(meeting.date).toLocaleDateString(dateLocale, {
-                    month: 'short',
-                    day: 'numeric'
-                }),
-                refId: meeting.id
-            });
-        }
-
-        if (results.length >= 5) break;
+    if (titleMatch || summaryMatch) {
+      seen.add(meeting.id);
+      results.push({
+        id: `meeting:${meeting.id}`,
+        type: "meeting",
+        title: meeting.title,
+        subtitle: new Date(meeting.date).toLocaleDateString(dateLocale, {
+          month: "short",
+          day: "numeric",
+        }),
+        refId: meeting.id,
+      });
     }
 
-    return results;
+    if (results.length >= 5) break;
+  }
+
+  return results;
 }
 
-// ============================================
-// Main Component
-// ============================================
+function SectionLabel({
+  children,
+  meta,
+}: {
+  children: React.ReactNode;
+  meta?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-1 flex items-center gap-2 px-2 pt-1">
+      <span className="truncate font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+        {children}
+      </span>
+      <div className="h-px flex-1 bg-border-subtle/80" />
+      {meta ? (
+        <span className="shrink-0 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-text-tertiary">
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 const TopSearchPill: React.FC<TopSearchPillProps> = ({
-    meetings,
-    onAIQuery,
-    onLiteralSearch,
-    onOpenMeeting,
-    onOpenNote,
-    onExpansionChange
+  meetings,
+  onAIQuery,
+  onLiteralSearch,
+  onOpenMeeting,
+  onOpenNote,
+  onExpansionChange,
 }) => {
-    const { t, i18n } = useTranslation();
-    const dateLocale = i18n.language.startsWith('pt') ? 'pt-BR' : 'en-US';
-    const isLight = useResolvedTheme() === 'light';
-    const [state, setState] = useState<PillState>('idle');
-    const [query, setQuery] = useState('');
-    const [selectedIndex, setSelectedIndex] = useState(-1);
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language.startsWith("pt") ? "pt-BR" : "en-US";
+  const shortcutKeys = isMac ? ["Cmd", "K"] : ["Ctrl", "K"];
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
 
-    const inputRef = useRef<HTMLInputElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-    // Notify parent of expansion changes
-    useEffect(() => {
-        onExpansionChange?.(state !== 'idle');
-    }, [state, onExpansionChange]);
+  useEffect(() => {
+    onExpansionChange?.(isOpen);
+  }, [isOpen, onExpansionChange]);
 
-    // Debounced note search via the workspace SQLite index.
-    useEffect(() => {
-        if (state !== 'results' || !query.trim() || !window.electronAPI?.notesSearch) {
-            setNoteHits([]);
-            return;
-        }
-        let cancelled = false;
-        const handle = setTimeout(() => {
-            window.electronAPI
-                .notesSearch(query)
-                .then((hits) => {
-                    if (!cancelled) setNoteHits(Array.isArray(hits) ? hits.slice(0, 5) : []);
-                })
-                .catch(() => {
-                    if (!cancelled) setNoteHits([]);
-                });
-        }, 180);
-        return () => {
-            cancelled = true;
-            clearTimeout(handle);
-        };
-    }, [query, state]);
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !query.trim() ||
+      !window.electronAPI?.notesSearch
+    ) {
+      setNoteHits([]);
+      return;
+    }
 
-    // Compute results: notes first, then meetings.
-    const sessionResults = useMemo<SearchResult[]>(() => {
-        if (state !== 'results' || !query.trim()) return [];
-        const noteResults: SearchResult[] = noteHits.map((n) => ({
-            id: `note:${n.id}`,
-            type: 'note',
-            title: n.title || 'Untitled',
-            refId: n.id,
-        }));
-        const meetingResults = searchMeetings(meetings, query, dateLocale);
-        return [...noteResults, ...meetingResults];
-    }, [meetings, query, state, dateLocale, noteHits]);
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      window.electronAPI
+        .notesSearch(query)
+        .then((hits) => {
+          if (!cancelled) {
+            setNoteHits(Array.isArray(hits) ? hits.slice(0, 5) : []);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setNoteHits([]);
+        });
+    }, 180);
 
-    // Total selectable items: 2 (Explore section) + results
-    const totalItems = 2 + sessionResults.length;
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [isOpen, query]);
 
-    // State transitions
-    const open = useCallback(() => {
-        setState('focused');
-        setTimeout(() => inputRef.current?.focus(), 50);
-    }, []);
+  const noteResults = useMemo<SearchResult[]>(
+    () =>
+      query.trim()
+        ? noteHits.map((note) => ({
+            id: `note:${note.id}`,
+            type: "note",
+            title: note.title || t("workspace.untitled"),
+            refId: note.id,
+          }))
+        : [],
+    [noteHits, query, t],
+  );
 
-    const close = useCallback(() => {
-        setState('idle');
-        // Delay clearing query to allow exit animation to complete
-        setTimeout(() => {
-            setQuery('');
-            setSelectedIndex(-1);
-        }, 150);
-        inputRef.current?.blur();
-    }, []);
+  const meetingResults = useMemo<SearchResult[]>(
+    () =>
+      query.trim() ? searchMeetings(meetings, query, dateLocale) : [],
+    [dateLocale, meetings, query],
+  );
 
-    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
-        setQuery(value);
-        setSelectedIndex(-1);
+  const recentMeetings = useMemo(() => meetings.slice(0, 6), [meetings]);
+  const hasQuery = query.trim().length > 0;
+  const latestMeeting = recentMeetings[0];
+  const hasSearchResults =
+    noteResults.length > 0 || meetingResults.length > 0;
+  const quickActionCount = 2;
+  const totalItems = hasQuery
+    ? quickActionCount + noteResults.length + meetingResults.length
+    : quickActionCount + recentMeetings.length;
 
-        if (value.trim()) {
-            setState('results');
-        } else {
-            setState('focused');
-        }
-    }, []);
+  const open = useCallback(() => {
+    setIsOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 20);
+  }, []);
 
-    const handleSelect = useCallback((index: number) => {
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setQuery("");
+    setSelectedIndex(-1);
+    setNoteHits([]);
+  }, []);
+
+  const handleSelect = useCallback(
+    (index: number) => {
+      if (hasQuery) {
         if (index === 0) {
-            // AI Query
-            onAIQuery(query);
-            close();
-        } else if (index === 1) {
-            // Literal search
-            onLiteralSearch(query);
-            close();
-        } else {
-            // Note or meeting result
-            const sessionIndex = index - 2;
-            const result = sessionResults[sessionIndex];
-            if (result) {
-                if (result.type === 'note') {
-                    onOpenNote?.(result.refId);
-                } else {
-                    onOpenMeeting(result.refId);
-                }
-                close();
-            }
+          onAIQuery(query);
+          close();
+          return;
         }
-    }, [query, sessionResults, onAIQuery, onLiteralSearch, onOpenMeeting, onOpenNote, close]);
+        if (index === 1) {
+          onLiteralSearch(query);
+          close();
+          return;
+        }
 
-    // Keyboard handling
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // ⌘K to open
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                if (state === 'idle') {
-                    open();
-                } else {
-                    close();
-                }
-                return;
-            }
+        if (index < 2 + noteResults.length) {
+          const result = noteResults[index - 2];
+          if (!result) return;
+          onOpenNote?.(result.refId);
+          close();
+          return;
+        }
 
-            if (state === 'idle') return;
+        const result =
+          meetingResults[index - 2 - noteResults.length];
+        if (!result) return;
+        onOpenMeeting(result.refId);
+        close();
+        return;
+      }
 
-            // ESC to close
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-                return;
-            }
+      if (index === 0) {
+        onAIQuery("");
+        close();
+        return;
+      }
 
-            // Arrow navigation
-            if (state === 'results') {
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setSelectedIndex(prev => Math.min(prev + 1, totalItems - 1));
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setSelectedIndex(prev => Math.max(prev - 1, -1));
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSelect(selectedIndex);
-                }
-            }
-        };
+      if (index === 1) {
+        if (latestMeeting) {
+          onOpenMeeting(latestMeeting.id);
+          close();
+        }
+        return;
+      }
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [state, open, close, selectedIndex, totalItems, handleSelect]);
+      const meeting = recentMeetings[index - 2];
+      if (!meeting) return;
+      onOpenMeeting(meeting.id);
+      close();
+    },
+    [
+      close,
+      hasQuery,
+      onAIQuery,
+      onLiteralSearch,
+      onOpenMeeting,
+      onOpenNote,
+      query,
+      latestMeeting,
+      recentMeetings,
+      noteResults,
+      meetingResults,
+    ],
+  );
 
-    // Click outside to close
-    useEffect(() => {
-        if (state === 'idle') return;
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (isOpen) {
+          close();
+        } else {
+          open();
+        }
+        return;
+      }
 
-        const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                close();
-            }
-        };
+      if (!isOpen) return;
 
-        // Delay to prevent immediate close on open click
-        const timer = setTimeout(() => {
-            document.addEventListener('mousedown', handleClickOutside);
-        }, 100);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+        return;
+      }
 
-        return () => {
-            clearTimeout(timer);
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [state, close]);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (totalItems > 0) {
+          setSelectedIndex((prev) => Math.min(prev + 1, totalItems - 1));
+        }
+        return;
+      }
 
-    const isExpanded = state !== 'idle';
-    const showResults = state === 'results' && query.trim();
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, -1));
+        return;
+      }
 
-    return (
-        <>
-            {/* Backdrop blur overlay */}
-            {createPortal(
-                <AnimatePresence>
-                    {isExpanded && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="fixed inset-0 bg-black/30 backdrop-blur-[8px] z-[90]"
-                            onClick={close}
-                        />
-                    )}
-                </AnimatePresence>,
-                document.body
-            )}
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (selectedIndex >= 0) {
+          handleSelect(selectedIndex);
+        } else if (hasQuery) {
+          onAIQuery(query);
+          close();
+        }
+      }
+    };
 
-            {/* Search Pill Container */}
-            <div
-                ref={containerRef}
-                className="absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 no-drag"
-            >
-                <div className="relative">
-                    <motion.div
-                        initial={false}
-                        animate={{
-                            width: isExpanded ? 480 : 340,
-                        }}
-                        transition={{
-                            type: "spring",
-                            stiffness: 150,
-                            damping: 25
-                        }}
-                        className="relative transform-gpu"
-                    >
-                        {/* Main Pill */}
-                        <div className="relative">
-                            <Card className="relative overflow-hidden rounded-full border-border bg-card/95 shadow-sm backdrop-blur-xl">
-                                {/* Input Row */}
-                                <div
-                                    className="relative flex h-7 items-center"
-                                    onClick={() => state === 'idle' && open()}
-                                >
-                                    <div className="pointer-events-none absolute left-2.5 flex items-center">
-                                        <Search size={13} className="text-text-tertiary" />
-                                    </div>
-                                    <Input
-                                        ref={inputRef}
-                                        type="text"
-                                        value={query}
-                                        onChange={handleInputChange}
-                                        onFocus={() => state === 'idle' && setState('focused')}
-                                        className={cn(
-                                          "h-7 w-full border-0 bg-transparent py-0 pl-8 pr-3 text-xs shadow-none focus-visible:ring-0",
-                                          state === 'idle' ? 'cursor-default' : 'cursor-text',
-                                        )}
-                                        placeholder={t('launcher.searchPlaceholder')}
-                                    />
-                                </div>
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    close,
+    handleSelect,
+    hasQuery,
+    isOpen,
+    onAIQuery,
+    open,
+    query,
+    selectedIndex,
+    totalItems,
+  ]);
 
-                                {/* Results Panel */}
-                                <AnimatePresence>
-                                    {showResults && (
-                                        <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: 'auto', opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            transition={{
-                                                type: "spring",
-                                                stiffness: 150,
-                                                damping: 25,
-                                                opacity: { duration: 0.3 }
-                                            }}
-                                            className="overflow-hidden"
-                                        >
-                                            <div className="w-[480px]">
-                                                <div className="border-t border-border-muted py-2">
-                                                    {/* Explore Section */}
-                                                    <div className="px-3 py-1">
-                                                        <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider mb-1">
-                                                            {t('launcher.searchExplore')}
-                                                        </div>
+  useEffect(() => {
+    if (!isOpen) return;
 
-                                                        {/* AI Query Option */}
-                                                        <motion.button
-                                                            initial={{ opacity: 0, scale: 0.95 }}
-                                                            animate={{ opacity: 1, scale: 1 }}
-                                                            transition={{ duration: 0.2 }}
-                                                            className={`
-                                                            w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left
-                                                            transition-colors duration-100
-                                                            ${selectedIndex === 0
-                                                                    ? 'bg-bg-item-active'
-                                                                    : 'hover:bg-bg-item-hover'
-                                                                }
-                                                        `}
-                                                            onClick={() => handleSelect(0)}
-                                                            onMouseEnter={() => setSelectedIndex(0)}
-                                                        >
-                                                            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                                                                <Sparkles size={12} className="text-white" />
-                                                            </div>
-                                                            <span className="text-[13px] text-text-primary truncate">
-                                                                {query}
-                                                            </span>
-                                                        </motion.button>
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        close();
+      }
+    };
 
-                                                        {/* Literal Search Option */}
-                                                        <motion.button
-                                                            initial={{ opacity: 0, scale: 0.95 }}
-                                                            animate={{ opacity: 1, scale: 1 }}
-                                                            transition={{ duration: 0.2 }}
-                                                            className={`
-                                                            w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left
-                                                            transition-colors duration-100
-                                                            ${selectedIndex === 1
-                                                                    ? 'bg-bg-item-active'
-                                                                    : 'hover:bg-bg-item-hover'
-                                                                }
-                                                        `}
-                                                            onClick={() => handleSelect(1)}
-                                                            onMouseEnter={() => setSelectedIndex(1)}
-                                                        >
-                                                            <div className="w-6 h-6 rounded-md bg-bg-item-surface flex items-center justify-center shrink-0">
-                                                                <Search size={12} className="text-text-secondary" />
-                                                            </div>
-                                                            <span className="text-[13px] text-text-secondary">
-                                                                {t('launcher.searchFor')}{' '}
-                                                                <span className="text-text-primary">"{query}"</span>
-                                                            </span>
-                                                        </motion.button>
-                                                    </div>
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 40);
 
-                                                    {/* Sessions Section */}
-                                                    {sessionResults.length > 0 && (
-                                                        <div className="px-3 py-1 mt-1">
-                                                            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider mb-1">
-                                                                {t('launcher.searchSessions')}
-                                                            </div>
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [close, isOpen]);
 
-                                                            <AnimatePresence initial={false} mode="popLayout">
-                                                                {sessionResults.map((result, index) => (
-                                                                    <motion.button
-                                                                        layout="position"
-                                                                        key={result.id}
-                                                                        initial={{ opacity: 0, height: 0 }}
-                                                                        animate={{ opacity: 1, height: 'auto' }}
-                                                                        exit={{ opacity: 0, height: 0 }}
-                                                                        transition={{ duration: 0.2 }}
-                                                                        className={`
-                                                                        w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left
-                                                                        transition-colors duration-100
-                                                                        ${selectedIndex === index + 2
-                                                                                ? 'bg-bg-item-active'
-                                                                                : 'hover:bg-bg-item-hover'
-                                                                            }
-                                                                    `}
-                                                                        onClick={() => handleSelect(index + 2)}
-                                                                        onMouseEnter={() => setSelectedIndex(index + 2)}
-                                                                    >
-                                                                        <div className="w-6 h-6 rounded-md bg-bg-item-surface flex items-center justify-center shrink-0">
-                                                                            {result.type === 'note' ? (
-                                                                                <FileText size={12} className="text-text-secondary" />
-                                                                            ) : (
-                                                                                <Mic size={12} className="text-text-secondary" />
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="text-[13px] text-text-primary truncate">
-                                                                                {result.title}
-                                                                            </div>
-                                                                            {result.subtitle && (
-                                                                                <div className="text-[11px] text-text-tertiary">
-                                                                                    {result.subtitle}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </motion.button>
-                                                                ))}
-                                                            </AnimatePresence>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </Card>
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full max-w-[540px] no-drag"
+    >
+      {!isOpen ? (
+        <button
+          type="button"
+          onClick={open}
+          className="group flex h-7 w-full items-center gap-2 rounded-sm border border-border-subtle/80 bg-background/42 px-2.5 text-left text-[11.5px] text-text-secondary shadow-[0_10px_28px_-26px_rgba(0,0,0,0.88)] transition-colors hover:border-border-muted hover:bg-background/62"
+        >
+          <Search className="h-3.5 w-3.5 shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary" />
+          <span className="min-w-0 flex-1 truncate text-[12px]">
+            {t("launcher.searchPlaceholder")}
+          </span>
+          <ZedKeyBinding keys={shortcutKeys} className="opacity-90" />
+        </button>
+      ) : null}
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.985 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="absolute left-1/2 top-[calc(100%+6px)] z-[240] -translate-x-1/2"
+            style={{ width: "min(700px, calc(100vw - 40px))" }}
+          >
+            <div className="overflow-hidden rounded-sm border border-border-subtle/80 bg-background/98 shadow-[0_26px_64px_-46px_rgba(0,0,0,0.92)] backdrop-blur-sm">
+              <div className="border-b border-border-subtle/80 px-2.5 py-2">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+                    {t("globalSearch.title")}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <ZedKeyBinding keys={["↑"]} />
+                    <ZedKeyBinding keys={["↓"]} />
+                    <ZedKeyBinding keys={["Esc"]} />
+                  </div>
+                </div>
+                <div className="flex h-9 items-center gap-2 rounded-sm border border-border-subtle/80 bg-background/38 px-2.5">
+                  <Search className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setSelectedIndex(-1);
+                    }}
+                    placeholder={t("globalSearch.placeholder")}
+                    className="h-full w-full bg-transparent text-[13px] text-text-primary outline-none placeholder:text-text-tertiary"
+                  />
+                  <div className="flex items-center gap-1">
+                    <ZedKeyBinding keys={["↑"]} />
+                    <ZedKeyBinding keys={["↓"]} />
+                    <ZedKeyBinding keys={["Esc"]} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto px-1.5 py-1.5">
+                {hasQuery ? (
+                  <div className="space-y-1.5">
+                    <section className="space-y-0.5">
+                      <SectionLabel meta="2">{t("launcher.searchQuickActions")}</SectionLabel>
+                      <ZedListItem
+                        onClick={() => handleSelect(0)}
+                        onMouseEnter={() => setSelectedIndex(0)}
+                        selected={selectedIndex === 0}
+                        startSlot={<Sparkles className="h-3.5 w-3.5" />}
+                        endSlot={<span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">AI</span>}
+                        spacing="dense"
+                        className="rounded-sm px-2 py-1.5 text-text-primary"
+                      >
+                        <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                          <span className="truncate text-[12.5px] font-medium text-text-primary">
+                            {query}
+                          </span>
+                          <span className="truncate text-[11px] text-text-tertiary">
+                            {t("launcher.searchAskSubtitle")}
+                          </span>
                         </div>
-                    </motion.div>
-                </div >
-            </div >
-        </>
-    );
+                      </ZedListItem>
+
+                      <ZedListItem
+                        onClick={() => handleSelect(1)}
+                        onMouseEnter={() => setSelectedIndex(1)}
+                        selected={selectedIndex === 1}
+                        startSlot={<Search className="h-3.5 w-3.5" />}
+                        endSlot={
+                          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                            {t("launcher.openAction")}
+                          </span>
+                        }
+                        spacing="dense"
+                        className="rounded-sm px-2 py-1.5 text-text-primary"
+                      >
+                        <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                          <span className="truncate text-[12.5px] font-medium text-text-primary">
+                            {t("launcher.searchFor")} "{query}"
+                          </span>
+                          <span className="truncate text-[11px] text-text-tertiary">
+                            {t("launcher.searchLiteralSubtitle")}
+                          </span>
+                        </div>
+                      </ZedListItem>
+                    </section>
+
+                    {noteResults.length > 0 ? (
+                      <section className="space-y-0.5">
+                        <SectionLabel meta={noteResults.length}>
+                          {t("launcher.searchNotes")}
+                        </SectionLabel>
+                        {noteResults.map((result, index) => (
+                          <ZedListItem
+                            key={result.id}
+                            onClick={() => handleSelect(index + 2)}
+                            onMouseEnter={() => setSelectedIndex(index + 2)}
+                            selected={selectedIndex === index + 2}
+                            startSlot={<FileText className="h-3.5 w-3.5" />}
+                            endSlot={
+                              <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                                {t("workspace.noteDocument")}
+                              </span>
+                            }
+                            spacing="dense"
+                            className="rounded-sm px-2 py-1.5 text-text-primary"
+                          >
+                            <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                              <span className="truncate text-[12.5px] font-medium text-text-primary">
+                                {result.title}
+                              </span>
+                              {result.subtitle ? (
+                                <span className="truncate text-[11px] text-text-tertiary">
+                                  {result.subtitle}
+                                </span>
+                              ) : null}
+                            </div>
+                          </ZedListItem>
+                        ))}
+                      </section>
+                    ) : null}
+
+                    {meetingResults.length > 0 ? (
+                      <section className="space-y-0.5">
+                        <SectionLabel meta={meetingResults.length}>
+                          {t("launcher.searchMeetings")}
+                        </SectionLabel>
+                        {meetingResults.map((result, index) => {
+                          const itemIndex = index + 2 + noteResults.length;
+                          return (
+                            <ZedListItem
+                              key={result.id}
+                              onClick={() => handleSelect(itemIndex)}
+                              onMouseEnter={() => setSelectedIndex(itemIndex)}
+                              selected={selectedIndex === itemIndex}
+                              startSlot={<Mic className="h-3.5 w-3.5" />}
+                              endSlot={
+                                <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                                  {t("workspace.meetingDocument")}
+                                </span>
+                              }
+                              spacing="dense"
+                              className="rounded-sm px-2 py-1.5 text-text-primary"
+                            >
+                              <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                                <span className="truncate text-[12.5px] font-medium text-text-primary">
+                                  {result.title}
+                                </span>
+                                {result.subtitle ? (
+                                  <span className="truncate text-[11px] text-text-tertiary">
+                                    {result.subtitle}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </ZedListItem>
+                          );
+                        })}
+                      </section>
+                    ) : null}
+
+                    {!hasSearchResults ? (
+                      <section className="space-y-0.5">
+                        <SectionLabel meta="0">{t("launcher.searchSessions")}</SectionLabel>
+                        <div className="rounded-sm border border-dashed border-border-subtle/80 bg-background/18 px-3 py-3 text-[12px] leading-6 text-text-tertiary">
+                          {t("launcher.searchEmptyState")}
+                        </div>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <section className="space-y-0.5">
+                      <SectionLabel meta="2">{t("launcher.searchQuickActions")}</SectionLabel>
+                      <ZedListItem
+                        onClick={() => handleSelect(0)}
+                        onMouseEnter={() => setSelectedIndex(0)}
+                        selected={selectedIndex === 0}
+                        startSlot={<Sparkles className="h-3.5 w-3.5" />}
+                        endSlot={<span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">AI</span>}
+                        spacing="dense"
+                        className="rounded-sm px-2 py-1.5 text-text-primary"
+                      >
+                        <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                          <span className="truncate text-[12.5px] font-medium text-text-primary">
+                            {t("launcher.searchAskAnywhere")}
+                          </span>
+                          <span className="truncate text-[11px] text-text-tertiary">
+                            {t("launcher.searchAskAnywhereSubtitle")}
+                          </span>
+                        </div>
+                      </ZedListItem>
+
+                      <ZedListItem
+                        onClick={() => handleSelect(1)}
+                        onMouseEnter={() => setSelectedIndex(1)}
+                        selected={selectedIndex === 1}
+                        startSlot={<Clock3 className="h-3.5 w-3.5" />}
+                        endSlot={
+                          latestMeeting ? (
+                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+                              {t("launcher.openAction")}
+                            </span>
+                          ) : null
+                        }
+                        spacing="dense"
+                        className={cn(
+                          "rounded-sm px-2 py-1.5 text-text-primary",
+                          !latestMeeting && "opacity-55",
+                        )}
+                      >
+                        <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                          <span className="truncate text-[12.5px] font-medium text-text-primary">
+                            {t("launcher.searchLatestMeeting")}
+                          </span>
+                          <span className="truncate text-[11px] text-text-tertiary">
+                            {latestMeeting
+                              ? latestMeeting.title
+                              : t("launcher.noRecentMeetings")}
+                          </span>
+                        </div>
+                      </ZedListItem>
+                    </section>
+
+                    <section className="space-y-0.5">
+                      <SectionLabel meta={recentMeetings.length}>{t("launcher.searchSessions")}</SectionLabel>
+                      {recentMeetings.length > 0 ? (
+                        recentMeetings.map((meeting, index) => {
+                        const timestamp = new Date(meeting.date);
+                        const timeLabel = Number.isNaN(timestamp.getTime())
+                          ? ""
+                          : timestamp.toLocaleDateString(dateLocale, {
+                              month: "short",
+                              day: "numeric",
+                            });
+                        const itemIndex = index + 2;
+
+                        return (
+                          <ZedListItem
+                            key={meeting.id}
+                            onClick={() => handleSelect(itemIndex)}
+                            onMouseEnter={() => setSelectedIndex(itemIndex)}
+                            selected={selectedIndex === itemIndex}
+                            startSlot={<Clock3 className="h-3.5 w-3.5" />}
+                            spacing="dense"
+                            className={cn(
+                              "rounded-sm px-2 py-1.5 text-text-primary",
+                              selectedIndex === itemIndex && "bg-bg-item-active/90",
+                            )}
+                          >
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+                                <span className="truncate text-[12.5px] font-medium text-text-primary">
+                                  {meeting.title}
+                                </span>
+                                {meeting.summary ? (
+                                  <span className="truncate text-[11px] text-text-tertiary">
+                                    {meeting.summary}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {timeLabel ? (
+                                <span className="shrink-0 text-[11px] text-text-tertiary">
+                                  {timeLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                          </ZedListItem>
+                        );
+                        })
+                      ) : (
+                        <div className="rounded-sm border border-dashed border-border-subtle/80 bg-background/18 px-3 py-3 text-[12px] leading-6 text-text-tertiary">
+                          {t("launcher.noRecentMeetings")}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-border-subtle/80 bg-background/14 px-3 py-1.5">
+                <span className="text-[11px] text-text-tertiary">
+                  {hasQuery
+                    ? t("launcher.searchAskSubtitle")
+                    : t("launcher.searchRecentHint")}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <ZedKeyBinding keys={["Enter"]} />
+                  <ZedKeyBinding keys={["Esc"]} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 };
 
 export default TopSearchPill;

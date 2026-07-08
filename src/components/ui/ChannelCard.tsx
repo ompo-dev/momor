@@ -18,7 +18,6 @@ interface ChannelCardProps {
   iconFailed: React.ReactNode;
 }
 
-/** Human-readable provider label */
 const providerLabel = (provider?: string): string => {
   if (!provider || provider === "none") return "";
   const labels: Record<string, string> = {
@@ -74,35 +73,23 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
 
   return (
     <div
-      className={`relative rounded-xl transition-all duration-300 ${
+      className={`rounded-md border transition-all duration-300 ${
         status === "failed"
-          ? "bg-gradient-to-br from-red-500/8 to-red-500/3 border border-red-500/15"
+          ? "border-red-500/20 bg-red-500/[0.05]"
           : status === "reconnecting"
-            ? "bg-gradient-to-br from-amber-500/8 to-amber-500/3 border border-amber-500/15"
-            : "bg-gradient-to-br from-sky-500/4 to-sky-500/2 border border-sky-500/10"
+            ? "border-amber-500/20 bg-amber-500/[0.045]"
+            : "border-border-subtle/80 bg-background/45"
       }`}
     >
-      {/* Status indicator line */}
-      <div
-        className={`absolute top-0 left-3 right-3 h-px ${
-          status === "failed"
-            ? "bg-gradient-to-r from-red-500/40 to-transparent"
-            : status === "reconnecting"
-              ? "bg-gradient-to-r from-amber-500/40 to-transparent"
-              : "bg-gradient-to-r from-sky-500/40 to-transparent"
-        }`}
-      />
-
-      <div className="p-3.5 space-y-2.5">
-        {/* Header */}
+      <div className="space-y-2.5 p-3">
         <div className="flex items-center gap-2">
           <div
-            className={`flex items-center justify-center w-8 h-8 rounded-lg ${
+            className={`flex h-7 w-7 items-center justify-center rounded-sm border ${
               status === "failed"
-                ? "bg-red-500/15"
+                ? "border-red-500/20 bg-red-500/10"
                 : status === "reconnecting"
-                  ? "bg-amber-500/15"
-                  : "bg-sky-500/10"
+                  ? "border-amber-500/20 bg-amber-500/10"
+                  : "border-border-subtle/80 bg-background/55"
             }`}
           >
             <div
@@ -117,7 +104,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
               {icon}
             </div>
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <p
               className={`text-[11px] font-semibold ${
                 status === "failed"
@@ -129,18 +116,17 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
             >
               {name}
             </p>
-            <p className="text-[10px] overlay-text-muted truncate">
+            <p className="truncate text-[10px] overlay-text-muted">
               {statusLabel}
             </p>
             {label && (
-              <p className="text-[9px] overlay-text-muted opacity-60 mt-0.5">
+              <p className="mt-0.5 text-[9px] overlay-text-muted opacity-60">
                 via {label}
               </p>
             )}
           </div>
         </div>
 
-        {/* Error details */}
         {status === "failed" && errorCategory && (
           <div className="space-y-1">
             <p className="text-[12px] font-medium overlay-text-primary leading-snug">
@@ -152,10 +138,9 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
           </div>
         )}
 
-        {/* Tech details */}
         {error && (
-          <div className="pt-1.5 border-t border-white/5">
-            <div className="flex items-center justify-between mb-1">
+          <div className="border-t border-border-subtle/70 pt-1.5">
+            <div className="mb-1 flex items-center justify-between">
               <span className="text-[9px] font-medium tracking-wide overlay-text-muted opacity-60">
                 Details
               </span>
@@ -164,7 +149,8 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
                   e.stopPropagation();
                   handleCopy();
                 }}
-                className="p-1 rounded transition-all opacity-60 hover:opacity-100"
+                className="rounded-sm p-1 transition-all opacity-60 hover:bg-background/65 hover:opacity-100"
+                title={copied ? "Copied" : "Copy details"}
               >
                 <svg
                   className="w-3 h-3 overlay-text-muted"
@@ -180,7 +166,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
                 </svg>
               </button>
             </div>
-            <code className="block text-[10px] font-mono leading-relaxed overlay-text-secondary bg-black/20 rounded-lg px-2 py-1.5 break-words overflow-wrap-anywhere max-h-12 overflow-y-auto scrollbar-none">
+            <code className="block max-h-12 overflow-y-auto break-words rounded-sm border border-border-subtle/70 bg-background/60 px-2 py-1.5 font-mono text-[10px] leading-relaxed overlay-text-secondary overflow-wrap-anywhere scrollbar-none">
               {cleanedError}
             </code>
           </div>

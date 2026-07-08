@@ -1,8 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { Card, CardContent } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
 
 export interface SettingsToggleRowProps {
   icon?: React.ReactNode
@@ -26,30 +24,36 @@ export function SettingsToggleRow({
   highlighted,
 }: SettingsToggleRowProps) {
   return (
-    <Card
+    <div
       className={cn(
-        "border-border",
-        highlighted && "shadow-md shadow-primary/10",
+        "flex items-center justify-between gap-4 rounded-sm border border-border-subtle/80 bg-background/14 px-4 py-3.5",
+        highlighted && "border-primary/35 bg-primary/[0.05]",
         className,
       )}
     >
-      <CardContent className="flex items-center justify-between gap-4 p-5">
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        {icon ? (
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/30 text-text-tertiary">
             {icon}
-            <Label className="text-base font-semibold leading-none">{title}</Label>
           </div>
-          {description && (
-            <p className="text-xs text-muted-foreground">{description}</p>
-          )}
+        ) : null}
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-[12.5px] font-medium leading-5 text-foreground">
+            {title}
+          </p>
+          {description ? (
+            <div className="text-[11px] leading-5 text-muted-foreground">
+              {description}
+            </div>
+          ) : null}
         </div>
-        <Switch
-          checked={checked}
-          onCheckedChange={onCheckedChange}
-          disabled={disabled}
-          aria-label={title}
-        />
-      </CardContent>
-    </Card>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        aria-label={title}
+      />
+    </div>
   )
 }

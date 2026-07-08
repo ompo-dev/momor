@@ -21,9 +21,9 @@ export interface ZedListItemProps
 }
 
 const spacingMap: Record<ZedListItemSpacing, string> = {
-  extraDense: "py-0.5",
-  dense: "py-1",
-  sparse: "py-1.5",
+  extraDense: "min-h-6 py-px",
+  dense: "min-h-7 py-0.5",
+  sparse: "min-h-8 py-1",
 };
 
 export function ZedListItem({
@@ -38,32 +38,50 @@ export function ZedListItem({
   children,
   ...props
 }: ZedListItemProps) {
+  const textLikeChild =
+    typeof children === "string" || typeof children === "number";
+
   return (
     <div
       role={onClick ? "button" : undefined}
       tabIndex={onClick && !disabled ? 0 : undefined}
       onClick={disabled ? undefined : onClick}
+      data-selected={selected ? "true" : undefined}
       className={cn(
-        "group flex w-full items-center gap-2 px-2 text-sm",
+        "group flex w-full items-center gap-2 border px-1.5 text-[13px] leading-tight transition-colors",
         spacingMap[spacing],
-        rounded && "rounded-md",
+        rounded && "rounded-sm",
         disabled
           ? "pointer-events-none opacity-50"
           : onClick && "cursor-pointer",
         selected
-          ? "bg-bg-item-active text-foreground"
-          : !disabled && onClick && "hover:bg-accent",
+          ? "border-border-muted bg-bg-item-active text-text-primary"
+          : "border-transparent text-text-secondary",
+        !disabled &&
+          onClick &&
+          !selected &&
+          "hover:bg-accent/60 hover:text-text-primary active:bg-bg-item-active/80",
+        !disabled &&
+          onClick &&
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-offset-0",
         className,
       )}
       {...props}
     >
       {startSlot ? (
-        <span className="flex shrink-0 items-center text-muted-foreground [&_svg]:size-4">
+        <div
+          className={cn(
+            "flex shrink-0 items-center [&_svg]:size-3.5",
+            selected ? "text-text-primary" : "text-text-secondary",
+          )}
+        >
           {startSlot}
-        </span>
+        </div>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
-      {endSlot ? <span className="flex shrink-0 items-center">{endSlot}</span> : null}
+      <div className={cn("min-w-0 flex-1", textLikeChild && "truncate")}>
+        {children}
+      </div>
+      {endSlot ? <div className="flex shrink-0 items-center">{endSlot}</div> : null}
     </div>
   );
 }

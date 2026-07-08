@@ -9,7 +9,33 @@ import {
 interface Options {
   inputValue: string;
   setInputValue: (v: string) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
+}
+
+function normalizeMentionText(value: unknown): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeMentionDescription(value: unknown): string | undefined {
+  const text = normalizeMentionText(value);
+  if (!text) return undefined;
+  if (/^>+$/.test(text)) return undefined;
+  if (/^[-:]+$/.test(text)) return undefined;
+  return text;
+}
+
+function formatMcpTransportLabel(value: unknown): string | undefined {
+  const normalized = normalizeMentionText(value).toLowerCase();
+  switch (normalized) {
+    case "stdio":
+      return "Runs locally";
+    case "sse":
+      return "Remote stream";
+    case "http":
+      return "Remote endpoint";
+    default:
+      return normalizeMentionDescription(value);
+  }
 }
 
 /**
@@ -33,8 +59,8 @@ export function useComposerMentions({
         setSkills(
           (s || []).map((x) => ({
             id: x.id,
-            name: x.name,
-            description: x.description,
+            name: normalizeMentionText(x.name),
+            description: normalizeMentionDescription(x.description),
             enabled: x.enabled,
           })),
         ),
@@ -46,8 +72,8 @@ export function useComposerMentions({
         setMcps(
           (m || []).map((x) => ({
             id: x.id,
-            name: x.name,
-            description: x.transport,
+            name: normalizeMentionText(x.name),
+            description: formatMcpTransportLabel(x.transport),
             enabled: x.enabled,
           })),
         ),
@@ -69,7 +95,7 @@ export function useComposerMentions({
   }, [mention, skills, mcps]);
 
   const onComposerChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const v = e.target.value;
       setInputValue(v);
       const caret = e.target.selectionStart ?? v.length;

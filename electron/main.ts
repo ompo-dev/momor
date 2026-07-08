@@ -207,7 +207,10 @@ import { loadNativeModule } from "./audio/nativeModuleLoader";
 import { GoogleSTT } from "./audio/GoogleSTT";
 import { RestSTT } from "./audio/RestSTT";
 import { DeepgramStreamingSTT } from "./audio/DeepgramStreamingSTT";
-import { extractErrorMessage, isSttAuthError } from "./utils/extractErrorMessage";
+import {
+  extractErrorMessage,
+  isSttAuthError,
+} from "./utils/extractErrorMessage";
 import { SonioxStreamingSTT } from "./audio/SonioxStreamingSTT";
 import { ElevenLabsStreamingSTT } from "./audio/ElevenLabsStreamingSTT";
 import { OpenAIStreamingSTT } from "./audio/OpenAIStreamingSTT";
@@ -708,9 +711,14 @@ export class AppState {
     setImmediate(() => {
       try {
         const { MeetingMCPServer } = require("./services/MeetingMCPServer");
-        MeetingMCPServer.getInstance().start().catch((err: Error) => {
-          console.warn("[AppState] MeetingMCPServer failed to start:", err?.message);
-        });
+        MeetingMCPServer.getInstance()
+          .start()
+          .catch((err: Error) => {
+            console.warn(
+              "[AppState] MeetingMCPServer failed to start:",
+              err?.message,
+            );
+          });
       } catch (e) {
         console.warn("[AppState] MeetingMCPServer load failed:", e);
       }
@@ -1255,9 +1263,8 @@ export class AppState {
           CredentialsManager.getInstance().getAzureApiKey(sessionProfileId);
         region = CredentialsManager.getInstance().getAzureRegion();
       } else if (sttProvider === "ibmwatson") {
-        apiKey = CredentialsManager.getInstance().getIbmWatsonApiKey(
-          sessionProfileId,
-        );
+        apiKey =
+          CredentialsManager.getInstance().getIbmWatsonApiKey(sessionProfileId);
         region = CredentialsManager.getInstance().getIbmWatsonRegion();
       }
 
@@ -1385,7 +1392,8 @@ export class AppState {
       // Ignore noisy follow-up events after a fatal auth failure (e.g. WS "close").
       if (
         _lastState === "failed" &&
-        (errorMessage === "close" || errorMessage === "Unknown STT provider error")
+        (errorMessage === "close" ||
+          errorMessage === "Unknown STT provider error")
       ) {
         return;
       }
@@ -1425,7 +1433,9 @@ export class AppState {
       }
 
       if (isQuotaError && !_authRotationAttempted) {
-        const { CredentialsManager: CmRotate } = require("./services/CredentialsManager");
+        const {
+          CredentialsManager: CmRotate,
+        } = require("./services/CredentialsManager");
         _authRotationAttempted = true;
         const rotated = CmRotate.getInstance().rotateActiveSttApiKey(
           this.sessionSttProfileId,
@@ -1589,10 +1599,16 @@ export class AppState {
         if (process.platform === "win32") {
           try {
             const commsId = AudioDevices.getCommunicationsOutputDeviceId();
-            const defaultId = require("./audio/nativeModuleLoader").loadNativeModule()?.getDefaultOutputDeviceId?.() || "";
+            const defaultId =
+              require("./audio/nativeModuleLoader")
+                .loadNativeModule()
+                ?.getDefaultOutputDeviceId?.() || "";
             if (commsId && defaultId && commsId !== defaultId) {
-              const msg = "No audio detected — your meeting app (Zoom/Teams/Meet) is routing audio to the Communications device while Momor captures the Multimedia device. In your meeting app, change the speaker output to your default system device, then restart the meeting.";
-              console.warn(`${prefix}eCommunications/eMultimedia split detected: comms=${commsId} vs default=${defaultId}`);
+              const msg =
+                "No audio detected — your meeting app (Zoom/Teams/Meet) is routing audio to the Communications device while Momor captures the Multimedia device. In your meeting app, change the speaker output to your default system device, then restart the meeting.";
+              console.warn(
+                `${prefix}eCommunications/eMultimedia split detected: comms=${commsId} vs default=${defaultId}`,
+              );
               this.broadcast("audio-capture-failed", {
                 channel: "system",
                 message: msg,
@@ -2206,7 +2222,7 @@ export class AppState {
     }
 
     // Resolve the output UID to its friendly name and compare to the input
-    // name (input IDs from cpal ARE the device name, e.g. "Evin's AirPods Pro").
+    // name (input IDs from cpal ARE the device name, e.g. "ompo-dev's AirPods Pro").
     try {
       const outputs = AudioDevices.getOutputDevices();
       const outputMatch = outputs.find(
@@ -2976,10 +2992,7 @@ export class AppState {
     }
   }
 
-  private sendSttLiveTestEvent(
-    channel: string,
-    payload: unknown,
-  ): void {
+  private sendSttLiveTestEvent(channel: string, payload: unknown): void {
     const targets = [
       this.settingsWindowHelper.getSettingsWindow(),
       this.getWindowHelper().getLauncherWindow(),
@@ -3010,7 +3023,9 @@ export class AppState {
 
     const { CredentialsManager } = require("./services/CredentialsManager");
     const cm = CredentialsManager.getInstance();
-    const profile = cm.getSttProfiles().find((p: { id: string }) => p.id === profileId);
+    const profile = cm
+      .getSttProfiles()
+      .find((p: { id: string }) => p.id === profileId);
     if (!profile) {
       return { success: false, error: "STT profile not found." };
     }
@@ -3321,7 +3336,9 @@ export class AppState {
     }
 
     // Emit session reset to clear UI state immediately
-    const { CredentialsManager: CMReset } = require("./services/CredentialsManager");
+    const {
+      CredentialsManager: CMReset,
+    } = require("./services/CredentialsManager");
     CMReset.getInstance().resetAllKeyRotation();
     this.getWindowHelper()
       .getOverlayWindow()
@@ -5106,7 +5123,9 @@ async function initializeApp() {
     // Kill any persistent ACP agent processes (external CLI agents) so they
     // don't outlive the app.
     try {
-      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const {
+        AgentOrchestrator,
+      } = require("./services/agent/AgentOrchestrator");
       AgentOrchestrator.getInstance().disposeAcpConnections();
     } catch {}
 

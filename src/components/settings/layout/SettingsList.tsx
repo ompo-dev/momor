@@ -1,6 +1,5 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
 
 export function SettingsList({
   children,
@@ -10,8 +9,13 @@ export function SettingsList({
   className?: string;
 }) {
   return (
-    <Card className={cn("divide-y divide-border overflow-hidden", className)}>
+    <div
+      className={cn(
+        "overflow-hidden rounded-sm border border-border-subtle/80 bg-background/14 divide-y divide-border-subtle/80",
+        className,
+      )}
+    >
       {children}
-    </Card>
+    </div>
   );
 }

@@ -1,7 +1,8 @@
 import React, { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { Sparkles, Plug } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ZedListItem } from "../zed/ZedListItem";
 
 export interface MentionItem {
   id: string;
@@ -21,9 +22,10 @@ interface MentionPopupProps {
 }
 
 type PopupGeometry = {
-  bottom: number;
   left: number;
   maxHeight: number;
+  offset: number;
+  placement: "above" | "below";
   width: number;
 };
 
@@ -37,6 +39,7 @@ const MentionPopup: React.FC<MentionPopupProps> = ({
   onHover,
   emptyLabel,
 }) => {
+  const { t } = useTranslation();
   const Icon = trigger === "/" ? Sparkles : Plug;
   const [geometry, setGeometry] = useState<PopupGeometry | null>(null);
 
@@ -52,25 +55,40 @@ const MentionPopup: React.FC<MentionPopupProps> = ({
 
       const viewportPadding = 12;
       const gap = 8;
-      const maxWidth = Math.min(560, window.innerWidth - viewportPadding * 2);
+      const maxWidth = Math.min(620, window.innerWidth - viewportPadding * 2);
+      const preferredWidth = Math.min(
+        maxWidth,
+        Math.max(Math.ceil(rect.width) + 32, Math.min(420, maxWidth)),
+      );
       const width = Math.min(
         maxWidth,
-        Math.max(Math.ceil(rect.width), Math.min(360, maxWidth)),
+        Math.max(preferredWidth, Math.min(420, maxWidth)),
       );
       const left = Math.min(
         window.innerWidth - viewportPadding - width,
         Math.max(viewportPadding, Math.round(rect.left)),
       );
-      const maxHeight = Math.max(
-        140,
-        Math.min(320, Math.floor(rect.top - viewportPadding - gap)),
+      const spaceAbove = Math.max(
+        0,
+        Math.floor(rect.top - viewportPadding - gap),
       );
-      const bottom = Math.max(
-        viewportPadding,
-        Math.round(window.innerHeight - rect.top + gap),
+      const spaceBelow = Math.max(
+        0,
+        Math.floor(window.innerHeight - rect.bottom - viewportPadding - gap),
       );
+      const placement =
+        spaceAbove >= 220 || spaceAbove >= spaceBelow ? "above" : "below";
+      const availableSpace = placement === "above" ? spaceAbove : spaceBelow;
+      const offset =
+        placement === "above"
+          ? Math.max(
+              viewportPadding,
+              Math.round(window.innerHeight - rect.top + gap),
+            )
+          : Math.max(viewportPadding, Math.round(rect.bottom + gap));
+      const maxHeight = Math.max(120, Math.min(400, availableSpace));
 
-      setGeometry({ bottom, left, maxHeight, width });
+      setGeometry({ left, maxHeight, offset, placement, width });
     };
 
     updateGeometry();
@@ -86,49 +104,72 @@ const MentionPopup: React.FC<MentionPopupProps> = ({
 
   return createPortal(
     <div
-      className="custom-scrollbar fixed z-[2147483647] overflow-y-auto rounded-xl border overlay-input-surface py-1 shadow-2xl backdrop-blur-xl"
+      className="custom-scrollbar fixed z-[2147483647] overflow-hidden rounded-[10px] border border-border-subtle/80 bg-card/99 shadow-[0_24px_56px_-34px_rgba(0,0,0,0.88)] backdrop-blur-xl"
       data-stealth-ignore="true"
       onMouseDown={(e) => e.preventDefault() /* keep input focus */}
       style={{
-        bottom: geometry.bottom,
         left: geometry.left,
         maxHeight: geometry.maxHeight,
+        ...(geometry.placement === "above"
+          ? { bottom: geometry.offset }
+          : { top: geometry.offset }),
         width: geometry.width,
       }}
     >
-      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider overlay-text-muted">
-        {trigger === "/" ? "Skills" : "MCPs"}
+      <div className="flex items-center justify-between border-b border-border-subtle/80 bg-background/14 px-3.5 py-2">
+        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+          {trigger === "/"
+            ? t("overlay.mentionCommands")
+            : t("overlay.mentionServers")}
+        </div>
+        <div className="text-[10px] font-medium text-text-tertiary">
+          {items.length} {items.length === 1 ? "item" : "items"}
+        </div>
       </div>
       {items.length === 0 ? (
-        <div className="px-3 py-2 text-[12px] overlay-text-muted">
+        <div className="px-3.5 py-3 text-[12px] text-text-secondary">
           {emptyLabel}
         </div>
       ) : (
-        items.map((item, i) => (
-          <button
-            key={item.id}
-            type="button"
-            onMouseEnter={() => onHover(i)}
-            onClick={() => onSelect(item)}
-            className={cn(
-              "flex w-full items-center gap-2 px-3 py-2 text-left",
-              i === activeIndex
-                ? "overlay-icon-surface-hover"
-                : "hover:overlay-icon-surface-hover",
-            )}
-            title={item.name}
-          >
-            <Icon className="w-3.5 h-3.5 shrink-0 overlay-text-muted" />
-            <span className="min-w-0 flex-1">
-              <span className="block break-words text-[13px] leading-snug overlay-input-text">
-                {item.name}
+        <div
+          className="overflow-y-auto py-1"
+          style={{ maxHeight: Math.max(96, geometry.maxHeight - 45) }}
+        >
+          {items.map((item, i) => (
+            <ZedListItem
+              key={item.id}
+              onMouseEnter={() => onHover(i)}
+              onClick={() => onSelect(item)}
+              selected={i === activeIndex}
+              spacing="dense"
+              className="mx-0.5 items-start px-2 py-1.5 text-[11px]"
+              title={item.name}
+              startSlot={
+                <div className="mt-0.5 flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-[8px] border border-border-subtle/80 bg-background/28">
+                  <Icon className="h-3 w-3 text-text-tertiary" />
+                </div>
+              }
+              endSlot={
+                item.enabled === false ? (
+                  <span className="shrink-0 rounded-[8px] border border-border-subtle/80 bg-background/28 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-[0.12em] text-text-tertiary">
+                    off
+                  </span>
+                ) : null
+              }
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block whitespace-normal break-words text-[11.5px] font-medium leading-[1.35] text-current">
+                  {item.name}
+                </span>
+                {item.description ? (
+                  <span className="mt-0.5 block text-[10px] leading-[1.45] text-text-tertiary">
+                    {item.description}
+                  </span>
+                ) : null}
               </span>
-            </span>
-            {item.enabled === false && (
-              <span className="shrink-0 text-[10px] overlay-text-muted">off</span>
-            )}
-          </button>
-        ))
+            </ZedListItem>
+          ))}
+        </div>
       )}
     </div>,
     document.body,

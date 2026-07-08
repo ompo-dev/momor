@@ -20,26 +20,28 @@ const LanguageSettings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <div>
-        <h3 className="text-sm font-semibold text-text-primary mb-1">{t('settings.language.title')}</h3>
-        <p className="text-xs text-text-secondary mb-3">{t('settings.language.description')}</p>
+    <div className="space-y-3 p-4">
+      <div className="border-l border-border-subtle/80 pl-4">
+        <h3 className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+          {t('settings.language.title')}
+        </h3>
+        <p className="mb-3 text-[11px] leading-5 text-text-secondary">{t('settings.language.description')}</p>
         <div className="flex gap-2">
           {languages.map((lang) => (
             <button
               key={lang.code}
               onClick={() => handleChange(lang.code)}
-              className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+              className={`rounded-sm border px-3 py-2 text-[12px] font-medium transition-colors ${
                 i18n.language === lang.code
-                  ? 'bg-accent-primary text-white'
-                  : 'bg-bg-input text-text-secondary hover:bg-bg-elevated'
+                  ? 'border-accent-primary/40 bg-accent-primary/10 text-text-primary'
+                  : 'border-border-subtle/80 bg-background/18 text-text-secondary hover:bg-background/28'
               }`}
             >
               {lang.name}
             </button>
           ))}
         </div>
-        {saved && <p className="text-xs text-green-400 mt-2">{t('settings.language.saved')}</p>}
+        {saved && <p className="mt-2 text-[11px] text-green-400">{t('settings.language.saved')}</p>}
       </div>
     </div>
   );

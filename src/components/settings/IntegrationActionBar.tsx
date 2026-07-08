@@ -83,7 +83,7 @@ export function IntegrationActionBar({
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >
@@ -109,7 +109,7 @@ export function IntegrationActionBar({
         {extra}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:border-l sm:border-border/50 sm:pl-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         {save}
         {destructive}
       </div>

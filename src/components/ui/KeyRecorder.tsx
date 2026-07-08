@@ -1,95 +1,128 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Check } from 'lucide-react';
+import React, { useEffect, useRef, useState } from "react";
+import { ZedKeyBinding } from "@/components/zed/ZedKeyBinding";
+import { cn } from "@/lib/utils";
 
 interface KeyRecorderProps {
-    currentKeys: string[];
-    onSave: (keys: string[]) => void;
-    className?: string;
+  currentKeys: string[];
+  onSave: (keys: string[]) => void;
+  className?: string;
 }
 
-export const KeyRecorder: React.FC<KeyRecorderProps> = ({ currentKeys, onSave, className }) => {
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
-    const inputRef = useRef<HTMLDivElement>(null);
+const DISPLAY_KEY_MAP: Record<string, string> = {
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+};
 
-    useEffect(() => {
-        if (isRecording && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [isRecording]);
+const formatKeysForDisplay = (keys: string[]) =>
+  keys.map((key) => DISPLAY_KEY_MAP[key] ?? key);
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!isRecording) return;
-        e.preventDefault();
-        e.stopPropagation();
+export const KeyRecorder: React.FC<KeyRecorderProps> = ({
+  currentKeys,
+  onSave,
+  className,
+}) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
+  const inputRef = useRef<HTMLDivElement>(null);
 
-        const key = e.key;
-        const code = e.code;
-        const meta = e.metaKey;
-        const ctrl = e.ctrlKey;
-        const alt = e.altKey;
-        const shift = e.shiftKey;
+  useEffect(() => {
+    if (isRecording && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isRecording]);
 
-        // Ignore modifier key presses alone if possible, but we need to show them
-        const modifiers = [];
-        if (meta) modifiers.push('⌘');
-        if (ctrl) modifiers.push('⌃');
-        if (alt) modifiers.push('⌥');
-        if (shift) modifiers.push('⇧');
+  const stopRecording = () => {
+    setIsRecording(false);
+    setRecordedKeys([]);
+  };
 
-        let mainKey = '';
-        if (key !== 'Meta' && key !== 'Control' && key !== 'Alt' && key !== 'Shift') {
-            if (code.startsWith('Key')) mainKey = key.toUpperCase();
-            else if (code.startsWith('Digit')) mainKey = key;
-            else if (code === 'Space') mainKey = 'Space';
-            else if (key === 'Enter') mainKey = 'Enter';
-            else if (key === 'Backspace') mainKey = 'Backspace';
-            else if (key.startsWith('Arrow')) mainKey = key;
-            else mainKey = key.toUpperCase();
-        }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isRecording) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-        if (mainKey) {
-            setRecordedKeys([...modifiers, mainKey]);
-            setIsRecording(false);
-            onSave([...modifiers, mainKey]);
-        } else {
-            // Just modifiers pressed so far
-            setRecordedKeys([...modifiers]);
-        }
-    };
+    if (
+      e.key === "Escape" &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey
+    ) {
+      stopRecording();
+      return;
+    }
 
-    return (
+    const modifiers: string[] = [];
+    if (e.metaKey) modifiers.push("⌘");
+    if (e.ctrlKey) modifiers.push("⌃");
+    if (e.altKey) modifiers.push("⌥");
+    if (e.shiftKey) modifiers.push("⇧");
+
+    let mainKey = "";
+    if (
+      e.key !== "Meta" &&
+      e.key !== "Control" &&
+      e.key !== "Alt" &&
+      e.key !== "Shift"
+    ) {
+      if (e.code.startsWith("Key")) mainKey = e.key.toUpperCase();
+      else if (e.code.startsWith("Digit")) mainKey = e.key;
+      else if (e.code === "Space") mainKey = "Space";
+      else if (e.key === "Enter") mainKey = "Enter";
+      else if (e.key === "Backspace") mainKey = "Backspace";
+      else if (e.key.startsWith("Arrow")) mainKey = e.key;
+      else mainKey = e.key.toUpperCase();
+    }
+
+    if (mainKey) {
+      const combo = [...modifiers, mainKey];
+      setRecordedKeys(combo);
+      setIsRecording(false);
+      onSave(combo);
+      return;
+    }
+
+    setRecordedKeys(modifiers);
+  };
+
+  const currentDisplayKeys = formatKeysForDisplay(currentKeys);
+  const recordedDisplayKeys = formatKeysForDisplay(recordedKeys);
+
+  return (
+    <div className={cn("relative shrink-0", className)}>
+      {isRecording ? (
         <div
-            className={`relative flex items-center gap-1.5 group ${className || ''}`}
-            onClick={() => setIsRecording(true)}
+          ref={inputRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onBlur={stopRecording}
+          className="inline-flex min-h-8 min-w-[148px] items-center justify-center rounded-sm border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-primary outline-none"
         >
-            {isRecording ? (
-                <div
-                    ref={inputRef}
-                    tabIndex={0}
-                    onKeyDown={handleKeyDown}
-                    onBlur={() => setIsRecording(false)}
-                    className="flex items-center gap-1 bg-bg-input border border-accent-primary text-accent-primary px-2 py-1 rounded-md text-xs font-sans shadow-sm outline-none min-w-[60px] justify-center"
-                >
-                    {recordedKeys.length > 0 ? recordedKeys.join(' + ') : 'Press keys...'}
-                </div>
-            ) : (
-                <div className="flex items-center gap-1">
-                    {currentKeys.map((k, i) => {
-                        let displayKey = k;
-                        if (k === 'ArrowUp') displayKey = '↑';
-                        else if (k === 'ArrowDown') displayKey = '↓';
-                        else if (k === 'ArrowLeft') displayKey = '←';
-                        else if (k === 'ArrowRight') displayKey = '→';
-
-                        return (
-                            <span key={i} className="bg-bg-input text-text-secondary h-6 min-w-[26px] px-1.5 rounded-md text-xs font-sans flex items-center justify-center shadow-sm border border-border-subtle group-hover:border-text-tertiary transition-colors">
-                                {displayKey}
-                            </span>
-                        );
-                    })}
-                </div>
-            )}
+          {recordedDisplayKeys.length > 0 ? (
+            <ZedKeyBinding keys={recordedDisplayKeys} />
+          ) : (
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+              Press keys
+            </span>
+          )}
         </div>
-    );
+      ) : (
+        <button
+          type="button"
+          onClick={() => setIsRecording(true)}
+          className="inline-flex min-h-8 min-w-[92px] items-center justify-center rounded-sm border border-border-subtle/80 bg-background/55 px-2 py-1.5 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+        >
+          {currentDisplayKeys.length > 0 ? (
+            <ZedKeyBinding keys={currentDisplayKeys} />
+          ) : (
+            <span className="text-[11px] font-medium text-text-tertiary">
+              Set shortcut
+            </span>
+          )}
+        </button>
+      )}
+    </div>
+  );
 };

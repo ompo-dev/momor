@@ -96,6 +96,14 @@ test("LLMHelper routes chat through OpenClaude instead of routeLLMProviders fall
   assert.match(src, /yield\* this\.streamWithOpenClaude\(/);
 });
 
+test("LLMHelper exposes a shared OpenClaude agent-turn resolver for overlay and agent IPC", () => {
+  const src = read("electron/LLMHelper.ts");
+
+  assert.match(src, /public prepareOpenClaudeAgentTurn\(/);
+  assert.match(src, /this\.resolveOpenClaudeInvocationForModelId\(modelId\)/);
+  assert.match(src, /this\.assertOutboundScopes\(/);
+});
+
 test("Embedding provider resolver fails closed when embeddings scope is denied", () => {
   const src = read("electron/rag/EmbeddingProviderResolver.ts");
 
@@ -138,6 +146,61 @@ test("IPC handlers expose get/set provider-data-scopes and broadcast updates", (
   );
 });
 
+test("agent IPC resolves OpenClaude provider env and skips stale saved CLI paths", () => {
+  const ipc = read("electron/ipcHandlers.ts");
+
+  assert.match(ipc, /const isRunnableCliPath =/);
+  assert.match(ipc, /isRunnableCliPath\(savedOpenClaudePath\)/);
+  assert.match(ipc, /resolvedOpenClaudePath = resolveOpenClaudeCliPath\(\)/);
+  assert.match(
+    ipc,
+    /if \(\s*resolvedOpenClaudePath &&\s*currentOpenClaudePath !== resolvedOpenClaudePath\s*\)/,
+  );
+  assert.match(ipc, /settingsManager\.set\("agentCli", \{/);
+  assert.match(ipc, /prepareOpenClaudeAgentTurn\(/);
+  assert.match(ipc, /providerEnv:\s*resolvedProviderEnv/);
+  assert.match(
+    ipc,
+    /providerId === "openclaude"[\s\S]{0,80}\? payload\.model[\s\S]{0,80}: payload\.model \|\| settings\.model/,
+  );
+  assert.match(ipc, /resolvedModel = explicitModel \|\| invocation\.model/);
+});
+
+test("gemini chat IPC promotes tool-like requests to the local agent, not only explicit paths", () => {
+  const ipc = read("electron/ipcHandlers.ts");
+  const localPathAccess = read("electron/services/agent/LocalPathAccess.ts");
+
+  assert.match(ipc, /getAgentTurnRouting/);
+  assert.match(ipc, /shouldPromoteToAgentTurn/);
+  assert.match(ipc, /buildPromotedAgentSystemPrompt/);
+  assert.match(ipc, /explicitLocalPath/);
+  assert.match(
+    ipc,
+    /Treat the referenced path as intentionally shared and already approved for this turn/i,
+  );
+  assert.match(ipc, /!explicitLocalPath && context\?\.trim\(\)/);
+  assert.match(localPathAccess, /export function shouldPromoteToAgentTurn/);
+  assert.match(localPathAccess, /AGENT_TOOL_REFERENCE_RE/);
+});
+
+test("agent orchestrator ignores garbled configured executable strings and falls back to sane commands", () => {
+  const orchestrator = read("electron/services/agent/AgentOrchestrator.ts");
+
+  assert.match(orchestrator, /resolveConfiguredExecutableCandidate/);
+  assert.match(orchestrator, /isRunnableBareCommand/);
+  assert.doesNotMatch(
+    orchestrator,
+    /return configured\?\.trim\(\) \|\| bare \|\| null/,
+  );
+});
+
+test("agent orchestrator reuses the saved OpenClaude executable from Integrations before falling back", () => {
+  const orchestrator = read("electron/services/agent/AgentOrchestrator.ts");
+
+  assert.match(orchestrator, /resolveSavedOpenClaudeExecutableCandidate/);
+  assert.match(orchestrator, /getOpenClaudeCliPath/);
+});
+
 test("preload and renderer types expose provider data scope controls", () => {
   const preload = read("electron/preload.ts");
   const types = read("src/types/electron.d.ts");
@@ -176,9 +239,13 @@ test("main and ProcessingHelper hydrate ragManager.initializeEmbeddings with pol
 
 test("ProcessingHelper hydrates stored OpenClaude config on boot", () => {
   const ph = read("electron/ProcessingHelper.ts");
+  const ipc = read("electron/ipcHandlers.ts");
 
   assert.match(ph, /setOpenClaudeConfig\(\{/);
   assert.match(ph, /getOpenClaudeCliPath\(\)/);
   assert.match(ph, /isOpenClaudeEnabled\(\)/);
   assert.match(ph, /getOpenClaudeModel\(\)/);
+  assert.match(ph, /settingsManager\.set\("agentCli", \{/);
+  assert.match(ph, /openclaude:\s*resolvedOpenClaudePath/);
+  assert.match(ipc, /executablePaths\.openclaude = normalizedPath/);
 });

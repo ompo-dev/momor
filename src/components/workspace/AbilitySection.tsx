@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import { ChevronRight, Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
+import { ZedListItem } from "../zed/ZedListItem";
+import { ZedIconButton } from "../zed/ZedIconButton";
 
 interface AbilityItem {
   id: string;
@@ -21,7 +24,10 @@ interface AbilitySectionProps {
   onAdd: () => void;
 }
 
-/** Collapsible sidebar section listing MCP servers or Skills, with add + select. */
+/**
+ * Collapsible sidebar section listing MCP servers or Skills, with add + select.
+ * Backend provenance stays hidden here so abilities read as first-party items.
+ */
 const AbilitySection: React.FC<AbilitySectionProps> = ({
   title,
   icon,
@@ -32,85 +38,102 @@ const AbilitySection: React.FC<AbilitySectionProps> = ({
   onSelect,
   onAdd,
 }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="mt-1">
-      <div className="group/section flex items-center gap-1 px-1.5 h-6">
+    <div className="space-y-1.5">
+      <div className="group/section flex min-w-0 items-center gap-1 px-1">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1 flex-1 min-w-0 text-text-tertiary hover:text-text-secondary"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-text-tertiary hover:text-text-secondary"
         >
           <ChevronRight
             size={12}
             className={cn("transition-transform", open && "rotate-90")}
           />
-          <span className="text-[11px] font-semibold uppercase tracking-wider truncate">
+          <span className="flex shrink-0 items-center text-text-secondary [&_svg]:size-3.5">
+            {icon}
+          </span>
+          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.16em]">
             {title}
           </span>
+          {items.length > 0 ? (
+            <span className="rounded-sm border border-border-subtle bg-secondary/45 px-1 text-[9px] font-medium leading-4 text-text-tertiary">
+              {items.length}
+            </span>
+          ) : null}
         </button>
-        <button
-          type="button"
-          title={`+ ${title}`}
+        <ZedIconButton
+          icon={<Plus size={13} />}
+          size="sm"
+          styleVariant="subtle"
           onClick={onAdd}
-          className="p-0.5 rounded opacity-0 group-hover/section:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary transition-opacity"
-        >
-          <Plus size={13} />
-        </button>
+          aria-label={`+ ${title}`}
+          title={`+ ${title}`}
+          className="opacity-70 transition-opacity hover:opacity-100 group-hover/section:opacity-100"
+        />
       </div>
 
       {open && (
-        <div className="mt-0.5">
+        <div className="space-y-1 border-l border-border-subtle/70 pl-2">
           {items.length === 0 ? (
-            <button
-              type="button"
+            <ZedListItem
               onClick={onAdd}
-              className="w-full flex items-center gap-1.5 pl-6 pr-2 h-7 text-left text-[12px] text-text-tertiary hover:bg-accent/40 rounded-md"
+              spacing="extraDense"
+              className="ml-0.5 min-h-6 pl-2 pr-1 text-[11.5px] text-text-secondary"
+              startSlot={<Plus size={13} />}
             >
-              <Plus size={13} />
               {emptyLabel}
-            </button>
+            </ZedListItem>
           ) : (
             items.map((item) => {
               const active = selectedId === `${compositePrefix}:${item.id}`;
               return (
-                <button
+                <ZedListItem
                   key={item.id}
-                  type="button"
+                  title={item.name || t("workspace.untitled")}
                   onClick={() => onSelect(item.id)}
+                  selected={active}
+                  spacing="extraDense"
                   className={cn(
-                    "w-full flex items-center gap-2 pl-6 pr-2 h-7 rounded-md text-left hover:bg-accent/60",
-                    active && "bg-accent",
+                    "ml-0.5 min-h-[30px] pl-2 pr-1.5",
+                    !item.enabled && "opacity-75",
                   )}
+                  startSlot={
+                    <span
+                      className={cn(
+                        "mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                        item.enabled
+                          ? "bg-emerald-500"
+                          : "bg-text-tertiary/40",
+                      )}
+                      title={
+                        item.enabled
+                          ? t("workspace.enabled")
+                          : t("workspace.disabled")
+                      }
+                    />
+                  }
+                  endSlot={
+                    item.enabled === false ? (
+                      <span className="shrink-0 rounded-sm border border-border-subtle/80 bg-background/45 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-text-tertiary">
+                        off
+                      </span>
+                    ) : null
+                  }
                 >
                   <span
+                    title={item.name || t("workspace.untitled")}
                     className={cn(
-                      "h-1.5 w-1.5 rounded-full shrink-0",
-                      item.enabled ? "bg-emerald-500" : "bg-text-tertiary/40",
+                      "block whitespace-normal break-words pr-1 text-[11.5px] leading-[1.35]",
+                      active ? "text-text-primary" : "text-text-secondary",
                     )}
-                    title={item.enabled ? "Ativo" : "Desativado"}
-                  />
-                  <span className="shrink-0 text-text-secondary">{icon}</span>
-                  <span className="flex-1 min-w-0 truncate text-[13px] text-text-primary">
-                    {item.name || "Untitled"}
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-                      item.source === "openclaude"
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-                    )}
-                    title={
-                      item.source === "openclaude"
-                        ? "Synced and ready"
-                        : "Legacy Momor draft"
-                    }
                   >
-                    {item.source === "openclaude" ? "Synced" : "Draft"}
+                    {item.name || t("workspace.untitled")}
                   </span>
-                </button>
+                </ZedListItem>
               );
             })
           )}

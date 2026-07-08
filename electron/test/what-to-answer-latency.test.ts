@@ -5,7 +5,7 @@
  * in the WhatToAnswerLLM pipeline.
  *
  * Run with:
- *   cd /Users/evin/momor-cluely-ai-assistant/electron
+ *   cd /Users/ompo-dev/momor-cluely-ai-assistant/electron
  *   MEASURE_LATENCY=true npx tsx test/what-to-answer-latency.test.ts
  *
  * Prerequisites:

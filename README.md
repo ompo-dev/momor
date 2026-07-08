@@ -1,6 +1,6 @@
-# [Sponsored by Recall AI - API for desktop recording](https://docs.recall.ai/docs/desktop-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=evinjohnn-momor-ai-assistant)
+# [Sponsored by Recall AI - API for desktop recording](https://docs.recall.ai/docs/desktop-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ompo-dev-momor-ai-assistant)
 
-If you’re looking for a hosted desktop recording API, consider checking out [Recall.ai](https://docs.recall.ai/docs/desktop-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=evinjohnn-momor-ai-assistant), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
+If you’re looking for a hosted desktop recording API, consider checking out [Recall.ai](https://docs.recall.ai/docs/desktop-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=ompo-dev-momor-ai-assistant), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
 
 <div align="center">
   <img src="assets/icon.png" width="150" alt="momor AI Assistant Logo">
@@ -41,9 +41,9 @@ If you’re looking for a hosted desktop recording API, consider checking out [R
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blueviolet?style=flat-square)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant/releases)
-[![Downloads](https://img.shields.io/github/downloads/evinjohnn/momor-cluely-ai-assistant/total?style=flat-square&color=success)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant/releases)
+[![Downloads](https://img.shields.io/github/downloads/ompo-dev/momor-cluely-ai-assistant/total?style=flat-square&color=success)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant/releases)
 ![Repo Views](https://img.shields.io/badge/Views-341k-orange?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/evinjohnn/momor-cluely-ai-assistant?style=flat-square&color=gold)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant)
+[![Stars](https://img.shields.io/github/stars/ompo-dev/momor-cluely-ai-assistant?style=flat-square&color=gold)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant)
 ![Status](https://img.shields.io/badge/Status-active-success?style=flat-square)
 [![X Community](https://img.shields.io/badge/Community-black?style=flat-square&logo=x&logoColor=white)](https://x.com/i/communities/2031398735515693507)
 
@@ -127,7 +127,7 @@ While other tools act as simple API wrappers, momor is a complete, native intell
 
 Every star pushes momor higher in GitHub search, helping developers and job seekers find a free, private alternative instead of paying $149/month for tools that store their data on someone else's server.
 
-[![Star momor](https://img.shields.io/github/stars/evinjohnn/momor-cluely-ai-assistant?style=for-the-badge&color=gold&label=Star%20on%20GitHub)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant)
+[![Star momor](https://img.shields.io/github/stars/ompo-dev/momor-cluely-ai-assistant?style=for-the-badge&color=gold&label=Star%20on%20GitHub)](https://github.com/momor-AI-assistant/momor-cluely-ai-assistant)
 
 </div>
 
@@ -265,11 +265,11 @@ momor works as a **free, undetectable AI coding interview assistant** for standa
 
 <div align="center">
 
-[![Portfolio](https://img.shields.io/badge/Portfolio-evinjohn.vercel.app-blueviolet?style=flat-square&logo=vercel&logoColor=white)](https://evinjohn.vercel.app/)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/evinjohn/)
-[![X](https://img.shields.io/badge/X-@evinjohnn-black?style=flat-square&logo=x&logoColor=white)](https://x.com/evinjohnn)
-[![Hire Me](https://img.shields.io/badge/Hire_Me-Contact-success?style=flat-square&logo=gmail&logoColor=white)](mailto:evinjohnn@gmail.com?subject=momor%20-%20Hiring%20Inquiry)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/evinjohn)
+[![Portfolio](https://img.shields.io/badge/Portfolio-ompo-dev.vercel.app-blueviolet?style=flat-square&logo=vercel&logoColor=white)](https://ompo-dev.vercel.app/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/ompo-dev/)
+[![X](https://img.shields.io/badge/X-@ompo-dev-black?style=flat-square&logo=x&logoColor=white)](https://x.com/ompo-dev)
+[![Hire Me](https://img.shields.io/badge/Hire_Me-Contact-success?style=flat-square&logo=gmail&logoColor=white)](mailto:maicon.desenvolvedorgmail.com?subject=momor%20-%20Hiring%20Inquiry)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/ompo-dev)
 
 </div>
 
@@ -860,10 +860,10 @@ Quality pull requests will be reviewed and merged.
 
 ### Maintainers
 
-| Maintainer                                 | Role          | Support                                                                                                                                                                     |
-| ------------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [@evinjohnn](https://github.com/evinjohnn) | macOS Build   | [![Buy Me a Coffee](https://img.shields.io/badge/-buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/evinjohnn) |
-| [@razllivan](https://github.com/razllivan) | Windows Build | [![Buy Me a Coffee](https://img.shields.io/badge/-buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://app.lava.top/razllivan)         |
+| Maintainer                                 | Role          | Support                                                                                                                                                                    |
+| ------------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [@ompo-dev](https://github.com/ompo-dev)   | macOS Build   | [![Buy Me a Coffee](https://img.shields.io/badge/-buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/ompo-dev) |
+| [@razllivan](https://github.com/razllivan) | Windows Build | [![Buy Me a Coffee](https://img.shields.io/badge/-buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://app.lava.top/razllivan)        |
 
 ---
 
@@ -954,11 +954,11 @@ momor is a free, open-source alternative to:
 
 ## Star History
 
-<a href="https://star-history.com/#evinjohnn/momor-cluely-ai-assistant&Date">
+<a href="https://star-history.com/#ompo-dev/momor-cluely-ai-assistant&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=evinjohnn/momor-cluely-ai-assistant&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=evinjohnn/momor-cluely-ai-assistant&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=evinjohnn/momor-cluely-ai-assistant&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ompo-dev/momor-cluely-ai-assistant&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ompo-dev/momor-cluely-ai-assistant&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ompo-dev/momor-cluely-ai-assistant&type=Date" />
  </picture>
 </a>
 

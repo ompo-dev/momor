@@ -103,15 +103,15 @@ export function SttLiveTestPanel({ profileId, disabled }: SttLiveTestPanelProps)
           defaultValue: "Fale normalmente por alguns segundos para validar o STT.",
         })}
       >
-        <div className="rounded-xl bg-muted/25 p-3">
+        <div className="rounded-sm border border-border-subtle/80 bg-background/16 px-3 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div
                 className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+                  "flex h-8 w-8 items-center justify-center rounded-sm border transition-colors",
                   recording
-                    ? "bg-primary/15 text-primary"
-                    : "bg-muted text-muted-foreground",
+                    ? "border-primary/35 bg-primary/10 text-primary"
+                    : "border-border-subtle/80 bg-background/24 text-muted-foreground",
                 )}
               >
                 {recording ? (
@@ -128,7 +128,7 @@ export function SttLiveTestPanel({ profileId, disabled }: SttLiveTestPanelProps)
                       "w-1 rounded-full transition-all duration-75",
                       active
                         ? "h-full bg-primary"
-                        : "h-1.5 bg-muted-foreground/25",
+                        : "h-1.5 bg-border-subtle",
                     )}
                   />
                 ))}
@@ -140,7 +140,7 @@ export function SttLiveTestPanel({ profileId, disabled }: SttLiveTestPanelProps)
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs"
+                className="h-8 rounded-sm border-border-subtle/80 bg-background/20 text-[11px]"
                 onClick={() => void stopRecording()}
               >
                 <Square className="mr-1.5 h-3 w-3 fill-current" />
@@ -150,7 +150,7 @@ export function SttLiveTestPanel({ profileId, disabled }: SttLiveTestPanelProps)
               <Button
                 type="button"
                 size="sm"
-                className="h-8 text-xs"
+                className="h-8 rounded-sm text-[11px]"
                 disabled={disabled}
                 onClick={() => void startRecording()}
               >
@@ -162,11 +162,11 @@ export function SttLiveTestPanel({ profileId, disabled }: SttLiveTestPanelProps)
 
           <div
             className={cn(
-              "mt-3 min-h-[3rem] rounded-lg px-3 py-2.5 text-sm leading-relaxed",
+              "mt-3 min-h-[3rem] rounded-sm border px-3 py-2.5 text-sm leading-relaxed",
               transcript
-                ? "bg-background text-foreground"
-                : "bg-background/60 text-muted-foreground italic text-xs",
-              error && "ring-1 ring-destructive/30",
+                ? "border-border-subtle/80 bg-background/20 text-foreground"
+                : "border-border-subtle/70 bg-background/8 text-[11px] italic text-muted-foreground",
+              error && "border-destructive/40 text-destructive",
             )}
           >
             {error || transcript || t("integrations.testTranscriptPlaceholder")}

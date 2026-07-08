@@ -87,11 +87,17 @@ export function ProviderBrandIcon({
 
 export function ProviderBrandIconBadge({
   providerId,
+  chrome = true,
 }: {
   providerId: IntegrationId | string;
+  chrome?: boolean;
 }) {
+  if (!chrome) {
+    return <ProviderBrandIcon providerId={providerId} size="md" />;
+  }
+
   return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-background/80">
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/55">
       <ProviderBrandIcon providerId={providerId} size="md" />
     </div>
   );

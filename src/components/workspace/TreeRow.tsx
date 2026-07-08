@@ -23,7 +23,7 @@ import {
 import type { FlattenedItem } from "./tree-utils";
 import { isImageIcon } from "./iconUtils";
 
-const INDENT_PX = 14;
+const INDENT_PX = 12;
 
 export interface TreeRowProps {
   item: FlattenedItem;
@@ -43,18 +43,22 @@ export interface TreeRowProps {
   style?: React.CSSProperties;
 }
 
-const KindIcon: React.FC<{ item: FlattenedItem }> = ({ item }) => {
+const KindIcon: React.FC<{ item: FlattenedItem; active: boolean }> = ({
+  item,
+  active,
+}) => {
+  const tone = active ? "text-text-primary" : "text-text-secondary";
   if (item.kind === "folder") {
     return item.collapsed ? (
-      <FolderIcon size={15} className="text-text-secondary shrink-0" />
+      <FolderIcon size={14} className={cn("shrink-0", tone)} />
     ) : (
-      <FolderOpen size={15} className="text-text-secondary shrink-0" />
+      <FolderOpen size={14} className={cn("shrink-0", tone)} />
     );
   }
   if (item.kind === "meeting") {
-    return <Mic size={15} className="text-text-secondary shrink-0" />;
+    return <Mic size={14} className={cn("shrink-0", tone)} />;
   }
-  return <FileText size={15} className="text-text-secondary shrink-0" />;
+  return <FileText size={14} className={cn("shrink-0", tone)} />;
 };
 
 const TreeRow: React.FC<TreeRowProps> = ({
@@ -93,86 +97,113 @@ const TreeRow: React.FC<TreeRowProps> = ({
   };
 
   const isFolder = item.kind === "folder";
+  const showDisclosure = isFolder && item.hasChildren;
+  const indentWidth = item.depth * INDENT_PX;
 
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, paddingLeft: 8 + item.depth * INDENT_PX }}
+      style={style}
       {...attributes}
+      data-active={isActive ? "true" : undefined}
       className={cn(
-        "group relative flex items-center gap-1 pr-1.5 h-7 rounded-md cursor-pointer select-none",
-        "hover:bg-accent/60 transition-colors",
-        isActive && "bg-accent",
-        isDropTarget && "ring-1 ring-primary/60 bg-primary/5",
-        overlay && "bg-card shadow-lg ring-1 ring-border w-[220px]",
+        "group relative flex h-6 cursor-pointer select-none items-center rounded-sm px-0.5 text-[11.5px] transition-colors",
+        !isActive && "text-text-secondary hover:bg-accent/60 hover:text-text-primary",
+        isActive && "bg-bg-item-active text-text-primary ring-1 ring-border-subtle/70",
+        isDropTarget && "bg-primary/5 ring-1 ring-primary/55",
+        overlay && "w-[220px] bg-bg-elevated shadow-lg ring-1 ring-border-subtle/80",
       )}
       onClick={() => {
         if (!isRenaming) onSelect();
       }}
     >
-      {/* Chevron / spacer */}
-      {isFolder ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCollapse();
-          }}
-          className="shrink-0 p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary"
-        >
-          <ChevronRight
-            size={14}
-            className={cn(
-              "transition-transform",
-              !item.collapsed && "rotate-90",
-            )}
-          />
-        </button>
-      ) : (
-        <span className="w-[19px] shrink-0" />
-      )}
+      <div className="flex min-w-0 flex-1 items-center">
+        {indentWidth > 0 ? (
+          <span
+            className="relative shrink-0"
+            style={{ width: indentWidth }}
+            aria-hidden="true"
+          >
+            <span className="absolute bottom-1 top-1 right-2 w-px rounded-full bg-border-subtle/75" />
+          </span>
+        ) : (
+          <span className="w-0.5 shrink-0" aria-hidden="true" />
+        )}
 
-      {/* Drag handle area = icon + title */}
-      <span className="flex items-center gap-1.5 flex-1 min-w-0" {...listeners}>
-        {item.icon ? (
-          isImageIcon(item.icon) ? (
-            <img
-              src={item.icon}
-              alt=""
-              className="h-[15px] w-[15px] shrink-0 rounded-sm object-cover"
+        {showDisclosure ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse();
+            }}
+            className={cn(
+              "mr-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-sm transition-colors",
+              isActive
+                ? "text-text-primary hover:bg-black/10 dark:hover:bg-white/10"
+                : "text-text-tertiary hover:bg-black/10 hover:text-text-secondary dark:hover:bg-white/10",
+            )}
+          >
+            <ChevronRight
+              size={13}
+              className={cn("transition-transform", !item.collapsed && "rotate-90")}
+            />
+          </button>
+        ) : (
+          <span className="mr-0.5 w-[18px] shrink-0" />
+        )}
+
+        <span className="flex min-w-0 flex-1 items-center gap-1.5" {...listeners}>
+          {item.icon ? (
+            isImageIcon(item.icon) ? (
+              <img
+                src={item.icon}
+                alt=""
+                className="h-[13px] w-[13px] shrink-0 rounded-sm object-cover"
+              />
+            ) : (
+              <span className="shrink-0 text-[14px] leading-none">{item.icon}</span>
+            )
+          ) : (
+            <KindIcon item={item} active={isActive} />
+          )}
+          {isRenaming ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") {
+                  setDraft(item.title);
+                  setIsRenaming(false);
+                }
+              }}
+              className="min-w-0 flex-1 rounded-sm border border-border-muted bg-background px-1 py-0 text-[11.5px] text-text-primary outline-none"
             />
           ) : (
-            <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
-          )
-        ) : (
-          <KindIcon item={item} />
-        )}
-        {isRenaming ? (
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename();
-              if (e.key === "Escape") {
-                setDraft(item.title);
-                setIsRenaming(false);
-              }
-            }}
-            className="flex-1 min-w-0 bg-background border border-border rounded px-1 py-0.5 text-[13px] text-text-primary outline-none"
-          />
-        ) : (
-          <span className="flex-1 min-w-0 truncate text-[13px] text-text-primary">
-            {item.title}
-          </span>
-        )}
-      </span>
+            <span
+              className={cn(
+                "block min-w-0 flex-1 truncate",
+                isActive ? "text-text-primary" : "text-text-secondary",
+              )}
+            >
+              {item.title}
+            </span>
+          )}
+        </span>
+      </div>
 
       {/* Hover actions */}
       {!overlay && !isRenaming && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div
+          className={cn(
+            "flex items-center gap-0.5 transition-opacity",
+            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+        >
           {isFolder && onCreateNote && (
             <button
               type="button"
@@ -181,9 +212,9 @@ const TreeRow: React.FC<TreeRowProps> = ({
                 e.stopPropagation();
                 onCreateNote();
               }}
-              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary"
+              className="rounded-sm p-[2px] text-text-secondary hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
             >
-              <Plus size={14} />
+              <Plus size={13} />
             </button>
           )}
           <DropdownMenu>
@@ -191,12 +222,12 @@ const TreeRow: React.FC<TreeRowProps> = ({
               <button
                 type="button"
                 onClick={(e) => e.stopPropagation()}
-                className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary"
+                className="rounded-sm p-[2px] text-text-secondary hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
               >
-                <MoreHorizontal size={14} />
+                <MoreHorizontal size={13} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();

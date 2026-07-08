@@ -4,6 +4,7 @@ import { AppState } from "./main";
 import { LLMHelper } from "./LLMHelper";
 import { CredentialsManager } from "./services/CredentialsManager";
 import { app } from "electron";
+import * as fs from "fs";
 // import dotenv from "dotenv" // Removed static import
 
 if (!app.isPackaged) {
@@ -118,14 +119,50 @@ export class ProcessingHelper {
 
     try {
       const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
-      const detectedOpenClaudePath =
-        OpenClaudeManager.getInstance().status().path || undefined;
+      const { SettingsManager } = require("./services/SettingsManager");
+      const manager = OpenClaudeManager.getInstance();
+      const detectedOpenClaudePath = manager.status().path || undefined;
+      const savedOpenClaudePath = credManager.getOpenClaudeCliPath()?.trim();
+      const resolvedOpenClaudePath =
+        (savedOpenClaudePath &&
+        (!savedOpenClaudePath.includes("\\") && !savedOpenClaudePath.includes("/")
+          ? savedOpenClaudePath
+          : fs.existsSync(savedOpenClaudePath))
+          ? savedOpenClaudePath
+          : detectedOpenClaudePath) || undefined;
       this.llmHelper.setOpenClaudeConfig({
         enabled: credManager.isOpenClaudeEnabled(),
-        executablePath:
-          credManager.getOpenClaudeCliPath()?.trim() || detectedOpenClaudePath,
+        executablePath: resolvedOpenClaudePath,
         model: credManager.getOpenClaudeModel() || undefined,
       });
+
+      if (resolvedOpenClaudePath) {
+        const settingsManager = SettingsManager.getInstance();
+        const agentCli = settingsManager.get("agentCli") ?? {};
+        const executablePaths =
+          agentCli.executablePaths && typeof agentCli.executablePaths === "object"
+            ? { ...agentCli.executablePaths }
+            : {};
+        const currentAgentPath =
+          typeof executablePaths.openclaude === "string"
+            ? executablePaths.openclaude.trim()
+            : "";
+        const currentAgentPathLooksValid =
+          currentAgentPath &&
+          (!currentAgentPath.includes("\\") && !currentAgentPath.includes("/")
+            ? true
+            : fs.existsSync(currentAgentPath));
+
+        if (!currentAgentPathLooksValid) {
+          settingsManager.set("agentCli", {
+            ...agentCli,
+            executablePaths: {
+              ...executablePaths,
+              openclaude: resolvedOpenClaudePath,
+            },
+          });
+        }
+      }
     } catch (e: any) {
       console.warn(
         "[ProcessingHelper] Failed to hydrate OpenClaude config from CredentialsManager:",

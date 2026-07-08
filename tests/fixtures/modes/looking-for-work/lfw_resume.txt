@@ -1,4 +1,4 @@
-Evin J — Resume
+ompo-dev J — Resume
 
 Summary
 Senior product engineer with 8 years experience across consumer and developer tooling. Built PriceX, a price-comparison website; scaled momor to 10k users in the first 90 days.

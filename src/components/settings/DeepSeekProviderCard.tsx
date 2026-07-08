@@ -84,10 +84,11 @@ export function DeepSeekProviderCard({
 
   return (
     <IntegrationCardShell
+      eyebrow={t("providers.categoryCloud")}
       title="DeepSeek"
-      subtitle={t("providers.categoryCloud")}
+      subtitle={t("providers.deepseekProviderDesc")}
       category="cloud"
-      icon={<ProviderBrandIconBadge providerId="deepseek" />}
+      icon={<ProviderBrandIconBadge providerId="deepseek" chrome={false} />}
       defaultExpanded={!hasStoredKeys}
       badges={
         <IntegrationStatusBadge

@@ -25,16 +25,18 @@ export function SettingsListRow({
     >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         {icon ? (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/30 text-text-tertiary">
             {icon}
           </div>
         ) : null}
         <div className="min-w-0 space-y-0.5">
-          <p className="text-sm font-medium leading-none text-foreground">
+          <p className="text-[12.5px] font-medium leading-5 text-foreground">
             {title}
           </p>
           {description ? (
-            <div className="text-xs text-muted-foreground">{description}</div>
+            <div className="text-[11px] leading-5 text-muted-foreground">
+              {description}
+            </div>
           ) : null}
         </div>
       </div>

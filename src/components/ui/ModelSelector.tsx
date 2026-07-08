@@ -155,7 +155,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-bg-input hover:bg-bg-elevated border border-border-subtle rounded-lg transition-colors text-xs font-medium text-text-primary max-w-[150px]"
+        className="flex max-w-[150px] items-center gap-2 rounded-sm border border-border-subtle/80 bg-background/22 px-3 py-1.5 text-[11px] font-medium text-text-primary transition-colors hover:bg-background/34"
       >
         <span className="truncate">{getModelDisplayName(currentModel)}</span>
         <ChevronDown
@@ -165,37 +165,37 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 bg-bg-item-surface border border-border-subtle rounded-xl shadow-xl z-50 overflow-hidden animated fadeIn">
+        <div className="absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-sm border border-border-subtle/80 bg-card/96 shadow-[0_24px_64px_-42px_rgba(0,0,0,0.85)] animated fadeIn">
           {/* Tabs */}
-          <div className="flex border-b border-border-subtle bg-bg-input/50">
+          <div className="flex border-b border-border-subtle/80 bg-background/18">
             <button
               onClick={() => setActiveTab("cloud")}
-              className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${activeTab === "cloud" ? "text-accent-primary bg-bg-item-surface border-t-2 border-t-accent-primary" : "text-text-secondary hover:text-text-primary"}`}
+              className={`flex-1 border-b px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${activeTab === "cloud" ? "border-b-accent-primary text-text-primary" : "border-b-transparent text-text-secondary hover:text-text-primary"}`}
             >
               Cloud
             </button>
             <button
               onClick={() => setActiveTab("custom")}
-              className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${activeTab === "custom" ? "text-accent-primary bg-bg-item-surface border-t-2 border-t-accent-primary" : "text-text-secondary hover:text-text-primary"}`}
+              className={`flex-1 border-b px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${activeTab === "custom" ? "border-b-accent-primary text-text-primary" : "border-b-transparent text-text-secondary hover:text-text-primary"}`}
             >
               Custom
             </button>
             <button
               onClick={() => setActiveTab("local")}
-              className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${activeTab === "local" ? "text-accent-primary bg-bg-item-surface border-t-2 border-t-accent-primary" : "text-text-secondary hover:text-text-primary"}`}
+              className={`flex-1 border-b px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${activeTab === "local" ? "border-b-accent-primary text-text-primary" : "border-b-transparent text-text-secondary hover:text-text-primary"}`}
             >
               Local
             </button>
           </div>
 
           {/* Content */}
-          <div className="p-2 max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto p-1.5">
             {/* Cloud Models */}
             {activeTab === "cloud" && (
               <div className="space-y-1">
                 {cloudModels.length === 0 ? (
-                  <div className="text-center py-6 text-text-tertiary">
-                    <p className="text-xs mb-2">
+                  <div className="border-l border-border-subtle/80 py-4 pl-3 text-text-tertiary">
+                    <p className="text-[11px] mb-1">
                       No cloud providers configured.
                     </p>
                     <p className="text-[10px] opacity-70">
@@ -238,8 +238,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             {activeTab === "custom" && (
               <div className="space-y-1">
                 {customProviders.length === 0 ? (
-                  <div className="text-center py-6 text-text-tertiary">
-                    <p className="text-xs mb-2">No custom providers.</p>
+                  <div className="border-l border-border-subtle/80 py-4 pl-3 text-text-tertiary">
+                    <p className="text-[11px] mb-1">No custom providers.</p>
                     <button className="text-[10px] text-accent-primary hover:underline">
                       Manage in Settings
                     </button>
@@ -264,8 +264,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             {activeTab === "local" && (
               <div className="space-y-1">
                 {ollamaModels.length === 0 ? (
-                  <div className="text-center py-6 text-text-tertiary">
-                    <p className="text-xs">No Ollama models found.</p>
+                  <div className="border-l border-border-subtle/80 py-4 pl-3 text-text-tertiary">
+                    <p className="text-[11px]">No Ollama models found.</p>
                     <p className="text-[10px] mt-1 opacity-70">
                       Ensure Ollama is running.
                     </p>
@@ -310,17 +310,17 @@ const ModelOption: React.FC<ModelOptionProps> = ({
 }) => (
   <button
     onClick={onSelect}
-    className={`w-full flex items-center justify-between p-2 rounded-lg transition-colors group ${selected ? "bg-accent-primary/10" : "hover:bg-bg-input"}`}
+    className={`group flex w-full items-center justify-between rounded-sm border px-2.5 py-2 transition-colors ${selected ? "border-accent-primary/30 bg-accent-primary/[0.07]" : "border-transparent hover:border-border-subtle/80 hover:bg-background/24"}`}
   >
     <div className="flex items-center gap-3">
       <div
-        className={`p-1.5 rounded-md ${selected ? "bg-accent-primary/20 text-accent-primary" : "bg-bg-elevated text-text-secondary group-hover:text-text-primary"}`}
+        className={`flex h-7 w-7 items-center justify-center rounded-sm border ${selected ? "border-accent-primary/25 bg-accent-primary/15 text-accent-primary" : "border-border-subtle/80 bg-background/22 text-text-secondary group-hover:text-text-primary"}`}
       >
         {icon}
       </div>
       <div className="text-left">
         <div
-          className={`text-xs font-medium truncate max-w-[140px] ${selected ? "text-accent-primary" : "text-text-primary"}`}
+          className={`max-w-[140px] truncate text-[11px] font-medium ${selected ? "text-accent-primary" : "text-text-primary"}`}
         >
           {name}
         </div>

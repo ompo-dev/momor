@@ -16,7 +16,7 @@ export interface ParsedReleaseNotes {
 export class ReleaseNotesManager {
   private static instance: ReleaseNotesManager;
   private cachedNotes: ParsedReleaseNotes | null = null;
-  private readonly repoOwner = "evinjohnn";
+  private readonly repoOwner = "ompo-dev";
   private readonly repoName = "momor-cluely-ai-assistant";
 
   private constructor() {}

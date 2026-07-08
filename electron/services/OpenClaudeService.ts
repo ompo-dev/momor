@@ -82,6 +82,61 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
   }
 }
 
+function imageMimeTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    default:
+      return "image/png";
+  }
+}
+
+function buildPromptStdin(
+  prompt: string,
+  imagePaths: string[] = [],
+): { stdinPrompt: string } {
+  if (!imagePaths.length) {
+    return {
+      stdinPrompt: prompt,
+    };
+  }
+
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: prompt }];
+  for (const imagePath of imagePaths) {
+    if (!imagePath || !fs.existsSync(imagePath)) continue;
+    try {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: imageMimeTypeFromPath(imagePath),
+          data: fs.readFileSync(imagePath).toString("base64"),
+        },
+      });
+    } catch {
+      // Ignore unreadable images and keep the text turn alive.
+    }
+  }
+
+  return {
+    stdinPrompt:
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: content.length === 1 ? prompt : content,
+        },
+        parent_tool_use_id: null,
+      }) + "\n",
+  };
+}
+
 export class OpenClaudeService {
   public static isAvailable(config: OpenClaudeConfig): boolean {
     if (!config.enabled) return false;
@@ -93,16 +148,15 @@ export class OpenClaudeService {
   }
 
   public static buildArgs(
-    prompt: string,
     model: string,
     imagePaths: string[] = [],
   ): string[] {
-    const args = ["--print", prompt, "--output-format", "text"];
+    const args = ["--print", "--output-format", "text"];
     if (model) {
       args.push("--model", model);
     }
-    for (const img of imagePaths) {
-      if (img) args.push("--image", img);
+    if (imagePaths.length) {
+      args.push("--input-format", "stream-json");
     }
     return args;
   }
@@ -110,12 +164,26 @@ export class OpenClaudeService {
   public static buildCommand(config: OpenClaudeConfig): {
     cmd: string;
     baseArgs: string[];
+    envPatch: NodeJS.ProcessEnv;
+    useShell: boolean;
   } {
     const p = config.executablePath.trim();
     if (p.endsWith(".mjs") || p.endsWith(".js")) {
-      return { cmd: "node", baseArgs: [p] };
+      return {
+        cmd: process.execPath,
+        baseArgs: [p],
+        envPatch: { ELECTRON_RUN_AS_NODE: "1" },
+        useShell: false,
+      };
     }
-    return { cmd: p, baseArgs: [] };
+    return {
+      cmd: p,
+      baseArgs: [],
+      envPatch: {},
+      useShell:
+        process.platform === "win32" &&
+        (!p.includes(path.sep) || /\.(cmd|bat)$/i.test(p)),
+    };
   }
 
   private static runCli(
@@ -123,14 +191,14 @@ export class OpenClaudeService {
     subArgs: string[],
     timeoutMs: number,
   ): Promise<CliRunResult> {
-    const { cmd, baseArgs } = this.buildCommand(config);
+    const { cmd, baseArgs, envPatch, useShell } = this.buildCommand(config);
     const args = [...baseArgs, ...subArgs];
 
     return new Promise((resolve, reject) => {
       const proc = spawn(cmd, args, {
-        env: { ...process.env },
+        env: { ...process.env, ...envPatch },
         stdio: ["ignore", "pipe", "pipe"],
-        shell: process.platform === "win32",
+        shell: useShell,
         windowsHide: true,
       });
 
@@ -425,17 +493,17 @@ export class OpenClaudeService {
     config: OpenClaudeConfig,
     options: OpenClaudeRunOptions,
   ): Promise<string> {
-    const { cmd, baseArgs } = this.buildCommand(config);
+    const { cmd, baseArgs, envPatch, useShell } = this.buildCommand(config);
     const model = options.model ?? config.model;
-    const promptArgs = this.buildArgs(options.prompt, model, options.imagePaths);
-    const args = [...baseArgs, ...promptArgs];
+    const promptPayload = buildPromptStdin(options.prompt, options.imagePaths);
+    const args = [...baseArgs, ...this.buildArgs(model, options.imagePaths)];
     const timeoutMs = options.timeoutMs ?? config.timeoutMs;
 
     return new Promise<string>((resolve, reject) => {
       const proc = spawn(cmd, args, {
-        env: { ...process.env, ...(options.env ?? {}) },
+        env: { ...process.env, ...envPatch, ...(options.env ?? {}) },
         stdio: ["pipe", "pipe", "pipe"],
-        shell: process.platform === "win32",
+        shell: useShell,
         windowsHide: true,
       });
 
@@ -459,6 +527,13 @@ export class OpenClaudeService {
           proc.kill("SIGTERM");
           reject(new Error("OpenClaude aborted"));
         });
+      }
+
+      try {
+        proc.stdin?.write(promptPayload.stdinPrompt);
+        proc.stdin?.end();
+      } catch {
+        // stdin failures surface via the existing process error/close handlers.
       }
 
       proc.on("close", (code) => {

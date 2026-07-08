@@ -49,10 +49,11 @@ export function OllamaProviderCard({
 
   return (
     <IntegrationCardShell
+      eyebrow={t("providers.categoryLocal")}
       title={t("providers.ollama")}
-      subtitle={t("providers.categoryLocal")}
+      subtitle={t("providers.ollamaDesc")}
       category="local"
-      icon={<ProviderBrandIconBadge providerId="ollama" />}
+      icon={<ProviderBrandIconBadge providerId="ollama" chrome={false} />}
       defaultExpanded={!configured}
       badges={
         <IntegrationStatusBadge
@@ -155,10 +156,10 @@ export function OllamaProviderCard({
             {models.map((model) => (
               <div
                 key={model}
-                className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2"
+                className="flex items-center justify-between rounded-sm border border-border-subtle/70 bg-background/14 px-3 py-2"
               >
                 <span className="truncate font-mono text-xs">{model}</span>
-                <span className="rounded-full bg-background px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="rounded-sm border border-border-subtle/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   local
                 </span>
               </div>

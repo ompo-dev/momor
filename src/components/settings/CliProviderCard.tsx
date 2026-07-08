@@ -167,12 +167,13 @@ export function CliProviderCard({
 
   return (
     <IntegrationCardShell
+      eyebrow={t("providers.categoryCliFriendly")}
       title={title}
       subtitle={description}
       category="cli"
       icon={
         iconId ? (
-          <ProviderBrandIconBadge providerId={iconId} />
+          <ProviderBrandIconBadge providerId={iconId} chrome={false} />
         ) : (
           title.charAt(0).toUpperCase()
         )
@@ -254,7 +255,7 @@ export function CliProviderCard({
       }
     >
       {(authLoggedIn || authMessage) && (
-        <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-400">
+        <div className="rounded-sm border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-400">
           {authLoggedIn && (
             <p>
               {t("providers.oauthLoggedIn")}

@@ -3,6 +3,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -60,4 +62,23 @@ test("malformed custom agents are skipped", () => {
   });
   const customIds = list.filter((a) => !a.builtin).map((a) => a.id);
   assert.deepEqual(customIds, ["good"]);
+});
+
+test("invalid configured executable paths fall back to sane defaults instead of returning garbage", () => {
+  const fakeOpenClaudePath = "C:\\" + "broken\\".repeat(80) + "openclaude.cmd";
+  const tempCodex = path.join(os.tmpdir(), "momor-codex-test.cmd");
+  fs.writeFileSync(tempCodex, "@echo off\r\necho codex\r\n", "utf8");
+
+  const list = AgentRegistry.list({
+    executablePaths: {
+      openclaude: fakeOpenClaudePath,
+      codex: tempCodex,
+    },
+  });
+
+  const byId = Object.fromEntries(list.map((agent) => [agent.id, agent]));
+  assert.notEqual(byId.openclaude.command, fakeOpenClaudePath);
+  assert.equal(byId.codex.command, tempCodex);
+
+  fs.rmSync(tempCodex, { force: true });
 });

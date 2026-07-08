@@ -9,13 +9,13 @@ type StatusVariant =
 
 const VARIANT_CLASS: Record<StatusVariant, string> = {
   configured:
-    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    "border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-400",
   notConfigured:
-    "border-linear-hairline bg-linear-surface-1 text-linear-ink-tertiary",
+    "border-border-subtle/80 bg-background/38 text-muted-foreground",
   enabled:
-    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    "border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-400",
   default:
-    "border-linear-primary/30 bg-linear-primary/12 text-linear-primary",
+    "border-primary/25 bg-primary/[0.08] text-primary",
 };
 
 interface IntegrationStatusBadgeProps {
@@ -38,7 +38,7 @@ export function IntegrationStatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium leading-none",
+        "inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] leading-none",
         VARIANT_CLASS[variant],
         className,
       )}

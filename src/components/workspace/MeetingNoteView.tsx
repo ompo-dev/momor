@@ -44,6 +44,7 @@ const MeetingNoteView: React.FC<MeetingNoteViewProps> = ({
         meeting={meeting}
         onBack={() => {}}
         onOpenSettings={() => onOpenSettings()}
+        presentation="workspace"
       />
     </div>
   );

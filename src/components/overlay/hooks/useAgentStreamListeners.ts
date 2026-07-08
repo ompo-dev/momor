@@ -12,7 +12,27 @@ interface Deps {
   detectProviderType: (...args: any[]) => any;
 }
 
-/** Gemini/RAG stream listeners (token/done/error) + usage tracking. Verbatim relocation (deps array unchanged). */
+function normalizeStreamError(error: string): string {
+  const raw = String(error ?? "").trim();
+  if (!raw) return "Unknown error.";
+  return raw.replace(/^\[?Error:\s*/i, "").replace(/\]$/, "").trim();
+}
+
+function humanizeStreamError(error: string): string {
+  const normalized = normalizeStreamError(error);
+  if (/spawn\s+ENAMETOOLONG/i.test(normalized)) {
+    return "O agente local nao conseguiu iniciar o comando. Isso normalmente indica caminho invalido do agente ou configuracao inconsistente em Integracoes.";
+  }
+  if (/spawn\s+.+\s+ENOENT|failed to launch.+ENOENT|no executable found/i.test(normalized)) {
+    return "O agente local nao foi encontrado. Revise o caminho do agente em Integracoes.";
+  }
+  if (/produced no output|no output/i.test(normalized)) {
+    return "O agente local iniciou, mas o backend nao retornou resposta. Revise o provider/modelo configurado em Integracoes e tente novamente.";
+  }
+  return normalized;
+}
+
+/** Gemini/RAG stream listeners (token/done/error) + usage tracking. */
 export function useAgentStreamListeners({
   setMessages,
   setIsProcessing,
@@ -24,91 +44,136 @@ export function useAgentStreamListeners({
   useEffect(() => {
     const cleanups: (() => void)[] = [];
 
-    // Stream Token
-    cleanups.push(
-      window.electronAPI.onGeminiStreamToken((token) => {
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.isStreaming && lastMsg.role === "system") {
-            const updated = [...prev];
-            updated[prev.length - 1] = {
-              ...lastMsg,
-              text: lastMsg.text + token,
-              // re-check code status on every token? Expensive but needed for progressive highlighting
-              isCode:
-                (lastMsg.text + token).includes("```") ||
-                (lastMsg.text + token).includes("def ") ||
-                (lastMsg.text + token).includes("function "),
-            };
-            return updated;
-          }
-          return prev;
-        });
-      }),
-    );
-
-    // Stream Done
-    cleanups.push(
-      window.electronAPI.onGeminiStreamDone(() => {
-        setIsProcessing(false);
-
-        // Calculate latency if we have a start time
-        let latency = 0;
-        if (requestStartTimeRef.current) {
-          latency = Date.now() - requestStartTimeRef.current;
-          requestStartTimeRef.current = null;
+    const applyStreamToken = (token: string) => {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.isStreaming && lastMsg.role === "system") {
+          const updated = [...prev];
+          updated[prev.length - 1] = {
+            ...lastMsg,
+            text: lastMsg.text + token,
+            isCode:
+              (lastMsg.text + token).includes("```") ||
+              (lastMsg.text + token).includes("def ") ||
+              (lastMsg.text + token).includes("function "),
+          };
+          return updated;
         }
+        return prev;
+      });
+    };
 
-        // Track Usage
-        analytics.trackModelUsed({
-          model_name: currentModel,
-          provider_type: detectProviderType(currentModel),
-          latency_ms: latency,
-        });
+    const finalizeStream = (fullText?: string) => {
+      setIsProcessing(false);
 
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.isStreaming && lastMsg.role === "system") {
-            return [...prev.slice(0, -1), { ...lastMsg, isStreaming: false }];
-          }
-          return prev;
-        });
-      }),
-    );
+      let latency = 0;
+      if (requestStartTimeRef.current) {
+        latency = Date.now() - requestStartTimeRef.current;
+        requestStartTimeRef.current = null;
+      }
 
-    // Stream Error
-    cleanups.push(
-      window.electronAPI.onGeminiStreamError((error) => {
-        setIsProcessing(false);
-        requestStartTimeRef.current = null; // Clear timer on error
-        setMessages((prev) => {
-          // Append error to the current message or add new one?
-          // Let's add a new error block if the previous one confusing,
-          // or just update status.
-          // Ideally we want to show the partial response AND the error.
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.isStreaming) {
-            const updated = [...prev];
-            updated[prev.length - 1] = {
-              ...lastMsg,
-              isStreaming: false,
-              text: lastMsg.text + `\n\n[Error: ${error}]`,
-            };
-            return updated;
-          }
+      analytics.trackModelUsed({
+        model_name: currentModel,
+        provider_type: detectProviderType(currentModel),
+        latency_ms: latency,
+      });
+
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.isStreaming && lastMsg.role === "system") {
+          const authoritativeText =
+            typeof fullText === "string" && fullText.trim().length > 0
+              ? fullText
+              : undefined;
           return [
-            ...prev,
+            ...prev.slice(0, -1),
             {
-              id: Date.now().toString(),
-              role: "system",
-              text: `❌ Error: ${error}`,
+              ...lastMsg,
+              text:
+                authoritativeText ??
+                (lastMsg.text?.trim().length > 0
+                  ? lastMsg.text
+                  : (fullText ?? lastMsg.text)),
+              isStreaming: false,
             },
           ];
-        });
+        }
+        return prev;
+      });
+    };
+
+    const applyStreamError = (error: string) => {
+      const normalized = humanizeStreamError(error);
+      setIsProcessing(false);
+      requestStartTimeRef.current = null;
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.isStreaming) {
+          const updated = [...prev];
+          updated[prev.length - 1] = {
+            ...lastMsg,
+            isStreaming: false,
+            isError: true,
+            text: lastMsg.text?.trim()
+              ? `${lastMsg.text}\n\nError: ${normalized}`
+              : `Error: ${normalized}`,
+          };
+          return updated;
+        }
+        return [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "system",
+            isError: true,
+            text: `Error: ${normalized}`,
+          },
+        ];
+      });
+    };
+
+    cleanups.push(
+      window.electronAPI.onGeminiStreamToken((token) => {
+        applyStreamToken(token);
       }),
     );
 
-    // JIT RAG Stream listeners (for live meeting RAG responses)
+    cleanups.push(
+      window.electronAPI.onGeminiStreamDone(() => {
+        finalizeStream();
+      }),
+    );
+
+    cleanups.push(
+      window.electronAPI.onGeminiStreamError((error) => {
+        applyStreamError(error);
+      }),
+    );
+
+    if (window.electronAPI.onAgentStreamError) {
+      cleanups.push(
+        window.electronAPI.onAgentStreamError((data) => {
+          applyStreamError(data.error);
+        }),
+      );
+    }
+
+    if (window.electronAPI.onAgentStreamToken) {
+      cleanups.push(
+        window.electronAPI.onAgentStreamToken((token) => {
+          applyStreamToken(token);
+        }),
+      );
+    }
+
+    if (window.electronAPI.onAgentStreamDone) {
+      cleanups.push(
+        window.electronAPI.onAgentStreamDone((data) => {
+          finalizeStream(data.fullText);
+        }),
+      );
+    }
+
     if (window.electronAPI.onRAGStreamChunk) {
       cleanups.push(
         window.electronAPI.onRAGStreamChunk((data: { chunk: string }) => {
@@ -173,5 +238,5 @@ export function useAgentStreamListeners({
     }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [currentModel]); // Ensure tracking captures correct model
+  }, [currentModel]);
 }

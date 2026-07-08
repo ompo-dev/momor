@@ -1,9 +1,11 @@
 import type { SettingsTabId } from "../shell/SettingsNav";
 
-const REMOVED_TABS = new Set(["momor-api", "momor-pro", "calendar", "audio"]);
+const REMOVED_TABS = new Set(["momor-api", "momor-pro", "calendar"]);
 
 const TAB_ALIASES: Record<string, SettingsTabId> = {
+  api: "integrations",
   "ai-providers": "integrations",
+  audio: "integrations",
 };
 
 export function normalizeSettingsTab(tab?: string): SettingsTabId {

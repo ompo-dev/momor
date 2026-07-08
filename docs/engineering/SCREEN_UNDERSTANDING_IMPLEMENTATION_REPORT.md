@@ -23,7 +23,7 @@ momor now has a production-ready screen understanding pipeline with:
 
 ### Issue
 
-The original `validateImagePath` blocked `/Users/` paths before checking userData allowlist, making it reject valid macOS screenshot paths like `/Users/evin/Library/Application Support/momor/screenshots/abc.png`.
+The original `validateImagePath` blocked `/Users/` paths before checking userData allowlist, making it reject valid macOS screenshot paths like `/Users/ompo-dev/Library/Application Support/momor/screenshots/abc.png`.
 
 ### Root Cause
 

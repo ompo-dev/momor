@@ -15,7 +15,7 @@ Security fixes are issued for:
 
 Older versions are not supported. If you find a security issue in an unsupported version, please first reproduce it on the current release before reporting.
 
-You can find the current version in the app's **Settings → About** screen, in `package.json` at the repo root, or on the [GitHub Releases page](https://github.com/evinjohnn/momor-cluely-ai-assistant/releases).
+You can find the current version in the app's **Settings → About** screen, in `package.json` at the repo root, or on the [GitHub Releases page](https://github.com/ompo-dev/momor-cluely-ai-assistant/releases).
 
 ---
 
@@ -129,7 +129,7 @@ A prompt-injection issue **becomes** in-scope if it leads to **exfiltration of u
 
 When a confirmed issue is fixed, we publish a **GitHub Security Advisory** at:
 
-<https://github.com/evinjohnn/momor-cluely-ai-assistant/security/advisories>
+<https://github.com/ompo-dev/momor-cluely-ai-assistant/security/advisories>
 
 The advisory includes a description of the issue, affected versions, the fix, and (with your consent) credit to the reporter. CVE assignment is requested where applicable through GitHub's CNA.
 

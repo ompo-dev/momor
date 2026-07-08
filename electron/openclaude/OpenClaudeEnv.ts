@@ -41,17 +41,26 @@ export const OLLAMA_BASE_URL = "http://localhost:11434/v1";
 
 type EnvMap = Record<string, string>;
 
+function applyIfPresent(
+  env: EnvMap,
+  key: string,
+  value?: string,
+): void {
+  const trimmed = value?.trim();
+  if (trimmed) env[key] = trimmed;
+}
+
 function openaiCompat(
-  apiKey: string,
+  apiKey?: string,
   baseUrl?: string,
   model?: string,
 ): EnvMap {
   const env: EnvMap = {
     CLAUDE_CODE_USE_OPENAI: "1",
-    OPENAI_API_KEY: apiKey,
   };
-  if (baseUrl) env.OPENAI_BASE_URL = baseUrl;
-  if (model) env.OPENAI_MODEL = model;
+  applyIfPresent(env, "OPENAI_API_KEY", apiKey);
+  applyIfPresent(env, "OPENAI_BASE_URL", baseUrl);
+  applyIfPresent(env, "OPENAI_MODEL", model);
   return env;
 }
 
@@ -64,16 +73,16 @@ export function buildOpenClaudeEnv(input: ProviderEnvInput): EnvMap {
   switch (provider) {
     case "anthropic": {
       const env: EnvMap = {};
-      if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-      if (model) env.ANTHROPIC_MODEL = model;
-      if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+      applyIfPresent(env, "ANTHROPIC_API_KEY", apiKey);
+      applyIfPresent(env, "ANTHROPIC_MODEL", model);
+      applyIfPresent(env, "ANTHROPIC_BASE_URL", baseUrl);
       return env;
     }
     case "gemini": {
       const env: EnvMap = { CLAUDE_CODE_USE_GEMINI: "1" };
-      if (apiKey) env.GEMINI_API_KEY = apiKey;
-      if (model) env.GEMINI_MODEL = model;
-      if (baseUrl) env.GEMINI_BASE_URL = baseUrl;
+      applyIfPresent(env, "GEMINI_API_KEY", apiKey);
+      applyIfPresent(env, "GEMINI_MODEL", model);
+      applyIfPresent(env, "GEMINI_BASE_URL", baseUrl);
       return env;
     }
     case "openai":
@@ -86,9 +95,13 @@ export function buildOpenClaudeEnv(input: ProviderEnvInput): EnvMap {
       return openaiCompat(apiKey || "ollama", baseUrl ?? OLLAMA_BASE_URL, model);
     case "custom": {
       const env = openaiCompat(apiKey ?? "", baseUrl, model);
-      if (input.authHeader) env.OPENAI_AUTH_HEADER = input.authHeader;
-      if (input.authHeaderValue) env.OPENAI_AUTH_HEADER_VALUE = input.authHeaderValue;
-      if (input.authScheme) env.OPENAI_AUTH_SCHEME = input.authScheme;
+      applyIfPresent(env, "OPENAI_AUTH_HEADER", input.authHeader);
+      applyIfPresent(
+        env,
+        "OPENAI_AUTH_HEADER_VALUE",
+        input.authHeaderValue,
+      );
+      applyIfPresent(env, "OPENAI_AUTH_SCHEME", input.authScheme);
       return env;
     }
     default:

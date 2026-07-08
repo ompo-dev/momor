@@ -1,7 +1,7 @@
 # momor → Cluely Parity — Final Integration Report
 
 **Pass:** 2026-05-15 (continuation of prior parity passes)
-**Repo:** /Users/evin/momor-cluely-ai-assistant
+**Repo:** /Users/ompo-dev/momor-cluely-ai-assistant
 **Branch:** `main` (commit `43ae233` baseline)
 **Final test result:** `npm test` → **349 tests / 34 suites / 0 fail / ~1.0s**
 

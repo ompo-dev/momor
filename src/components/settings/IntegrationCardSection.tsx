@@ -15,11 +15,11 @@ export function IntegrationCardSection({
   className,
 }: IntegrationCardSectionProps) {
   return (
-    <section className={cn("space-y-3", className)}>
+    <section className={cn("space-y-2", className)}>
       {(title || description) && (
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           {title ? (
-            <h4 className="text-xs font-medium tracking-tight text-foreground">
+            <h4 className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {title}
             </h4>
           ) : null}
@@ -36,5 +36,5 @@ export function IntegrationCardSection({
 }
 
 export function IntegrationCardDivider() {
-  return <div className="h-px w-full bg-border/60" role="separator" />;
+  return <div className="h-px w-full bg-border-subtle/70" role="separator" />;
 }

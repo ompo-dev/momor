@@ -339,8 +339,8 @@ node --test \
 
 node -e "
 const { validateImagePath } = require('./dist-electron/electron/utils/curlUtils.js');
-const userData = '/Users/evin/Library/Application Support/momor';
-console.log(validateImagePath('/Users/evin/Library/Application Support/momor/screenshots/abc.png', userData));
+const userData = '/Users/ompo-dev/Library/Application Support/momor';
+console.log(validateImagePath('/Users/ompo-dev/Library/Application Support/momor/screenshots/abc.png', userData));
 "
 # { isValid: false, reason: 'Paths outside app directory are not allowed' }
 ```

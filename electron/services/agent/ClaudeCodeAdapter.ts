@@ -32,6 +32,12 @@ import {
   ParseState,
 } from "./types";
 import { permissionArgsForClaude } from "./PermissionEngine";
+import {
+  buildPreloadedReferencedFileContext,
+  extractLatestUserTurnText,
+  extractPathTargetsFromText,
+  isSameOrChildPath,
+} from "./LocalPathAccess";
 
 /**
  * Built-in Claude-Code tools blocked in "plain" mode so meeting-assist turns
@@ -113,6 +119,132 @@ function buildStructuredPrompt(
   );
 }
 
+function writeTempSystemPromptFile(contents: string): string | undefined {
+  const trimmed = contents.trim();
+  if (!trimmed) return undefined;
+
+  const filePath = path.join(
+    os.tmpdir(),
+    `momor-agent-system-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}.txt`,
+  );
+  fs.writeFileSync(filePath, trimmed, "utf8");
+  return filePath;
+}
+
+function buildAgentRuntimeContext(
+  workspaceDir: string,
+  permissionMode: string,
+  referencedPaths: string[],
+  grantedDirs: string[],
+  preloadedFileContext?: string,
+): string | undefined {
+  const lines = [
+    "<runtime-capabilities>",
+    "You are running inside a Claude Code compatible agent session with filesystem, shell, MCP, and skill tools enabled.",
+    `Primary workspace root: ${workspaceDir}`,
+    `Current permission mode: ${permissionMode}`,
+    "Use Read, Glob, or Grep to inspect project files before answering file-specific questions.",
+  ];
+
+  if (referencedPaths.length) {
+    lines.push(
+      "The user's latest request explicitly references these local paths:",
+      ...referencedPaths.map((targetPath) => `- ${targetPath}`),
+      "Inspect the referenced path before answering questions about its contents.",
+      "If a referenced path is a file, use Read on that file before summarizing or describing it.",
+      "Before replying to an explicit local-path request, your first action should be a filesystem inspection on that target (Read for files, Glob or Grep for folders).",
+      "Do not answer an explicit local-path request from memory, prior context, or a generic permission disclaimer.",
+    );
+  }
+
+  if (grantedDirs.length) {
+    lines.push(
+      "Additional filesystem roots already granted for this turn:",
+      ...grantedDirs.map((dir) => `- ${dir}`),
+      "The host already granted access to these roots before your reply.",
+      "If the user asks about a file in one of these roots, inspect it with Read, Glob, or Grep before answering.",
+    );
+  }
+
+  if (preloadedFileContext) {
+    lines.push(
+      "The user explicitly shared local file paths for this turn and the host preloaded safe text excerpts from them.",
+      "That means access to those referenced files has already been verified by the host.",
+      "Treat those excerpts as grounded evidence about the referenced files.",
+      "If the host already verified or preloaded a referenced file, answer from that file instead of asking the user to paste it again.",
+      preloadedFileContext,
+    );
+  }
+
+  lines.push(
+    "If a Read tool succeeds or the host already preloaded file content, treat access to that path as proven for this turn.",
+    "After a successful read of a referenced file, summarize or act on that file directly.",
+    "If the user asks to create, edit, move, rename, or delete files inside the workspace or granted roots, use the available tools directly when the permission mode allows it.",
+    "Do not say you lack access or ask the user to paste the file unless a tool call actually fails.",
+    "A generic 'I do not have access' reply is incorrect unless the tool itself returned that failure.",
+    "If a tool fails, describe the exact failure you saw instead of speculating about generic permissions.",
+    "</runtime-capabilities>",
+  );
+
+  return lines.join("\n");
+}
+
+function buildTurnLocalPathGuidance(
+  referencedPaths: string[],
+  grantedDirs: string[],
+  preloadedFileContext?: string,
+): string | undefined {
+  if (!referencedPaths.length && !grantedDirs.length && !preloadedFileContext) {
+    return undefined;
+  }
+
+  const lines = [
+    "<turn-local-path-guidance>",
+  ];
+
+  if (referencedPaths.length) {
+    lines.push(
+      "This turn explicitly references local paths the user intentionally shared:",
+      ...referencedPaths.map((targetPath) => `- ${targetPath}`),
+      "Inspect the referenced path before answering questions about its contents.",
+      "Start by using Read on a referenced file, or Glob/Grep on a referenced folder, before drafting your answer.",
+    );
+  }
+
+  if (grantedDirs.length) {
+    lines.push(
+      "The host already granted filesystem access to these extra roots for this turn:",
+      ...grantedDirs.map((dir) => `- ${dir}`),
+    );
+  }
+
+  if (preloadedFileContext) {
+    lines.push(
+      "The host already preloaded readable excerpts from the referenced local files below.",
+      "These excerpts are grounded local evidence for this turn. Use them directly when the user asks what the referenced file contains.",
+      "A reply that says you lack access would be factually wrong unless a fresh Read, Glob, or Grep call fails afterwards.",
+      preloadedFileContext,
+    );
+  }
+
+  lines.push(
+    "Do not say you lack access unless Read, Glob, or Grep actually fails during this turn.",
+    "</turn-local-path-guidance>",
+  );
+
+  return lines.join("\n");
+}
+
+function mergeSystemPrompts(...parts: Array<string | undefined>): string | undefined {
+  const merged = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n");
+  return merged || undefined;
+}
+
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly capabilities = {
     mcp: "flag" as const,
@@ -146,6 +278,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const isNodeScript = /\.(mjs|js|cjs)$/i.test(exePath);
     const cmd = isNodeScript ? process.execPath : exePath;
     const args: string[] = isNodeScript ? [exePath] : [];
+    const cleanupPaths: string[] = [];
 
     args.push(
       "--print",
@@ -177,8 +310,60 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       args.push("--resume", options.cliSessionId);
     }
 
+    // Always grant the active workspace root explicitly. OpenClaude-style
+    // runtimes can treat --add-dir as the filesystem allowlist, so relying on
+    // cwd alone makes the agent act like it has no file access. Explicit local
+    // path requests may add extra roots on top of that active workspace.
+    const promptPathTargets = plainMode
+      ? []
+      : extractPathTargetsFromText(extractLatestUserTurnText(options.prompt));
+    const referencedPaths = promptPathTargets.map((target) => target.targetPath);
+    const grantedDirs = new Set<string>();
+    if (!plainMode) {
+      grantedDirs.add(ctx.workspaceDir);
+      for (const target of promptPathTargets) {
+        if (!isSameOrChildPath(ctx.workspaceDir, target.accessDir)) {
+          grantedDirs.add(target.accessDir);
+        }
+      }
+    }
+    const grantedDirList = [...grantedDirs];
+    const preloadedFileContext = plainMode
+      ? undefined
+      : buildPreloadedReferencedFileContext(promptPathTargets);
+    for (const dir of grantedDirList) {
+      args.push("--add-dir", dir);
+    }
+
     args.push(
       ...permissionArgsForClaude(ctx.permissionMode, ctx.approvalToolName),
+    );
+
+    const runtimeSystemPrompt = plainMode
+      ? undefined
+      : buildAgentRuntimeContext(
+          ctx.workspaceDir,
+          ctx.permissionMode,
+          referencedPaths,
+          grantedDirList,
+          preloadedFileContext,
+        );
+    const runtimeSystemPromptFile = runtimeSystemPrompt
+      ? writeTempSystemPromptFile(runtimeSystemPrompt)
+      : undefined;
+    if (runtimeSystemPromptFile) {
+      args.push("--append-system-prompt-file", runtimeSystemPromptFile);
+      cleanupPaths.push(runtimeSystemPromptFile);
+    }
+    const stdinSystemPrompt = mergeSystemPrompts(
+      options.systemPrompt,
+      plainMode
+        ? undefined
+        : buildTurnLocalPathGuidance(
+            referencedPaths,
+            grantedDirList,
+            preloadedFileContext,
+          ),
     );
 
     // .cmd shims need a shell on Windows; node / direct binaries do not.
@@ -202,12 +387,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         ? buildStructuredPrompt(
             options.prompt,
             options.imagePaths,
-            options.systemPrompt,
+            stdinSystemPrompt,
           )
-        : buildPromptWithSystemContext(options.prompt, options.systemPrompt),
+        : buildPromptWithSystemContext(options.prompt, stdinSystemPrompt),
       cwd: ctx.workspaceDir,
       env,
       useShell,
+      cleanupPaths: cleanupPaths.length ? cleanupPaths : undefined,
     };
   }
 

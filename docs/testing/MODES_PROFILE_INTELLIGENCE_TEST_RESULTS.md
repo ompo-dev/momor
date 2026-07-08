@@ -102,7 +102,7 @@ All 5 Run-B failures were harness regex artifacts, not real prompt regressions. 
 | `lecture-office-hours-stem-clarity`   | "…assume there is actually something happening."                           | `mustNotInclude` of `/here is/i` matches the substring inside `there is`                                                                                                   |
 | `long-context-recruiting-evolution`   | "I would lean against a hire unless you can clarify…"                      | `mustNotInclude` `/strong.*hire/i` matched "strong technical systems knowledge with intermittent struggles … lean against a hire" (no actual "strong hire" recommendation) |
 
-**Zero creator-name leaks** ("I'm Evin John" / "I am Evin John" / "My name is Evin") across both runs. The new CORE_IDENTITY guardrail and looking-for-work intro name rule are holding.
+**Zero creator-name leaks** ("I'm ompo-dev" / "I am ompo-dev" / "My name is ompo-dev") across both runs. The new CORE_IDENTITY guardrail and looking-for-work intro name rule are holding.
 
 **Environment notes:**
 

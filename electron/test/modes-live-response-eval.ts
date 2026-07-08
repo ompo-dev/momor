@@ -467,7 +467,7 @@ const BASELINE_SCENARIOS: EvalScenario[] = [
       /engineer|developer|lead|built|build|role|background|experience|product|design|focus/i,
     ],
     mustNotInclude: [
-      /great question|let me start|okay so.*introduction|\bEvin John\b|\bI'?m Evin\b|\bI am Evin\b|\bMy name is Evin\b|\bI'?m momor\b|\bI am momor\b/i,
+      /great question|let me start|okay so.*introduction|\bompo-dev\b|\bI'?m ompo-dev\b|\bI am ompo-dev\b|\bMy name is ompo-dev\b|\bI'?m momor\b|\bI am momor\b/i,
     ],
     maxLatencyMs: 12_000,
   },

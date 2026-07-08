@@ -23,8 +23,6 @@ import {
 import type { CodexSandboxMode } from "../CodexCliService";
 
 export const MEETING_MCP_SERVER_NAME = "momor-meeting";
-/** Server-level allow rule: permits every tool exposed by the meeting MCP server. */
-export const MEETING_MCP_ALLOW_RULE = `mcp__${MEETING_MCP_SERVER_NAME}`;
 export const APPROVAL_TOOL_NAME = `mcp__${MEETING_MCP_SERVER_NAME}__request_permission`;
 
 const CLAUDE_WRITE_TOOLS = [
@@ -52,16 +50,22 @@ export function requiresExplicitConfirmation(
 }
 
 /**
- * Flags for claude / openclaude. The meeting MCP server is always allowed
- * (read-only context tools). When an approval tool name is provided and the
- * mode is not full-access, unhandled permission prompts route to it instead of
- * being silently denied.
+ * Flags for claude / openclaude.
+ *
+ * Important: do NOT pass --allowed-tools here just to "allow the meeting MCP".
+ * In Claude Code/OpenClaude that flag is a real allowlist, so passing only the
+ * MCP server silently strips Read/Glob/Grep/Edit/Write/Bash from the session
+ * and makes the agent act like it has no filesystem access.
+ *
+ * The permission prompt MCP tool is wired separately via
+ * --permission-prompt-tool and does not need to be exposed in the normal tool
+ * list.
  */
 export function permissionArgsForClaude(
   mode: AgentPermissionMode,
   approvalToolName?: string,
 ): string[] {
-  const args: string[] = ["--allowed-tools", MEETING_MCP_ALLOW_RULE];
+  const args: string[] = [];
 
   switch (mode) {
     case "full-access":

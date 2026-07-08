@@ -7,10 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Mic } from "lucide-react";
 import { SttBrandIconBadge } from "./SttBrandIcon";
 import { sttKindLabel } from "./integrationDisplay";
+import { ZedListItem } from "../zed/ZedListItem";
 
 const STT_KINDS = [
   "deepgram",
@@ -51,47 +51,58 @@ export function AddSttProfileDialog({
 }: AddSttProfileDialogProps) {
   const { t } = useTranslation();
   const available = STT_KINDS.filter((kind) => !existingKinds.includes(kind));
+  const kindCategory = (kind: string) =>
+    kind === "local-whisper"
+      ? t("providers.categoryLocal")
+      : t("providers.categoryCloud");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b border-border/50 px-5 py-4">
-          <DialogTitle className="flex items-center gap-2 text-base">
+      <DialogContent className="max-w-[420px] gap-0 overflow-hidden border-border-subtle/80 bg-card/96 p-0 shadow-[0_24px_64px_-42px_rgba(0,0,0,0.85)]">
+        <DialogHeader className="border-b border-border-subtle/75 px-4 py-3.5">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {t("settings.audio.sttAdd")}
+          </p>
+          <DialogTitle className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
             <Mic className="h-4 w-4" />
             {t("settings.audio.sttAddDialogTitle")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="text-[11px] leading-5">
             {t("settings.audio.sttAddDialogDesc")}
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-[min(60vh,420px)] overflow-y-auto p-3">
+        <div className="max-h-[min(60vh,420px)] overflow-y-auto px-2 py-2">
           {available.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">
               {t("settings.audio.sttAllAdded")}
             </p>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
               {available.map((kind) => (
-                <Button
+                <ZedListItem
                   key={kind}
-                  type="button"
-                  variant="outline"
-                  className="h-auto justify-start gap-3 px-3 py-3 text-left"
+                  spacing="sparse"
+                  className="px-2.5 py-2"
                   onClick={() => {
                     onSelect(kind);
                     onOpenChange(false);
                   }}
+                  startSlot={<SttBrandIconBadge kind={kind} />}
+                  endSlot={
+                    <span className="rounded-sm border border-border-subtle/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      {kindCategory(kind)}
+                    </span>
+                  }
                 >
-                  <SttBrandIconBadge kind={kind} />
-                  <div className="min-w-0">
-                    <span className="block text-sm font-medium">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12.5px] font-medium text-foreground">
                       {sttKindLabel(kind)}
-                    </span>
-                    <span className="block text-[11px] font-normal text-muted-foreground">
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
                       {t(STT_KIND_DESC_KEY[kind] ?? kind)}
-                    </span>
+                    </p>
                   </div>
-                </Button>
+                </ZedListItem>
               ))}
             </div>
           )}

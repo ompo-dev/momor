@@ -34,6 +34,8 @@ interface FetchedModel {
 interface ProviderCardProps {
   providerId: "gemini" | "groq" | "openai" | "claude";
   providerName: string;
+  description?: string;
+  eyebrow?: string;
   storedKeys: string[];
   preferredModel?: string;
   onSaveKeys: (keys: string[]) => Promise<void>;
@@ -54,6 +56,8 @@ interface ProviderCardProps {
 export const ProviderCard: React.FC<ProviderCardProps> = ({
   providerId,
   providerName,
+  description,
+  eyebrow,
   storedKeys,
   preferredModel,
   onSaveKeys,
@@ -152,10 +156,11 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
 
   return (
     <IntegrationCardShell
+      eyebrow={eyebrow}
       title={providerName}
-      subtitle={t("providers.categoryCloud")}
+      subtitle={description}
       category="cloud"
-      icon={<ProviderBrandIconBadge providerId={providerId} />}
+      icon={<ProviderBrandIconBadge providerId={providerId} chrome={false} />}
       defaultExpanded={!hasStoredKeys}
       badges={
         <IntegrationStatusBadge
@@ -268,7 +273,7 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
       }
     >
       {oauthAlternativeNote && (
-        <p className="rounded-lg bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="rounded-sm border border-border-subtle/75 bg-background/14 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
           {oauthAlternativeNote}
         </p>
       )}

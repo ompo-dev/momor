@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from "react"; // forcing refr
 import { useTranslation } from "react-i18next";
 import { AppProviders } from "./components/shell";
 import { Button } from "./components/ui/button";
-import { Card, CardContent } from "./components/ui/card";
 import MomorInterface from "./components/MomorInterface";
 import SettingsPopup from "./components/SettingsPopup"; // Keeping for legacy/specific window support if needed
 import Launcher from "./components/Launcher";
@@ -91,18 +90,30 @@ const App: React.FC = () => {
   }, [isLauncherWindow, isOverlayWindow, isDefault]);
 
   // State
-  // One-shot first-run startup sequence. Once the user dismisses it (or any
-  // future code flips the flag), it never appears again on subsequent launches.
-  const [showStartup, setShowStartup] = useState<boolean>(false);
+  // One-shot first-run startup sequence for the launcher window.
+  const [showStartup, setShowStartup] = useState<boolean>(() => {
+    if (!(isLauncherWindow || isDefault)) return false;
+    try {
+      return localStorage.getItem("momor_seen_startup_v2") !== "true";
+    } catch {
+      return false;
+    }
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] =
     useState<string>("general");
+  const dismissStartup = useCallback(() => {
+    try {
+      localStorage.setItem("momor_seen_startup_v2", "true");
+    } catch {}
+    setShowStartup(false);
+  }, []);
   const openSettingsExclusive = useCallback((tab: string = "general") => {
     setSettingsInitialTab(tab);
     setIsSettingsOpen(true);
   }, []);
 
-  // Overlay opacity — only meaningful when isOverlayWindow, but stored centrally
+  // Overlay opacity - only meaningful when isOverlayWindow, but stored centrally
   // so it can be initialized once from localStorage and updated via IPC.
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => {
     const stored = localStorage.getItem("momor_overlay_opacity");
@@ -143,7 +154,7 @@ const App: React.FC = () => {
   // API check
   const [hasmomorApi, setHasmomorApi] = useState<boolean>(false);
 
-  // ── Onboarding / promo toasters ───────────────────────────
+  // Onboarding / promo toasters
   const [showPermissionsToaster, setShowPermissionsToaster] = useState(false);
 
   const isAppReady =
@@ -164,11 +175,11 @@ const App: React.FC = () => {
       .then((creds) => setHasmomorApi(!!creds?.hasmomorKey))
       .catch(() => {});
 
-    // ── Onboarding toasters ──────────────────────────────────
+    // Onboarding toasters
     if (isLauncherWindow || isDefault) {
       const permsShown = localStorage.getItem("momor_perms_shown_v1");
       if (!permsShown) {
-        // First ever launch — show permissions toaster
+        // First ever launch - show permissions toaster
         setShowPermissionsToaster(true);
       }
     }
@@ -230,7 +241,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Listen for overlay opacity changes — scoped to overlay window only
+  // Listen for overlay opacity changes - scoped to overlay window only
   useEffect(() => {
     if (!isOverlayWindow) return;
     const removeOpacityListener = window.electronAPI?.onOverlayOpacityChanged?.(
@@ -296,7 +307,7 @@ const App: React.FC = () => {
       if (result.success) {
         analytics.trackMeetingStarted();
         // Window swap happens inside main's startMeeting() now (before the
-        // meeting-state broadcast) to avoid a blue→green CTA flash on the
+        // meeting-state broadcast) to avoid a blue->green CTA flash on the
         // launcher. No follow-up setWindowMode IPC needed here.
       } else {
         console.error("Failed to start meeting:", result.error);
@@ -322,13 +333,13 @@ const App: React.FC = () => {
     // launcher swap synchronously at the top, BEFORE any blocking audio
     // teardown. Awaiting here would stall the overlay's React render
     // loop for the IPC round-trip while libuv-blocking setImmediate
-    // native stops fire on the main process — which is the lag the user
+    // native stops fire on the main process - which is the lag the user
     // was seeing. The launcher window receives a 'meetings-updated'
     // event after the BG teardown so its list refreshes on its own.
     window.electronAPI.endMeeting().catch((err) => {
       console.error("Failed to end meeting:", err);
       // Belt-and-suspenders: if the IPC itself rejected, the swap may
-      // not have happened — request it manually so the user isn't
+      // not have happened - request it manually so the user isn't
       // stranded on a dead overlay.
       window.electronAPI.setWindowMode("launcher");
     });
@@ -399,17 +410,18 @@ const App: React.FC = () => {
               initial={{ opacity: 1 }}
               exit={{
                 opacity: 0,
-                scale: 1.1,
+                y: -6,
                 pointerEvents: "none",
-                transition: { duration: 0.6, ease: "easeInOut" },
+                transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
               }}
             >
               <StartupSequence
-                onComplete={() => {
-                  try {
-                    localStorage.setItem("momor_seen_startup_v1", "true");
-                  } catch {}
-                  setShowStartup(false);
+                onComplete={dismissStartup}
+                onStartMeeting={() => {
+                  void handleStartMeeting();
+                }}
+                onOpenSettings={(tab) => {
+                  openSettingsExclusive(tab);
                 }}
               />
             </motion.div>
@@ -417,12 +429,11 @@ const App: React.FC = () => {
             <motion.div
               key="main"
               className="h-full w-full"
-              initial={{ opacity: 0, scale: 0.98, y: 15 }} // "Linear" style entry: slightly down and scaled down
-              animate={{ opacity: 1, scale: 1, y: 0 }} // Slide up and snap to place
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{
-                duration: 0.8,
-                ease: [0.19, 1, 0.22, 1], // Expo-out: snappy start, smooth landing
-                delay: 0.1,
+                duration: 0.42,
+                ease: [0.22, 1, 0.36, 1],
               }}
             >
               <AppProviders>
@@ -458,42 +469,43 @@ const App: React.FC = () => {
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="fixed bottom-6 right-6 z-50 pointer-events-auto"
             >
-              <Card className="max-w-[340px] border-destructive/30 shadow-2xl">
-                <CardContent className="p-5 flex flex-col gap-3">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="text-foreground font-medium text-sm">
-                        {t("app.providerChanged")}
-                      </h3>
-                      <p className="text-muted-foreground text-xs mt-1 leading-relaxed">
-                        ⚠{" "}
-                        {t("app.incompatibleWarning", {
-                          count: incompatibleWarning.count,
-                          oldProvider: incompatibleWarning.oldProvider,
-                          newProvider: incompatibleWarning.newProvider,
-                        })}
-                      </p>
+              <div className="max-w-[360px] overflow-hidden rounded-md border border-amber-300/16 bg-background/96 shadow-[0_26px_56px_-34px_rgba(0,0,0,0.86)] backdrop-blur-sm">
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-amber-300/16 bg-amber-300/8 text-amber-300">
+                    <AlertCircle className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+                      {t("app.providerChanged")}
+                    </p>
+                    <p className="mt-1 text-[12px] leading-5 text-text-secondary">
+                      {t("app.incompatibleWarning", {
+                        count: incompatibleWarning.count,
+                        oldProvider: incompatibleWarning.oldProvider,
+                        newProvider: incompatibleWarning.newProvider,
+                      })}
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIncompatibleWarning(null)}
+                        className="h-7 rounded-sm px-2.5 text-[11px]"
+                      >
+                        {t("app.dismiss")}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleReindex}
+                        className="h-7 rounded-sm px-2.5 text-[11px]"
+                      >
+                        {t("app.reindex")}
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-1 justify-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIncompatibleWarning(null)}
-                    >
-                      {t("app.dismiss")}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleReindex}
-                    >
-                      {t("app.reindex")}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

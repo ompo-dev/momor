@@ -1,8 +1,7 @@
 import React from "react";
-import { X } from "lucide-react";
+import { Image as ImageIcon, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { OverlayAppearance } from "@/lib/overlayAppearance";
-import { useOverlayStore } from "../../../stores/overlayStore";
 
 export interface AttachedShot {
   path: string;
@@ -13,14 +12,9 @@ type Props = {
   items: AttachedShot[];
   onClearAll: () => void;
   onRemoveAt: (idx: number) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  onInputChange: (v: string) => void;
-  onSubmit: () => void;
   isLightTheme: boolean;
   subtleSurfaceClass: string;
-  inputClass: string;
   appearance: OverlayAppearance;
-
 };
 
 /** Thumbnails of attached screenshots + a question input for vision turns. */
@@ -28,74 +22,76 @@ export default function AttachedScreenshotPreview({
   items,
   onClearAll,
   onRemoveAt,
-  inputRef,
-  onInputChange,
-  onSubmit,
   isLightTheme,
   subtleSurfaceClass,
-  inputClass,
   appearance,
 }: Props) {
-  const {
-    inputValue,
-  } = useOverlayStore();
   const { t } = useTranslation();
   if (items.length === 0) return null;
   return (
     <div
-      className={`mb-2 rounded-lg p-2 transition-all duration-200 border ${subtleSurfaceClass}`}
+      className={`mb-2 overflow-hidden rounded-[10px] border border-border-subtle/80 transition-all duration-200 ${subtleSurfaceClass}`}
       style={appearance.subtleStyle}
       data-stealth-ignore="true"
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-medium overlay-text-primary">
-          {t("overlay.screenshotsAttached", { count: items.length })}
-        </span>
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle/80 bg-background/14 px-2.5 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-[8px] border border-border-subtle/80 bg-background/28 text-text-tertiary">
+            <ImageIcon className="h-3 w-3" />
+          </span>
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+              {t("overlay.visualContext")}
+            </div>
+            <div className="truncate text-[11px] text-text-secondary">
+              {t("overlay.screenshotsAttached", { count: items.length })}
+            </div>
+          </div>
+        </div>
         <button
           onClick={onClearAll}
-          className="p-1 rounded-full transition-colors overlay-icon-surface overlay-icon-surface-hover overlay-text-interactive"
+          className="inline-flex h-5.5 shrink-0 items-center rounded-[8px] border border-border-subtle/80 bg-background/24 px-2 font-mono text-[9.5px] font-medium uppercase tracking-[0.08em] text-text-secondary transition-colors hover:bg-background/34 hover:text-text-primary"
           title={t("overlay.removeAll")}
-          style={appearance.iconStyle}
         >
-          <X className="w-3.5 h-3.5" />
+          {t("overlay.removeAll")}
         </button>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto max-w-full pb-1">
+
+      <div className="flex max-w-full gap-2 overflow-x-auto px-2.5 py-2">
         {items.map((ctx, idx) => (
-          <div key={ctx.path} className="relative group/thumb flex-shrink-0">
+          <div
+            key={ctx.path}
+            className={`group/thumb relative flex shrink-0 items-center gap-2 rounded-[9px] border px-2 py-1.5 ${
+              isLightTheme
+                ? "border-black/12 bg-white/45"
+                : "border-border-subtle/80 bg-background/18"
+            }`}
+          >
             <img
               src={ctx.preview}
               alt={`Screenshot ${idx + 1}`}
-              className={`h-10 w-auto rounded border ${isLightTheme ? "border-black/15" : "border-white/20"}`}
+              className={`h-8 w-[52px] rounded-[7px] border object-cover ${
+                isLightTheme ? "border-black/15" : "border-white/16"
+              }`}
             />
+            <div className="flex min-w-[64px] flex-col pr-4">
+              <span className="text-[10.5px] font-medium text-text-primary">
+                {t("overlay.imageLabel", { index: idx + 1 })}
+              </span>
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
+                {t("overlay.visualContext")}
+              </span>
+            </div>
             <button
               onClick={() => onRemoveAt(idx)}
-              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500/80 hover:bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+              className="absolute right-1.5 top-1.5 inline-flex h-4.5 w-4.5 items-center justify-center rounded-[7px] border border-border-subtle/80 bg-background/72 text-text-tertiary transition-colors hover:bg-background/86 hover:text-text-primary"
               title={t("overlay.remove")}
             >
-              <X className="w-2.5 h-2.5 text-white" />
+              <X className="h-3 w-3" />
             </button>
           </div>
         ))}
       </div>
-      <input
-        ref={inputRef}
-        type="text"
-        value={inputValue}
-        onChange={(e) => onInputChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onSubmit();
-          }
-        }}
-        onMouseDown={() => {
-          requestAnimationFrame(() => inputRef.current?.focus());
-        }}
-        placeholder={t("overlay.askAboutScreenshot")}
-        className={`mt-1.5 h-8 w-full rounded-lg border px-2.5 text-[12px] leading-snug transition-all duration-200 ease-sculpted focus:outline-none focus:ring-1 ${inputClass}`}
-        style={appearance.inputStyle}
-      />
     </div>
   );
 }

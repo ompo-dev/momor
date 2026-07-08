@@ -49,26 +49,52 @@ const BUILTIN_TRANSPORT: Record<AgentProvider, AgentTransport> = {
 };
 
 const BUILTIN_NAMES: Record<AgentProvider, string> = {
-  claude: "Claude Code",
-  openclaude: "OpenClaude",
+  claude: "Claude Code (system)",
+  openclaude: "Claude Code",
   codex: "Codex CLI",
   opencode: "OpenCode",
 };
+
+function isPathLikeExecutable(candidate: string): boolean {
+  return (
+    path.isAbsolute(candidate) ||
+    candidate.includes(path.sep) ||
+    /[\\/]/.test(candidate)
+  );
+}
+
+function isRunnableBareCommand(candidate: string): boolean {
+  return (
+    candidate.length > 0 &&
+    candidate.length <= 240 &&
+    !/[\r\n]/.test(candidate) &&
+    !/\s/.test(candidate) &&
+    !isPathLikeExecutable(candidate)
+  );
+}
 
 function resolveExecutable(
   provider: AgentProvider,
   configured?: string,
 ): string | null {
-  if (configured && configured.trim()) {
-    if (fs.existsSync(configured)) return configured;
-    if (!configured.includes(path.sep)) return configured;
+  const trimmed = configured?.trim() ?? "";
+  if (trimmed) {
+    if (isPathLikeExecutable(trimmed)) {
+      if (fs.existsSync(trimmed)) return trimmed;
+    } else if (isRunnableBareCommand(trimmed)) {
+      return trimmed;
+    }
   }
   const adapter = buildAdapter(provider);
   for (const candidate of adapter.defaultPaths()) {
-    if (candidate.includes(path.sep) && fs.existsSync(candidate)) return candidate;
+    if (isPathLikeExecutable(candidate) && fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
-  const bare = adapter.defaultPaths().find((c) => !c.includes(path.sep));
-  return configured?.trim() || bare || null;
+  const bare = adapter
+    .defaultPaths()
+    .find((candidate) => isRunnableBareCommand(candidate.trim()));
+  return bare || null;
 }
 
 /** opencode launch spec for ACP: `opencode acp` (native support). */

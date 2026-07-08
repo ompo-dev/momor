@@ -60,15 +60,38 @@ export function initializeIpcHandlers(appState: AppState): void {
     broadcastRendererEvent("abilities-updated");
   };
 
+  const isRunnableCliPath = (
+    candidate?: string | null,
+  ): candidate is string => {
+    const trimmed = typeof candidate === "string" ? candidate.trim() : "";
+    if (!trimmed) return false;
+
+    const looksLikePath =
+      path.isAbsolute(trimmed) ||
+      trimmed.includes("\\") ||
+      trimmed.includes("/");
+
+    return looksLikePath ? fs.existsSync(trimmed) : true;
+  };
+
   const resolveOpenClaudeCliPath = (): string => {
     const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
     const cm = CredentialsManager.getInstance();
+    const savedOpenClaudePath = cm.getOpenClaudeCliPath()?.trim();
     return (
-      cm.getOpenClaudeCliPath()?.trim() ||
+      (isRunnableCliPath(savedOpenClaudePath) ? savedOpenClaudePath : "") ||
       OpenClaudeManager.getInstance().status().path ||
       OpenClaudeManager.getInstance().resolvePath() ||
       "openclaude"
     );
+  };
+
+  const normalizeOpenClaudeCliPath = (candidate?: string | null): string => {
+    const trimmed = typeof candidate === "string" ? candidate.trim() : "";
+    if (isRunnableCliPath(trimmed)) {
+      return trimmed;
+    }
+    return resolveOpenClaudeCliPath();
   };
 
   // Clears the active mode when the pro license is lost so non-general mode prompts
@@ -84,6 +107,89 @@ export function initializeIpcHandlers(appState: AppState): void {
     } catch (e) {
       /* non-fatal */
     }
+  };
+
+  const getAgentTurnRouting = (
+    message: string,
+  ): { promote: boolean; explicitLocalPath: boolean } => {
+    try {
+      const {
+        hasExplicitPathReference,
+        shouldPromoteToAgentTurn,
+      } = require("./services/agent/LocalPathAccess");
+      return {
+        promote: shouldPromoteToAgentTurn(message),
+        explicitLocalPath: hasExplicitPathReference(message),
+      };
+    } catch {
+      return {
+        promote: false,
+        explicitLocalPath: false,
+      };
+    }
+  };
+
+  const getExplicitLocalPathEvidence = (
+    message: string,
+  ): { explicitLocalPath: boolean; preloadedFileContext?: string } => {
+    try {
+      const {
+        buildPreloadedReferencedFileContext,
+        extractLatestUserTurnText,
+        extractPathTargetsFromText,
+      } = require("./services/agent/LocalPathAccess");
+      const latestUserText = extractLatestUserTurnText(message);
+      const targets = extractPathTargetsFromText(latestUserText);
+      return {
+        explicitLocalPath: targets.length > 0,
+        preloadedFileContext: buildPreloadedReferencedFileContext(targets),
+      };
+    } catch {
+      return { explicitLocalPath: false };
+    }
+  };
+
+  const isRecoverableExplicitLocalPathReply = (text?: string): boolean => {
+    try {
+      const {
+        isGenericLocalAccessDisclaimer,
+      } = require("./services/agent/LocalPathAccess");
+      return isGenericLocalAccessDisclaimer(text);
+    } catch {
+      return false;
+    }
+  };
+
+  const buildPromotedAgentSystemPrompt = (
+    context?: string,
+    hasImages = false,
+    explicitLocalPath = false,
+  ): string => {
+    const parts = [
+      "You are momor, a helpful AI assistant developed by ompo-dev.",
+      "This is a real agent session with filesystem, MCP, skill, and shell tools available.",
+      explicitLocalPath
+        ? "The user intentionally shared one or more explicit local paths in the latest message."
+        : "The latest user request should be handled with the real local agent tools instead of a plain chat-only response.",
+      explicitLocalPath
+        ? "Inspect the referenced file or folder before answering questions about its contents."
+        : "Use filesystem, MCP, skill, and shell tools whenever they help with local files, folders, code, skills, MCPs, paths, or project state.",
+      explicitLocalPath
+        ? "Treat the referenced path as intentionally shared and already approved for this turn. If the host preloaded file content or granted an extra root, answer from that real local context instead of saying you lack access."
+        : "",
+      "Use the available tools directly when the user asks to read, edit, create, move, or delete local files.",
+      "Do not claim you lack access unless a tool call actually fails. If it fails, report the exact failure you saw.",
+      hasImages ? "If images are attached, inspect them before answering." : "",
+      !explicitLocalPath && context?.trim()
+        ? [
+            "<conversation-context>",
+            context.trim(),
+            "</conversation-context>",
+          ].join("\n")
+        : "",
+    ].filter(Boolean);
+
+    return parts.join("\n\n");
   };
 
   // --- NEW Test Helper ---
@@ -508,17 +614,21 @@ export function initializeIpcHandlers(appState: AppState): void {
         let releaseAgentWorkspace = () => {};
         try {
           const settings = loadAgentSettings();
-          const { WorkspaceManager } = require("./services/agent/WorkspaceManager");
+          const {
+            WorkspaceManager,
+          } = require("./services/agent/WorkspaceManager");
           const { MeetingMCPServer } = require("./services/MeetingMCPServer");
           const meetingTitle =
             intelligenceManager.getCurrentMeetingTitle?.() ??
             (appState.getIsMeetingActive() ? "Active Meeting" : "Overlay Chat");
           wireMeetingContext(undefined, event.sender);
-          const workspace = WorkspaceManager.getInstance().resolveWorkspace(
+          const workspace = WorkspaceManager.getInstance().resolveTurnWorkspace(
             settings,
             { title: meetingTitle },
+            message,
+            "agentic",
           );
-          MeetingMCPServer.getInstance().setActiveWorkspace(workspace);
+          MeetingMCPServer.getInstance().setActiveWorkspace(workspace.dir);
           releaseAgentWorkspace = () => {
             try {
               MeetingMCPServer.getInstance().setActiveWorkspace(null);
@@ -544,7 +654,7 @@ export function initializeIpcHandlers(appState: AppState): void {
           // Regex is `^...$` anchored, so non-probe questions cannot match.
           if (!imagePaths?.length && typeof message === "string") {
             const identityHit = CREATOR_PROBE_RE.test(message)
-              ? "I was developed by Evin John."
+              ? "I was developed by ompo-dev."
               : IDENTITY_PROBE_RE.test(message)
                 ? "I'm momor, an AI assistant."
                 : null;
@@ -611,7 +721,10 @@ export function initializeIpcHandlers(appState: AppState): void {
               if (snap?.trim()) liveTranscriptSnapshot = snap;
             }
           } catch (ctxErr) {
-            console.warn("[IPC] Failed to capture live meeting transcript:", ctxErr);
+            console.warn(
+              "[IPC] Failed to capture live meeting transcript:",
+              ctxErr,
+            );
           }
 
           // Now add USER message to IntelligenceManager (after context snapshot)
@@ -647,7 +760,265 @@ export function initializeIpcHandlers(appState: AppState): void {
             );
           }
 
-          context = UserSessionContextService.getInstance().mergeIfNeeded(context);
+          context =
+            UserSessionContextService.getInstance().mergeIfNeeded(context);
+
+          const agentTurnRouting = getAgentTurnRouting(message);
+          const localPathEvidence = getExplicitLocalPathEvidence(message);
+
+          if (agentTurnRouting.promote) {
+            const {
+              AgentOrchestrator,
+            } = require("./services/agent/AgentOrchestrator");
+            const requestPermission = makePermissionRequester(event.sender);
+            const invocation = llmHelper.prepareOpenClaudeAgentTurn(
+              undefined,
+              message,
+              imagePaths,
+            );
+            const settings = loadAgentSettings();
+            settings.provider = "openclaude";
+            settings.executablePaths = {
+              ...(settings.executablePaths ?? {}),
+              openclaude: resolveOpenClaudeCliPath(),
+            };
+            if (invocation.model) {
+              settings.model = invocation.model;
+            }
+
+            let agentErrored = false;
+            let emittedDone = false;
+            let bufferedExplicitReply = "";
+            let finalizedAgentReply = "";
+            const shouldBufferExplicitLocalPathReply =
+              localPathEvidence.explicitLocalPath &&
+              !!localPathEvidence.preloadedFileContext;
+
+            console.log("[IPC] gemini-chat-stream promoted to local agent", {
+              explicitLocalPath: agentTurnRouting.explicitLocalPath,
+            });
+
+            const stream = AgentOrchestrator.getInstance().run(
+              {
+                prompt: message,
+                systemPrompt: buildPromotedAgentSystemPrompt(
+                  context,
+                  !!imagePaths?.length,
+                  agentTurnRouting.explicitLocalPath,
+                ),
+                provider: "openclaude",
+                model: invocation.model,
+                imagePaths,
+                providerEnv: invocation.providerEnv,
+                toolMode: "agentic",
+                signal,
+                onPermissionRequest: async (req: any) => {
+                  const decision = await requestPermission({
+                    tool: req.tool,
+                    input: req.input ?? {},
+                  });
+                  return { allow: decision.allow };
+                },
+              },
+              settings,
+            );
+
+            for await (const agentEvent of stream) {
+              if (_chatStreamId !== myStreamId) {
+                AgentOrchestrator.getInstance().cancel();
+                return null;
+              }
+
+              switch (agentEvent.type) {
+                case "token":
+                  if (!agentEvent.text) break;
+                  if (shouldBufferExplicitLocalPathReply) {
+                    bufferedExplicitReply += agentEvent.text;
+                  } else {
+                    event.sender.send("gemini-stream-token", agentEvent.text);
+                    try {
+                      PhoneMirrorService.getInstance().publishToken(
+                        String(myStreamId),
+                        agentEvent.text,
+                      );
+                    } catch (_) {
+                      /* noop */
+                    }
+                  }
+                  fullResponse += agentEvent.text;
+                  break;
+                case "thinking":
+                  event.sender.send(
+                    "agent-stream-thinking",
+                    agentEvent.text ?? "",
+                  );
+                  break;
+                case "tool_call":
+                  event.sender.send("agent-tool-call", {
+                    toolId: agentEvent.toolId,
+                    name: agentEvent.toolName,
+                    args: agentEvent.toolArgs,
+                  });
+                  break;
+                case "tool_result":
+                  event.sender.send("agent-tool-result", {
+                    toolId: agentEvent.toolId,
+                    result: agentEvent.toolResult,
+                    isError: agentEvent.toolIsError,
+                  });
+                  break;
+                case "session":
+                  event.sender.send("agent-stream-session", {
+                    sessionId: agentEvent.sessionId,
+                  });
+                  break;
+                case "done": {
+                  const finalResponse =
+                    (shouldBufferExplicitLocalPathReply
+                      ? bufferedExplicitReply
+                      : fullResponse
+                    ).trim().length > 0
+                      ? (shouldBufferExplicitLocalPathReply
+                          ? bufferedExplicitReply
+                          : fullResponse)
+                      : (agentEvent.fullText ?? "").trim();
+                  if (!finalResponse) {
+                    if (shouldBufferExplicitLocalPathReply) {
+                      emittedDone = true;
+                      finalizedAgentReply = "";
+                      fullResponse = "";
+                      break;
+                    }
+                    agentErrored = true;
+                    event.sender.send(
+                      "gemini-stream-error",
+                      "Local agent returned no output for the requested local path.",
+                    );
+                    try {
+                      PhoneMirrorService.getInstance().publishError(
+                        String(myStreamId),
+                        "Local agent returned no output for the requested local path.",
+                      );
+                    } catch (_) {
+                      /* noop */
+                    }
+                    break;
+                  }
+                  emittedDone = true;
+                  fullResponse = finalResponse;
+                  finalizedAgentReply = finalResponse;
+                  if (!shouldBufferExplicitLocalPathReply) {
+                    event.sender.send("gemini-stream-done");
+                    try {
+                      PhoneMirrorService.getInstance().publishDone(
+                        String(myStreamId),
+                        finalResponse,
+                      );
+                    } catch (_) {
+                      /* noop */
+                    }
+                    intelligenceManager.addAssistantMessage(finalResponse);
+                    intelligenceManager.logUsage("chat", message, finalResponse);
+                  }
+                  break;
+                }
+                case "error":
+                  agentErrored = true;
+                  event.sender.send(
+                    "gemini-stream-error",
+                    agentEvent.error || "Unknown agent error",
+                  );
+                  try {
+                    PhoneMirrorService.getInstance().publishError(
+                      String(myStreamId),
+                      agentEvent.error || "Unknown agent error",
+                    );
+                  } catch (_) {
+                    /* noop */
+                  }
+                  break;
+              }
+
+              if (agentErrored) break;
+            }
+
+            if (
+              shouldBufferExplicitLocalPathReply &&
+              !agentErrored &&
+              emittedDone &&
+              _chatStreamId === myStreamId
+            ) {
+              let finalResponse =
+                (finalizedAgentReply || bufferedExplicitReply || fullResponse).trim();
+              if (
+                localPathEvidence.preloadedFileContext &&
+                (!finalResponse ||
+                  isRecoverableExplicitLocalPathReply(finalResponse))
+              ) {
+                try {
+                  finalResponse = await llmHelper.recoverExplicitLocalPathReply(
+                    message,
+                    localPathEvidence.preloadedFileContext,
+                    invocation,
+                    imagePaths,
+                  );
+                } catch (recoveryError) {
+                  console.warn(
+                    "[IPC] explicit local-path recovery failed:",
+                    recoveryError,
+                  );
+                }
+              }
+
+              if (finalResponse) {
+                fullResponse = finalResponse;
+                event.sender.send("agent-stream-done", {
+                  fullText: finalResponse,
+                });
+                try {
+                  PhoneMirrorService.getInstance().publishDone(
+                    String(myStreamId),
+                    finalResponse,
+                  );
+                } catch (_) {
+                  /* noop */
+                }
+                intelligenceManager.addAssistantMessage(finalResponse);
+                intelligenceManager.logUsage("chat", message, finalResponse);
+              } else {
+                event.sender.send(
+                  "gemini-stream-error",
+                  "Local agent returned no output for the requested local path.",
+                );
+              }
+            } else if (
+              !agentErrored &&
+              !emittedDone &&
+              _chatStreamId === myStreamId
+            ) {
+              const finalResponse = fullResponse.trim();
+              if (finalResponse) {
+                event.sender.send("gemini-stream-done");
+                try {
+                  PhoneMirrorService.getInstance().publishDone(
+                    String(myStreamId),
+                    finalResponse,
+                  );
+                } catch (_) {
+                  /* noop */
+                }
+                intelligenceManager.addAssistantMessage(finalResponse);
+                intelligenceManager.logUsage("chat", message, finalResponse);
+              } else {
+                event.sender.send(
+                  "gemini-stream-error",
+                  "Local agent returned no output for the requested local path.",
+                );
+              }
+            }
+
+            return null;
+          }
 
           // Use CHAT_MODE_PROMPT for general chat — bypasses the interview-copilot
           // framing in HARD_SYSTEM_PROMPT/ASSIST_MODE_PROMPT that was causing coding
@@ -1388,10 +1759,22 @@ export function initializeIpcHandlers(appState: AppState): void {
     "setOpenClaudeConfig",
     async (_, config: { path: string; enabled: boolean; model: string }) => {
       const cm = CredentialsManager.getInstance();
-      const normalizedPath = config.path.trim() || resolveOpenClaudeCliPath();
+      const settingsManager = SettingsManager.getInstance();
+      const normalizedPath = normalizeOpenClaudeCliPath(config.path);
       cm.setOpenClaudeCliPath(normalizedPath);
       cm.setOpenClaudeEnabled(config.enabled);
       cm.setOpenClaudeModel(config.model);
+      const currentAgentCli = settingsManager.get("agentCli") ?? {};
+      const executablePaths =
+        currentAgentCli.executablePaths &&
+        typeof currentAgentCli.executablePaths === "object"
+          ? { ...currentAgentCli.executablePaths }
+          : {};
+      executablePaths.openclaude = normalizedPath;
+      settingsManager.set("agentCli", {
+        ...currentAgentCli,
+        executablePaths,
+      });
       appState.processingHelper.getLLMHelper().setOpenClaudeConfig({
         enabled: config.enabled,
         executablePath: normalizedPath,
@@ -1431,12 +1814,15 @@ export function initializeIpcHandlers(appState: AppState): void {
 
     if (status.path) {
       const cm = CredentialsManager.getInstance();
-      if (!cm.getOpenClaudeCliPath()?.trim()) {
+      const currentPath = cm.getOpenClaudeCliPath()?.trim();
+      if (!isRunnableCliPath(currentPath)) {
         cm.setOpenClaudeCliPath(status.path);
       }
       appState.processingHelper.getLLMHelper().setOpenClaudeConfig({
         enabled: cm.isOpenClaudeEnabled(),
-        executablePath: cm.getOpenClaudeCliPath()?.trim() || status.path,
+        executablePath: normalizeOpenClaudeCliPath(
+          cm.getOpenClaudeCliPath()?.trim() || status.path,
+        ),
         model: cm.getOpenClaudeModel() ?? "claude-sonnet-4-6",
       });
     }
@@ -1503,7 +1889,8 @@ export function initializeIpcHandlers(appState: AppState): void {
         await import("./services/OpenClaudeService");
       const cm = CredentialsManager.getInstance();
       const executablePath =
-        (typeof cliPath === "string" && cliPath.trim()) || resolveOpenClaudeCliPath();
+        (typeof cliPath === "string" && cliPath.trim()) ||
+        resolveOpenClaudeCliPath();
       const status = await OpenClaudeService.getAuthStatus({
         enabled: true,
         executablePath,
@@ -1522,7 +1909,8 @@ export function initializeIpcHandlers(appState: AppState): void {
         await import("./services/OpenClaudeService");
       const cm = CredentialsManager.getInstance();
       const executablePath =
-        (typeof cliPath === "string" && cliPath.trim()) || resolveOpenClaudeCliPath();
+        (typeof cliPath === "string" && cliPath.trim()) ||
+        resolveOpenClaudeCliPath();
       return await OpenClaudeService.authLogout({
         enabled: true,
         executablePath,
@@ -2110,51 +2498,54 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
-  safeHandle("upsert-stt-profile", async (_, profile: Record<string, unknown>) => {
-    try {
-      const { CredentialsManager } = require("./services/CredentialsManager");
-      const cm = CredentialsManager.getInstance();
-      if (!profile?.id || !profile?.kind) {
-        return { success: false, error: "Profile id and kind are required" };
-      }
-      const kind = profile.kind as string;
-      const model =
-        typeof profile.model === "string" ? profile.model : undefined;
-      cm.upsertSttProfile({
-        id: String(profile.id),
-        name: String(profile.name || profile.kind),
-        kind: kind as any,
-        enabled: profile.enabled !== false,
-        apiKey:
-          typeof profile.apiKey === "string" ? profile.apiKey : undefined,
-        serviceAccountPath:
-          typeof profile.serviceAccountPath === "string"
-            ? profile.serviceAccountPath
+  safeHandle(
+    "upsert-stt-profile",
+    async (_, profile: Record<string, unknown>) => {
+      try {
+        const { CredentialsManager } = require("./services/CredentialsManager");
+        const cm = CredentialsManager.getInstance();
+        if (!profile?.id || !profile?.kind) {
+          return { success: false, error: "Profile id and kind are required" };
+        }
+        const kind = profile.kind as string;
+        const model =
+          typeof profile.model === "string" ? profile.model : undefined;
+        cm.upsertSttProfile({
+          id: String(profile.id),
+          name: String(profile.name || profile.kind),
+          kind: kind as any,
+          enabled: profile.enabled !== false,
+          apiKey:
+            typeof profile.apiKey === "string" ? profile.apiKey : undefined,
+          serviceAccountPath:
+            typeof profile.serviceAccountPath === "string"
+              ? profile.serviceAccountPath
+              : undefined,
+          region:
+            typeof profile.region === "string" ? profile.region : undefined,
+          baseUrl:
+            typeof profile.baseUrl === "string" ? profile.baseUrl : undefined,
+          model,
+          backupApiKeys: Array.isArray(profile.backupApiKeys)
+            ? (profile.backupApiKeys as string[])
             : undefined,
-        region:
-          typeof profile.region === "string" ? profile.region : undefined,
-        baseUrl:
-          typeof profile.baseUrl === "string" ? profile.baseUrl : undefined,
-        model,
-        backupApiKeys: Array.isArray(profile.backupApiKeys)
-          ? (profile.backupApiKeys as string[])
-          : undefined,
-        apiKeys: Array.isArray(profile.apiKeys)
-          ? (profile.apiKeys as string[])
-          : undefined,
-      });
-      if (kind === "local-whisper" && model) {
-        SettingsManager.getInstance().set("localWhisperModel", model);
+          apiKeys: Array.isArray(profile.apiKeys)
+            ? (profile.apiKeys as string[])
+            : undefined,
+        });
+        if (kind === "local-whisper" && model) {
+          SettingsManager.getInstance().set("localWhisperModel", model);
+        }
+        await appState.reconfigureSttProvider();
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) win.webContents.send("credentials-changed");
+        });
+        return { success: true, profiles: cm.getMaskedSttProfiles() };
+      } catch (error: any) {
+        return { success: false, error: error.message };
       }
-      await appState.reconfigureSttProvider();
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (!win.isDestroyed()) win.webContents.send("credentials-changed");
-      });
-      return { success: true, profiles: cm.getMaskedSttProfiles() };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  });
+    },
+  );
 
   safeHandle("delete-stt-profile", async (_, profileId: string) => {
     try {
@@ -2215,7 +2606,12 @@ export function initializeIpcHandlers(appState: AppState): void {
           });
         }
       });
-      return { success: true, profileId, kind: profile.kind, name: profile.name };
+      return {
+        success: true,
+        profileId,
+        kind: profile.kind,
+        name: profile.name,
+      };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -2424,7 +2820,10 @@ export function initializeIpcHandlers(appState: AppState): void {
           profile.serviceAccountPath?.trim() ||
           cm.getGoogleServiceAccountPath()?.trim();
         if (!saPath) {
-          return { success: false, error: "No service account JSON configured" };
+          return {
+            success: false,
+            error: "No service account JSON configured",
+          };
         }
         try {
           const fs = require("fs");
@@ -2437,7 +2836,8 @@ export function initializeIpcHandlers(appState: AppState): void {
           JSON.parse(fs.readFileSync(saPath, "utf8"));
           return { success: true };
         } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : "Invalid service account";
+          const msg =
+            e instanceof Error ? e.message : "Invalid service account";
           return { success: false, error: msg };
         }
       }
@@ -2491,18 +2891,43 @@ export function initializeIpcHandlers(appState: AppState): void {
       for (let keyIndex = 0; keyIndex < keysToTest.length; keyIndex++) {
         const token = keysToTest[keyIndex];
         try {
-        if (provider === "deepgram") {
-          try {
-            const resp = await fetch("https://api.deepgram.com/v1/auth/token", {
-              headers: { Authorization: `Token ${token}` },
-            });
-            if (!resp.ok) {
-              const body = (await resp.text()).trim();
-              const errMsg = body
-                ? `${resp.status} ${body}`
-                : `${resp.status} Invalid credentials`;
-              console.error(`[IPC] Deepgram test failed: ${errMsg}`);
-              keyResults.push({ index: keyIndex, success: false, error: errMsg });
+          if (provider === "deepgram") {
+            try {
+              const resp = await fetch(
+                "https://api.deepgram.com/v1/auth/token",
+                {
+                  headers: { Authorization: `Token ${token}` },
+                },
+              );
+              if (!resp.ok) {
+                const body = (await resp.text()).trim();
+                const errMsg = body
+                  ? `${resp.status} ${body}`
+                  : `${resp.status} Invalid credentials`;
+                console.error(`[IPC] Deepgram test failed: ${errMsg}`);
+                keyResults.push({
+                  index: keyIndex,
+                  success: false,
+                  error: errMsg,
+                });
+                return {
+                  success: false,
+                  error: `Key ${keyIndex + 1}: ${errMsg}`,
+                  keyResults,
+                  failedIndex: keyIndex,
+                };
+              }
+            } catch (err: unknown) {
+              const {
+                extractErrorMessage,
+              } = require("./utils/extractErrorMessage");
+              const errMsg = extractErrorMessage(err);
+              console.error(`[IPC] Deepgram test error: ${errMsg}`);
+              keyResults.push({
+                index: keyIndex,
+                success: false,
+                error: errMsg,
+              });
               return {
                 success: false,
                 error: `Key ${keyIndex + 1}: ${errMsg}`,
@@ -2510,29 +2935,19 @@ export function initializeIpcHandlers(appState: AppState): void {
                 failedIndex: keyIndex,
               };
             }
-          } catch (err: unknown) {
-            const { extractErrorMessage } = require("./utils/extractErrorMessage");
-            const errMsg = extractErrorMessage(err);
-            console.error(`[IPC] Deepgram test error: ${errMsg}`);
-            keyResults.push({ index: keyIndex, success: false, error: errMsg });
-            return {
-              success: false,
-              error: `Key ${keyIndex + 1}: ${errMsg}`,
-              keyResults,
-              failedIndex: keyIndex,
-            };
-          }
-        } else if (provider === "soniox") {
-          // Test Soniox via WebSocket connection.
-          // With a valid key, Soniox accepts the config and then silently waits for audio —
-          // it never sends a response message. With an invalid key it immediately sends an
-          // error message and closes. So the strategy is:
-          //   • If we receive an error message → fail
-          //   • If the connection errors at the WS level → fail
-          //   • If 2.5 s pass after sending the config with no error → success
-          const WebSocket = require("ws");
-          const sonioxResult = await new Promise<{ success: boolean; error?: string }>(
-            (resolve) => {
+          } else if (provider === "soniox") {
+            // Test Soniox via WebSocket connection.
+            // With a valid key, Soniox accepts the config and then silently waits for audio —
+            // it never sends a response message. With an invalid key it immediately sends an
+            // error message and closes. So the strategy is:
+            //   • If we receive an error message → fail
+            //   • If the connection errors at the WS level → fail
+            //   • If 2.5 s pass after sending the config with no error → success
+            const WebSocket = require("ws");
+            const sonioxResult = await new Promise<{
+              success: boolean;
+              error?: string;
+            }>((resolve) => {
               let resolved = false;
               const done = (result: { success: boolean; error?: string }) => {
                 if (resolved) return;
@@ -2599,151 +3014,153 @@ export function initializeIpcHandlers(appState: AppState): void {
                   });
                 }
               });
-            },
-          );
-          if (!sonioxResult.success) {
-            keyResults.push({
-              index: keyIndex,
-              success: false,
-              error: sonioxResult.error,
             });
-            return {
-              success: false,
-              error: `Key ${keyIndex + 1}: ${sonioxResult.error || "Connection failed"}`,
-              keyResults,
-              failedIndex: keyIndex,
-            };
-          }
-        } else {
-          const axios = require("axios");
-          const FormData = require("form-data");
-
-          const numSamples = 8000;
-          const pcmData = Buffer.alloc(numSamples * 2);
-          const wavHeader = Buffer.alloc(44);
-          wavHeader.write("RIFF", 0);
-          wavHeader.writeUInt32LE(36 + pcmData.length, 4);
-          wavHeader.write("WAVE", 8);
-          wavHeader.write("fmt ", 12);
-          wavHeader.writeUInt32LE(16, 16);
-          wavHeader.writeUInt16LE(1, 20);
-          wavHeader.writeUInt16LE(1, 22);
-          wavHeader.writeUInt32LE(16000, 24);
-          wavHeader.writeUInt32LE(32000, 28);
-          wavHeader.writeUInt16LE(2, 32);
-          wavHeader.writeUInt16LE(16, 34);
-          wavHeader.write("data", 36);
-          wavHeader.writeUInt32LE(pcmData.length, 40);
-          const testWav = Buffer.concat([wavHeader, pcmData]);
-
-          if (provider === "elevenlabs") {
-          // ElevenLabs: Use /v1/voices to validate the API key (minimal scope required).
-          // Scoped keys may lack speech_to_text or user_read but still be usable once permissions are added.
-          try {
-            await axios.get("https://api.elevenlabs.io/v1/voices", {
-              headers: { "xi-api-key": token },
-              timeout: 10000,
-            });
-          } catch (elErr: any) {
-            const elStatus = elErr?.response?.data?.detail?.status;
-            if (elStatus === "invalid_api_key") {
-              throw elErr;
+            if (!sonioxResult.success) {
+              keyResults.push({
+                index: keyIndex,
+                success: false,
+                error: sonioxResult.error,
+              });
+              return {
+                success: false,
+                error: `Key ${keyIndex + 1}: ${sonioxResult.error || "Connection failed"}`,
+                keyResults,
+                failedIndex: keyIndex,
+              };
             }
-            console.log(
-              "[IPC] ElevenLabs key is valid but may have restricted scopes. Saving key.",
-            );
-          }
-        } else if (provider === "azure") {
-          // Azure: raw binary with subscription key
-          const azureRegion = region || "eastus";
-          await axios.post(
-            `https://${azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`,
-            testWav,
-            {
-              headers: {
-                "Ocp-Apim-Subscription-Key": token,
-                "Content-Type": "audio/wav",
-              },
-              timeout: 15000,
-            },
-          );
-        } else if (provider === "ibmwatson") {
-          // IBM Watson: raw binary with Basic auth
-          const ibmRegion = region || "us-south";
-          await axios.post(
-            `https://api.${ibmRegion}.speech-to-text.watson.cloud.ibm.com/v1/recognize`,
-            testWav,
-            {
-              headers: {
-                Authorization: `Basic ${Buffer.from(`apikey:${token}`).toString("base64")}`,
-                "Content-Type": "audio/wav",
-              },
-              timeout: 15000,
-            },
-          );
-        } else {
-          // Groq / OpenAI: multipart FormData
-          let openAiEndpoint = "https://api.openai.com/v1/audio/transcriptions";
-          if (provider === "openai") {
-            // If a custom OpenAI-compatible base URL is configured, test against it.
-            const {
-              CredentialsManager,
-            } = require("./services/CredentialsManager");
-            const customBase = (
-              CredentialsManager.getInstance().getOpenAiSttBaseUrl() || ""
-            ).trim();
-            if (customBase) {
-              const trimmed = customBase.replace(/\/+$/, "");
-              openAiEndpoint = /\/v\d+$/.test(trimmed)
-                ? `${trimmed}/audio/transcriptions`
-                : `${trimmed}/v1/audio/transcriptions`;
+          } else {
+            const axios = require("axios");
+            const FormData = require("form-data");
+
+            const numSamples = 8000;
+            const pcmData = Buffer.alloc(numSamples * 2);
+            const wavHeader = Buffer.alloc(44);
+            wavHeader.write("RIFF", 0);
+            wavHeader.writeUInt32LE(36 + pcmData.length, 4);
+            wavHeader.write("WAVE", 8);
+            wavHeader.write("fmt ", 12);
+            wavHeader.writeUInt32LE(16, 16);
+            wavHeader.writeUInt16LE(1, 20);
+            wavHeader.writeUInt16LE(1, 22);
+            wavHeader.writeUInt32LE(16000, 24);
+            wavHeader.writeUInt32LE(32000, 28);
+            wavHeader.writeUInt16LE(2, 32);
+            wavHeader.writeUInt16LE(16, 34);
+            wavHeader.write("data", 36);
+            wavHeader.writeUInt32LE(pcmData.length, 40);
+            const testWav = Buffer.concat([wavHeader, pcmData]);
+
+            if (provider === "elevenlabs") {
+              // ElevenLabs: Use /v1/voices to validate the API key (minimal scope required).
+              // Scoped keys may lack speech_to_text or user_read but still be usable once permissions are added.
+              try {
+                await axios.get("https://api.elevenlabs.io/v1/voices", {
+                  headers: { "xi-api-key": token },
+                  timeout: 10000,
+                });
+              } catch (elErr: any) {
+                const elStatus = elErr?.response?.data?.detail?.status;
+                if (elStatus === "invalid_api_key") {
+                  throw elErr;
+                }
+                console.log(
+                  "[IPC] ElevenLabs key is valid but may have restricted scopes. Saving key.",
+                );
+              }
+            } else if (provider === "azure") {
+              // Azure: raw binary with subscription key
+              const azureRegion = region || "eastus";
+              await axios.post(
+                `https://${azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`,
+                testWav,
+                {
+                  headers: {
+                    "Ocp-Apim-Subscription-Key": token,
+                    "Content-Type": "audio/wav",
+                  },
+                  timeout: 15000,
+                },
+              );
+            } else if (provider === "ibmwatson") {
+              // IBM Watson: raw binary with Basic auth
+              const ibmRegion = region || "us-south";
+              await axios.post(
+                `https://api.${ibmRegion}.speech-to-text.watson.cloud.ibm.com/v1/recognize`,
+                testWav,
+                {
+                  headers: {
+                    Authorization: `Basic ${Buffer.from(`apikey:${token}`).toString("base64")}`,
+                    "Content-Type": "audio/wav",
+                  },
+                  timeout: 15000,
+                },
+              );
+            } else {
+              // Groq / OpenAI: multipart FormData
+              let openAiEndpoint =
+                "https://api.openai.com/v1/audio/transcriptions";
+              if (provider === "openai") {
+                // If a custom OpenAI-compatible base URL is configured, test against it.
+                const {
+                  CredentialsManager,
+                } = require("./services/CredentialsManager");
+                const customBase = (
+                  CredentialsManager.getInstance().getOpenAiSttBaseUrl() || ""
+                ).trim();
+                if (customBase) {
+                  const trimmed = customBase.replace(/\/+$/, "");
+                  openAiEndpoint = /\/v\d+$/.test(trimmed)
+                    ? `${trimmed}/audio/transcriptions`
+                    : `${trimmed}/v1/audio/transcriptions`;
+                }
+              }
+              const endpoint =
+                provider === "groq"
+                  ? "https://api.groq.com/openai/v1/audio/transcriptions"
+                  : openAiEndpoint;
+              const model =
+                provider === "groq"
+                  ? profile.model ||
+                    cm.getGroqSttModel() ||
+                    "whisper-large-v3-turbo"
+                  : "whisper-1";
+
+              const form = new FormData();
+              form.append("file", testWav, {
+                filename: "test.wav",
+                contentType: "audio/wav",
+              });
+              form.append("model", model);
+
+              await axios.post(endpoint, form, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  ...form.getHeaders(),
+                },
+                timeout: 15000,
+              });
             }
           }
-          const endpoint =
-            provider === "groq"
-              ? "https://api.groq.com/openai/v1/audio/transcriptions"
-              : openAiEndpoint;
-          const model =
-            provider === "groq"
-              ? profile.model || cm.getGroqSttModel() || "whisper-large-v3-turbo"
-              : "whisper-1";
 
-          const form = new FormData();
-          form.append("file", testWav, {
-            filename: "test.wav",
-            contentType: "audio/wav",
-          });
-          form.append("model", model);
-
-          await axios.post(endpoint, form, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              ...form.getHeaders(),
-            },
-            timeout: 15000,
-          });
-        }
-        }
-
-        keyResults.push({ index: keyIndex, success: true });
+          keyResults.push({ index: keyIndex, success: true });
         } catch (error: any) {
-        const respData = error?.response?.data;
-        const rawMsg =
-          respData?.error?.message ||
-          respData?.detail?.message ||
-          respData?.message ||
-          error.message ||
-          "Connection failed";
-        const msg = sanitizeErrorMessage(rawMsg);
-        console.error("STT connection test failed:", msg);
-        keyResults.push({ index: keyIndex, success: false, error: msg });
-        return {
-          success: false,
-          error: `Key ${keyIndex + 1}: ${msg}`,
-          keyResults,
-          failedIndex: keyIndex,
-        };
-      }
+          const respData = error?.response?.data;
+          const rawMsg =
+            respData?.error?.message ||
+            respData?.detail?.message ||
+            respData?.message ||
+            error.message ||
+            "Connection failed";
+          const msg = sanitizeErrorMessage(rawMsg);
+          console.error("STT connection test failed:", msg);
+          keyResults.push({ index: keyIndex, success: false, error: msg });
+          return {
+            success: false,
+            error: `Key ${keyIndex + 1}: ${msg}`,
+            keyResults,
+            failedIndex: keyIndex,
+          };
+        }
       }
 
       return { success: true, keyResults };
@@ -2936,11 +3353,15 @@ export function initializeIpcHandlers(appState: AppState): void {
         const { CredentialsManager } = require("./services/CredentialsManager");
         const creds = CredentialsManager.getInstance();
         const { OpenClaudeManager } = require("./openclaude/OpenClaudeManager");
-        const { OpenClaudeService } = await import("./services/OpenClaudeService");
-        const { buildOpenClaudeEnv } = await import("./openclaude/OpenClaudeEnv");
+        const { OpenClaudeService } =
+          await import("./services/OpenClaudeService");
+        const { buildOpenClaudeEnv } =
+          await import("./openclaude/OpenClaudeEnv");
         const curl2Json = (await import("@bany/curl-to-json")).default;
 
-        const normalizeOpenAiCompatBaseUrl = (rawUrl?: string): string | undefined => {
+        const normalizeOpenAiCompatBaseUrl = (
+          rawUrl?: string,
+        ): string | undefined => {
           if (!rawUrl || /\{\{[^}]+\}\}/.test(rawUrl)) return undefined;
           try {
             const parsed = new URL(rawUrl);
@@ -2967,7 +3388,8 @@ export function initializeIpcHandlers(appState: AppState): void {
                 ? requestConfig.data
                 : {};
             const model =
-              typeof data.model === "string" && !/\{\{[^}]+\}\}/.test(data.model)
+              typeof data.model === "string" &&
+              !/\{\{[^}]+\}\}/.test(data.model)
                 ? data.model
                 : undefined;
 
@@ -3022,7 +3444,14 @@ export function initializeIpcHandlers(appState: AppState): void {
               }
             }
 
-            return { apiKey, baseUrl, model, authHeader, authHeaderValue, authScheme };
+            return {
+              apiKey,
+              baseUrl,
+              model,
+              authHeader,
+              authHeaderValue,
+              authScheme,
+            };
           } catch {
             return {};
           }
@@ -3032,7 +3461,8 @@ export function initializeIpcHandlers(appState: AppState): void {
         if (!status.installed) {
           return {
             success: false,
-            error: "OpenClaude is not installed and automatic installation failed.",
+            error:
+              "OpenClaude is not installed and automatic installation failed.",
           };
         }
 
@@ -3043,7 +3473,10 @@ export function initializeIpcHandlers(appState: AppState): void {
           timeoutMs: 15_000,
         };
 
-        const runOpenClaudeProbe = async (env?: NodeJS.ProcessEnv, model?: string) => {
+        const runOpenClaudeProbe = async (
+          env?: NodeJS.ProcessEnv,
+          model?: string,
+        ) => {
           return OpenClaudeService.run(openClaudeConfig, {
             prompt: 'Reply with "OK" and nothing else.',
             timeoutMs: 15_000,
@@ -3054,7 +3487,8 @@ export function initializeIpcHandlers(appState: AppState): void {
 
         if (provider === "ollama") {
           const rawBaseUrl =
-            ((creds.getAllCredentials() as any)?.ollamaBaseUrl as string | undefined) ||
+            ((creds.getAllCredentials() as any)?.ollamaBaseUrl as
+              string | undefined) ||
             process.env.OLLAMA_URL ||
             "http://localhost:11434";
           const trimmedBase = rawBaseUrl.trim().replace(/\/+$/, "");
@@ -3062,8 +3496,8 @@ export function initializeIpcHandlers(appState: AppState): void {
             ? trimmedBase
             : `${trimmedBase}/v1`;
           const model =
-            ((creds.getAllCredentials() as any)?.ollamaModel as string | undefined) ||
-            undefined;
+            ((creds.getAllCredentials() as any)?.ollamaModel as
+              string | undefined) || undefined;
 
           try {
             const response = await runOpenClaudeProbe(
@@ -3071,11 +3505,16 @@ export function initializeIpcHandlers(appState: AppState): void {
               model,
             );
             if (response.trim()) return { success: true };
-            return { success: false, error: "Empty response from Ollama via OpenClaude" };
+            return {
+              success: false,
+              error: "Empty response from Ollama via OpenClaude",
+            };
           } catch (error: any) {
             return {
               success: false,
-              error: sanitizeErrorMessage(error?.message || "Ollama connection failed"),
+              error: sanitizeErrorMessage(
+                error?.message || "Ollama connection failed",
+              ),
             };
           }
         }
@@ -3088,8 +3527,7 @@ export function initializeIpcHandlers(appState: AppState): void {
             ...(creds.getCurlProviders() || []),
             ...(creds.getCustomProviders() || []),
           ].find((p: { id: string }) => p.id === customProviderId) as
-            | { curlCommand?: string }
-            | undefined;
+            { curlCommand?: string } | undefined;
           if (!custom?.curlCommand) {
             return { success: false, error: "Custom provider not found" };
           }
@@ -3108,7 +3546,10 @@ export function initializeIpcHandlers(appState: AppState): void {
               parsed.model,
             );
             if (response.trim()) return { success: true };
-            return { success: false, error: "Empty response from custom provider via OpenClaude" };
+            return {
+              success: false,
+              error: "Empty response from custom provider via OpenClaude",
+            };
           } catch (error: any) {
             return {
               success: false,
@@ -3195,7 +3636,11 @@ export function initializeIpcHandlers(appState: AppState): void {
             }
 
             const failMsg = "Empty response from OpenClaude probe";
-            keyResults.push({ index: keyIndex, success: false, error: failMsg });
+            keyResults.push({
+              index: keyIndex,
+              success: false,
+              error: failMsg,
+            });
             return {
               success: false,
               error: `Key ${keyIndex + 1}: ${failMsg}`,
@@ -3210,9 +3655,7 @@ export function initializeIpcHandlers(appState: AppState): void {
               message: error?.message,
             };
             console.error("LLM connection test failed:", safeInfo);
-            const rawMsg =
-              error?.message ||
-              "Connection failed";
+            const rawMsg = error?.message || "Connection failed";
             const msg = sanitizeErrorMessage(rawMsg);
             keyResults.push({ index: keyIndex, success: false, error: msg });
             return {
@@ -3347,7 +3790,10 @@ export function initializeIpcHandlers(appState: AppState): void {
       });
       return { success: true, message: result.slice(0, 100) };
     } catch (error: any) {
-      return { success: false, error: error.message || "Codex inference failed" };
+      return {
+        success: false,
+        error: error.message || "Codex inference failed",
+      };
     }
   });
 
@@ -3731,10 +4177,7 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle(
     "meeting-set-folder",
-    async (
-      _,
-      { id, folderId }: { id: string; folderId: string | null },
-    ) => {
+    async (_, { id, folderId }: { id: string; folderId: string | null }) => {
       return DatabaseManager.getInstance().setMeetingFolder(id, folderId);
     },
   );
@@ -3819,7 +4262,21 @@ export function initializeIpcHandlers(appState: AppState): void {
         parsed.hostname === "mail.google.com" &&
         parsed.pathname === "/mail/";
       const allowedSystemSettingsUrl =
+        process.platform === "darwin" &&
         parsed.protocol === "x-apple.systempreferences:";
+
+      if (
+        process.platform !== "darwin" &&
+        parsed.protocol === "x-apple.systempreferences:"
+      ) {
+        const launcherWin = appState.getWindowHelper().getLauncherWindow();
+        if (launcherWin && !launcherWin.isDestroyed()) {
+          launcherWin.webContents.send("settings:open-tab", "integrations");
+          launcherWin.show();
+          launcherWin.focus();
+        }
+        return;
+      }
 
       if (allowedWebUrl || allowedSystemSettingsUrl) {
         await shell.openExternal(url);
@@ -5242,11 +5699,16 @@ export function initializeIpcHandlers(appState: AppState): void {
       }
     }
 
-    const launcherWin = appState.getWindowHelper().getLauncherWindow();
-    if (launcherWin && !launcherWin.isDestroyed()) {
-      launcherWin.webContents.send("settings:open-tab", "integrations");
-      launcherWin.show();
-      launcherWin.focus();
+    const windows = BrowserWindow.getAllWindows().filter(
+      (win) => !win.isDestroyed(),
+    );
+    if (windows.length > 0) {
+      windows.forEach((win) =>
+        win.webContents.send("settings:open-tab", "integrations"),
+      );
+      const targetWin = BrowserWindow.getFocusedWindow() ?? windows[0];
+      targetWin.show();
+      targetWin.focus();
       return { opened: true, target: "integrations" };
     }
 
@@ -5813,8 +6275,34 @@ export function initializeIpcHandlers(appState: AppState): void {
     try {
       const { SettingsManager } = require("./services/SettingsManager");
       const { DEFAULT_AGENT_CLI_SETTINGS } = require("./services/agent/types");
-      const stored = SettingsManager.getInstance().get("agentCli") ?? {};
-      return { ...DEFAULT_AGENT_CLI_SETTINGS, ...stored };
+      const settingsManager = SettingsManager.getInstance();
+      const stored = settingsManager.get("agentCli") ?? {};
+      const executablePaths =
+        stored.executablePaths && typeof stored.executablePaths === "object"
+          ? { ...stored.executablePaths }
+          : {};
+      const currentOpenClaudePath =
+        typeof executablePaths.openclaude === "string"
+          ? executablePaths.openclaude.trim()
+          : "";
+      const resolvedOpenClaudePath = resolveOpenClaudeCliPath();
+
+      if (
+        resolvedOpenClaudePath &&
+        currentOpenClaudePath !== resolvedOpenClaudePath
+      ) {
+        executablePaths.openclaude = resolvedOpenClaudePath;
+        settingsManager.set("agentCli", {
+          ...stored,
+          executablePaths,
+        });
+      }
+
+      return {
+        ...DEFAULT_AGENT_CLI_SETTINGS,
+        ...stored,
+        executablePaths,
+      };
     } catch {
       const { DEFAULT_AGENT_CLI_SETTINGS } = require("./services/agent/types");
       return { ...DEFAULT_AGENT_CLI_SETTINGS };
@@ -5831,31 +6319,42 @@ export function initializeIpcHandlers(appState: AppState): void {
         }
         const id = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const timeout = setTimeout(() => {
-          if (_agentApprovals.delete(id)) resolve({ allow: false, message: "Approval timed out" });
+          if (_agentApprovals.delete(id))
+            resolve({ allow: false, message: "Approval timed out" });
         }, 60_000);
         _agentApprovals.set(id, (decision) => {
           clearTimeout(timeout);
           resolve(decision);
         });
-        sender.send("agent-permission-request", { id, tool: req.tool, input: req.input });
+        sender.send("agent-permission-request", {
+          id,
+          tool: req.tool,
+          input: req.input,
+        });
       });
   }
 
-  function wireMeetingContext(meetingId?: string, sender?: Electron.WebContents) {
+  function wireMeetingContext(
+    meetingId?: string,
+    sender?: Electron.WebContents,
+  ) {
     const { MeetingMCPServer } = require("./services/MeetingMCPServer");
     const intelligenceManager = appState.getIntelligenceManager();
     const ragManager = appState.getRAGManager();
 
     MeetingMCPServer.getInstance().setCallbacks({
       getTranscript: (seconds = 180) =>
-        intelligenceManager.getSessionTracker?.()?.getFormattedContext(seconds) ?? "",
+        intelligenceManager
+          .getSessionTracker?.()
+          ?.getFormattedContext(seconds) ?? "",
       queryRAG: async (query: string, scopedMeetingId?: string) => {
         if (!ragManager) return "[RAG not available]";
         try {
           const id = scopedMeetingId ?? meetingId ?? "";
           if (!id) return "[No meeting ID for RAG query]";
           let collected = "";
-          for await (const chunk of ragManager.queryMeeting(id, query)) collected += chunk;
+          for await (const chunk of ragManager.queryMeeting(id, query))
+            collected += chunk;
           return collected || "[No results]";
         } catch {
           return "[RAG query failed]";
@@ -5863,13 +6362,17 @@ export function initializeIpcHandlers(appState: AppState): void {
       },
       getScreenContext: () => {
         try {
-          const { getScreenUnderstandingService } = require("./services/screen/ScreenUnderstandingService");
+          const {
+            getScreenUnderstandingService,
+          } = require("./services/screen/ScreenUnderstandingService");
           const last = getScreenUnderstandingService().getLastResult?.();
           if (!last) return "";
           return (
             last.visibleSummary ||
             last.extractedText ||
-            (Array.isArray(last.codeBlocks) ? last.codeBlocks.join("\n\n") : "") ||
+            (Array.isArray(last.codeBlocks)
+              ? last.codeBlocks.join("\n\n")
+              : "") ||
             ""
           );
         } catch {
@@ -5877,13 +6380,18 @@ export function initializeIpcHandlers(appState: AppState): void {
         }
       },
       getMeetingMetadata: () => ({
-        title: intelligenceManager.getCurrentMeetingTitle?.() ?? "Active Meeting",
+        title:
+          intelligenceManager.getCurrentMeetingTitle?.() ?? "Active Meeting",
         isActive: appState.getIsMeetingActive?.() ?? false,
         meetingId,
       }),
       getMeetingSummary: () => {
         try {
-          return intelligenceManager.getSessionTracker?.()?.getFormattedContext(600) ?? "";
+          return (
+            intelligenceManager
+              .getSessionTracker?.()
+              ?.getFormattedContext(600) ?? ""
+          );
         } catch {
           return "";
         }
@@ -5903,31 +6411,76 @@ export function initializeIpcHandlers(appState: AppState): void {
         provider?: string;
         model?: string;
         systemPrompt?: string;
+        imagePaths?: string[];
       },
     ) => {
       _agentAbortController?.abort();
       _agentAbortController = new AbortController();
       const signal = _agentAbortController.signal;
 
-      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const {
+        AgentOrchestrator,
+      } = require("./services/agent/AgentOrchestrator");
       const { WorkspaceManager } = require("./services/agent/WorkspaceManager");
       const { MeetingMCPServer } = require("./services/MeetingMCPServer");
 
       const settings = loadAgentSettings();
-      if (payload.provider) settings.provider = payload.provider as any;
-      if (payload.model) settings.model = payload.model;
+      const providerId = (payload.provider ||
+        settings.provider ||
+        "openclaude") as string | undefined;
+      const localPathEvidence = getExplicitLocalPathEvidence(payload.message);
+      let resolvedModel =
+        providerId === "openclaude"
+          ? payload.model
+          : payload.model || settings.model;
+      let resolvedProviderEnv: Record<string, string> | undefined;
+      let openClaudeInvocation: any | undefined;
+      let llmHelperForRecovery: any | null = null;
+
+      if (providerId === "openclaude") {
+        const llmHelper = appState.processingHelper.getLLMHelper();
+        llmHelperForRecovery = llmHelper;
+        const explicitModel =
+          typeof payload.model === "string" && payload.model.trim()
+            ? payload.model.trim()
+            : undefined;
+        const invocation = llmHelper.prepareOpenClaudeAgentTurn(
+          explicitModel,
+          payload.message,
+          payload.imagePaths,
+        );
+        openClaudeInvocation = invocation;
+        // OpenClaude-backed turns should follow the currently active Momor
+        // provider/model unless this surface explicitly pinned a model.
+        resolvedModel = explicitModel || invocation.model;
+        resolvedProviderEnv = invocation.providerEnv;
+        settings.executablePaths = {
+          ...(settings.executablePaths ?? {}),
+          openclaude: resolveOpenClaudeCliPath(),
+        };
+      }
+
+      if (providerId) settings.provider = providerId as any;
+      if (resolvedModel) settings.model = resolvedModel;
 
       wireMeetingContext(payload.meetingId, event.sender);
 
       // Point save_artifact / list_meeting_files at this run's workspace.
       try {
-        const ws = WorkspaceManager.getInstance().resolveWorkspace(settings, {
-          id: payload.meetingId,
-          title: payload.meetingTitle,
-        });
-        MeetingMCPServer.getInstance().setActiveWorkspace(ws);
+        const ws = WorkspaceManager.getInstance().resolveTurnWorkspace(
+          settings,
+          {
+            id: payload.meetingId,
+            title: payload.meetingTitle,
+          },
+          payload.message,
+          "agentic",
+        );
+        MeetingMCPServer.getInstance().setActiveWorkspace(ws.dir);
       } catch (err: any) {
-        event.sender.send("agent-stream-error", { error: err?.message ?? "Workspace error" });
+        event.sender.send("agent-stream-error", {
+          error: err?.message ?? "Workspace error",
+        });
         return null;
       }
 
@@ -5937,10 +6490,13 @@ export function initializeIpcHandlers(appState: AppState): void {
           {
             prompt: payload.message,
             systemPrompt: payload.systemPrompt,
-            provider: settings.provider as any,
-            model: settings.model,
+            provider: providerId as any,
+            model: resolvedModel,
             meetingId: payload.meetingId,
             meetingTitle: payload.meetingTitle,
+            imagePaths: payload.imagePaths,
+            providerEnv: resolvedProviderEnv,
+            toolMode: "agentic",
             signal,
             onPermissionRequest: async (req: any) => {
               const decision = await requestPermission({
@@ -5953,11 +6509,24 @@ export function initializeIpcHandlers(appState: AppState): void {
           settings,
         );
 
+        let bufferedExplicitReply = "";
+        let finalizedAgentReply = "";
+        let emittedDone = false;
+        let agentErrored = false;
+        const shouldBufferExplicitLocalPathReply =
+          providerId === "openclaude" &&
+          localPathEvidence.explicitLocalPath &&
+          !!localPathEvidence.preloadedFileContext;
+
         for await (const agentEvent of stream) {
           if (signal.aborted) break;
           switch (agentEvent.type) {
             case "token":
-              event.sender.send("agent-stream-token", agentEvent.text ?? "");
+              if (shouldBufferExplicitLocalPathReply) {
+                bufferedExplicitReply += agentEvent.text ?? "";
+              } else {
+                event.sender.send("agent-stream-token", agentEvent.text ?? "");
+              }
               break;
             case "thinking":
               event.sender.send("agent-stream-thinking", agentEvent.text ?? "");
@@ -5977,25 +6546,81 @@ export function initializeIpcHandlers(appState: AppState): void {
               });
               break;
             case "session":
-              event.sender.send("agent-stream-session", { sessionId: agentEvent.sessionId });
-              break;
-            case "done":
-              event.sender.send("agent-stream-done", {
-                fullText: agentEvent.fullText,
-                costUsd: agentEvent.costUsd,
+              event.sender.send("agent-stream-session", {
+                sessionId: agentEvent.sessionId,
               });
               break;
-            case "error":
-              event.sender.send("agent-stream-error", { error: agentEvent.error });
+            case "done":
+              emittedDone = true;
+              finalizedAgentReply =
+                typeof agentEvent.fullText === "string" &&
+                agentEvent.fullText.trim().length > 0
+                  ? agentEvent.fullText
+                  : bufferedExplicitReply;
+              if (!shouldBufferExplicitLocalPathReply) {
+                event.sender.send("agent-stream-done", {
+                  fullText: agentEvent.fullText,
+                  costUsd: agentEvent.costUsd,
+                });
+              }
               break;
+            case "error":
+              agentErrored = true;
+              event.sender.send("agent-stream-error", {
+                error: agentEvent.error,
+              });
+              break;
+          }
+        }
+
+        if (
+          shouldBufferExplicitLocalPathReply &&
+          !agentErrored &&
+          emittedDone
+        ) {
+          let replyToEmit = finalizedAgentReply || bufferedExplicitReply;
+          if (
+            localPathEvidence.preloadedFileContext &&
+            openClaudeInvocation &&
+            llmHelperForRecovery &&
+            (!replyToEmit || isRecoverableExplicitLocalPathReply(replyToEmit))
+          ) {
+            try {
+              replyToEmit = await llmHelperForRecovery.recoverExplicitLocalPathReply(
+                payload.message,
+                localPathEvidence.preloadedFileContext,
+                openClaudeInvocation,
+                payload.imagePaths,
+              );
+            } catch (recoveryError) {
+              console.warn(
+                "[IPC] explicit local-path recovery failed:",
+                recoveryError,
+              );
+            }
+          }
+
+          if ((replyToEmit || "").trim()) {
+            event.sender.send("agent-stream-done", {
+              fullText: replyToEmit,
+            });
+          } else {
+            event.sender.send("agent-stream-error", {
+              error:
+                "Local agent returned no output for the requested local path.",
+            });
           }
         }
       } catch (err: any) {
         console.error("[IPC] agent-chat-stream error:", err);
-        event.sender.send("agent-stream-error", { error: err?.message ?? "Agent failed" });
+        event.sender.send("agent-stream-error", {
+          error: err?.message ?? "Agent failed",
+        });
       } finally {
         try {
-          require("./services/MeetingMCPServer").MeetingMCPServer.getInstance().setActiveWorkspace(null);
+          require("./services/MeetingMCPServer")
+            .MeetingMCPServer.getInstance()
+            .setActiveWorkspace(null);
         } catch {}
       }
 
@@ -6007,14 +6632,19 @@ export function initializeIpcHandlers(appState: AppState): void {
     _agentAbortController?.abort();
     _agentAbortController = null;
     try {
-      require("./services/agent/AgentOrchestrator").AgentOrchestrator.getInstance().cancel();
+      require("./services/agent/AgentOrchestrator")
+        .AgentOrchestrator.getInstance()
+        .cancel();
     } catch {}
     return { cancelled: true };
   });
 
   safeHandle(
     "agent-permission-response",
-    async (_event, payload: { id: string; allow: boolean; message?: string }) => {
+    async (
+      _event,
+      payload: { id: string; allow: boolean; message?: string },
+    ) => {
       const resolver = _agentApprovals.get(payload.id);
       if (resolver) {
         _agentApprovals.delete(payload.id);
@@ -6027,7 +6657,9 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("agent-get-providers", async () => {
     try {
-      const { AgentOrchestrator } = require("./services/agent/AgentOrchestrator");
+      const {
+        AgentOrchestrator,
+      } = require("./services/agent/AgentOrchestrator");
       const settings = loadAgentSettings();
       const orchestrator = AgentOrchestrator.getInstance();
       // Back-compat list + the full Zed-style catalog (name/transport/builtin).
@@ -6050,15 +6682,26 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { config: loadAgentSettings() };
   });
 
-  safeHandle("agent-set-config", async (_event, config: Record<string, unknown>) => {
-    try {
-      const { SettingsManager } = require("./services/SettingsManager");
-      const current = SettingsManager.getInstance().get("agentCli") ?? {};
-      const merged = { ...current, ...config };
-      SettingsManager.getInstance().set("agentCli", merged);
-      return { ok: true, config: merged };
-    } catch (e: any) {
-      return { ok: false, error: e?.message };
-    }
-  });
+  safeHandle(
+    "agent-set-config",
+    async (_event, config: Record<string, unknown>) => {
+      try {
+        const { SettingsManager } = require("./services/SettingsManager");
+        const current = SettingsManager.getInstance().get("agentCli") ?? {};
+        const merged = { ...current, ...config } as Record<string, any>;
+        const rawPaths =
+          merged.executablePaths && typeof merged.executablePaths === "object"
+            ? { ...merged.executablePaths }
+            : {};
+        if ("openclaude" in rawPaths) {
+          rawPaths.openclaude = normalizeOpenClaudeCliPath(rawPaths.openclaude);
+        }
+        merged.executablePaths = rawPaths;
+        SettingsManager.getInstance().set("agentCli", merged);
+        return { ok: true, config: merged };
+      } catch (e: any) {
+        return { ok: false, error: e?.message };
+      }
+    },
+  );
 }

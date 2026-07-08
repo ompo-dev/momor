@@ -2,20 +2,22 @@ import React from "react"
 import { useTranslation } from "react-i18next"
 import {
   Monitor,
-  Mic,
   Keyboard,
   Globe,
   HelpCircle,
-  FlaskConical,
+  Plug,
   Smartphone,
   Info,
   LogOut,
   X,
+  type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import { ZedListItem } from "@/components/zed/ZedListItem"
+import { ZedIconButton } from "@/components/zed/ZedIconButton"
+import { MomorLogoMark } from "@/components/MomorLogoMark"
+import packageJson from "../../../package.json"
 
 export type SettingsTabId =
   | "general"
@@ -34,8 +36,9 @@ interface SettingsNavProps {
 
 type NavItem = {
   id: SettingsTabId
-  icon: React.ReactNode
+  icon: LucideIcon
   labelKey: string
+  descriptionKey?: string
 }
 
 type NavGroup = {
@@ -43,96 +46,153 @@ type NavGroup = {
   items: NavItem[]
 }
 
+export const SETTINGS_TAB_META: Record<SettingsTabId, NavItem> = {
+  general: {
+    id: "general",
+    icon: Monitor,
+    labelKey: "settings.sidebar.general",
+    descriptionKey: "settings.general.sectionDesc",
+  },
+  integrations: {
+    id: "integrations",
+    icon: Plug,
+    labelKey: "settings.sidebar.integrations",
+    descriptionKey: "providers.integrationsDesc",
+  },
+  keybinds: {
+    id: "keybinds",
+    icon: Keyboard,
+    labelKey: "settings.sidebar.keybinds",
+    descriptionKey: "settings.keybinds.desc",
+  },
+  "phone-mirror": {
+    id: "phone-mirror",
+    icon: Smartphone,
+    labelKey: "settings.sidebar.phoneMirror",
+  },
+  language: {
+    id: "language",
+    icon: Globe,
+    labelKey: "settings.sidebar.language",
+    descriptionKey: "settings.language.description",
+  },
+  help: {
+    id: "help",
+    icon: HelpCircle,
+    labelKey: "settings.sidebar.setupHelp",
+  },
+  about: {
+    id: "about",
+    icon: Info,
+    labelKey: "settings.sidebar.about",
+  },
+}
+
 const NAV_GROUPS: NavGroup[] = [
   {
     items: [
-      { id: "general", icon: <Monitor size={16} />, labelKey: "settings.sidebar.general" },
+      SETTINGS_TAB_META.general,
     ],
   },
   {
     labelKey: "settings.sidebar.groupIntegrations",
     items: [
-      { id: "integrations", icon: <FlaskConical size={16} />, labelKey: "settings.sidebar.integrations" },
+      SETTINGS_TAB_META.integrations,
     ],
   },
   {
     labelKey: "settings.sidebar.groupApp",
     items: [
-      { id: "keybinds", icon: <Keyboard size={16} />, labelKey: "settings.sidebar.keybinds" },
-      { id: "phone-mirror", icon: <Smartphone size={16} />, labelKey: "settings.sidebar.phoneMirror" },
-      { id: "language", icon: <Globe size={16} />, labelKey: "settings.sidebar.language" },
+      SETTINGS_TAB_META.keybinds,
+      SETTINGS_TAB_META["phone-mirror"],
+      SETTINGS_TAB_META.language,
     ],
   },
   {
     labelKey: "settings.sidebar.groupSupport",
     items: [
-      { id: "help", icon: <HelpCircle size={16} />, labelKey: "settings.sidebar.setupHelp" },
-      { id: "about", icon: <Info size={16} />, labelKey: "settings.sidebar.about" },
+      SETTINGS_TAB_META.help,
+      SETTINGS_TAB_META.about,
     ],
   },
 ]
 
 export function SettingsNav({ activeTab, onTabChange, onClose }: SettingsNavProps) {
   const { t } = useTranslation()
+  const activeItem = SETTINGS_TAB_META[activeTab as SettingsTabId]
 
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-r border-linear-hairline bg-linear-surface-1">
-      <div className="border-b border-linear-hairline px-4 py-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-linear-ink-tertiary">
-          {t("settings.title")}
-        </p>
-        <p className="mt-0.5 text-sm font-semibold text-linear-ink">Momor</p>
+    <aside className="flex w-[220px] shrink-0 flex-col border-r border-border-subtle/80 bg-bg-sidebar/98">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle/80 px-2.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/55 text-text-primary">
+            <MomorLogoMark size={14} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
+              Settings
+            </p>
+            <p className="mt-0.5 truncate text-[11.5px] font-medium text-text-primary">
+              {t(activeItem.labelKey)}
+            </p>
+          </div>
+        </div>
+        <ZedIconButton
+          icon={<X className="h-4 w-4" />}
+          size="sm"
+          styleVariant="subtle"
+          onClick={onClose}
+          aria-label={t("settings.sidebar.close")}
+          title={t("settings.sidebar.close")}
+        />
       </div>
 
-      <ScrollArea className="flex-1 px-2 py-3">
-        <nav className="space-y-4">
+      <ScrollArea className="flex-1 px-2 py-2.5">
+        <nav className="space-y-3">
           {NAV_GROUPS.map((group, groupIndex) => (
             <div key={groupIndex} className="space-y-1">
               {group.labelKey ? (
-                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-linear-ink-tertiary">
+                <p className="px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-tertiary">
                   {t(group.labelKey)}
                 </p>
               ) : null}
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onTabChange(item.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-                    activeTab === item.id
-                      ? "bg-linear-surface-2 font-medium text-linear-ink border border-linear-hairline"
-                      : "text-linear-ink-muted hover:bg-linear-surface-2/60 hover:text-linear-ink",
-                  )}
-                >
-                  {item.icon}
-                  <span className="truncate">{t(item.labelKey)}</span>
-                </button>
-              ))}
+              {group.items.map((item) => {
+                const Icon = item.icon
+                return (
+                  <ZedListItem
+                    key={item.id}
+                    onClick={() => onTabChange(item.id)}
+                    selected={activeTab === item.id}
+                    startSlot={<Icon size={16} />}
+                    spacing="dense"
+                    className={cn(
+                      activeTab === item.id
+                        ? "border-border-subtle bg-bg-item-active/95 font-medium text-text-primary"
+                        : "text-text-secondary",
+                      "px-2 py-1.5 text-[12px]",
+                    )}
+                  >
+                    {t(item.labelKey)}
+                  </ZedListItem>
+                )
+              })}
             </div>
           ))}
         </nav>
       </ScrollArea>
 
-      <div className="space-y-1 border-t border-linear-hairline p-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+      <div className="border-t border-border-subtle/80 px-2 py-2">
+        <p className="mb-1.5 px-2 font-mono text-[10px] text-text-tertiary">
+          v{packageJson.version}
+        </p>
+        <ZedListItem
           onClick={() => window.electronAPI.quitApp()}
+          startSlot={<LogOut className="h-4 w-4" />}
+          spacing="dense"
+          className="px-2 py-1.5 text-[12px] text-destructive hover:bg-destructive/10 hover:text-destructive"
         >
-          <LogOut className="mr-2 h-4 w-4" />
           {t("settings.sidebar.quit")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start"
-          onClick={onClose}
-        >
-          <X className="mr-2 h-4 w-4" />
-          {t("settings.sidebar.close")}
-        </Button>
+        </ZedListItem>
       </div>
     </aside>
   )

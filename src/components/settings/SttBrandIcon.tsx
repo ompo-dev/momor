@@ -116,7 +116,7 @@ export function SttBrandIcon({
 
 export function SttBrandIconBadge({ kind }: { kind: SttKindId }) {
   return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-background/80">
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/20">
       <SttBrandIcon kind={kind} size="md" />
     </div>
   );

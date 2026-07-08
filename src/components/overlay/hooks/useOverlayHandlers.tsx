@@ -324,7 +324,7 @@ export function use_blockInputFocus({
   textInputRef,
 }: Use_blockInputFocusDeps) {
   const blockInputFocus = useCallback(
-    (e: React.MouseEvent<HTMLInputElement>) => {
+    (e: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (!stealthTapAvailableRef.current) return;
       // When auto-engage is disabled (composition IME present), the click
       // does NOT engage the tap — so blocking DOM focus would leave the

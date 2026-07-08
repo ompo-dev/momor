@@ -12,9 +12,9 @@ If anything's unclear, email **momor.contact@gmail.com**. We aim to reply within
 
 momor is built and operated by a single developer based in **Kochi, Kerala, India**. For the purposes of applicable data-protection law (including India's Digital Personal Data Protection Act, 2023, and the EU General Data Protection Regulation where it applies):
 
-- **Data fiduciary / controller:** Evin John, the developer of momor.
+- **Data fiduciary / controller:** ompo-dev, the developer of momor.
 - **Contact:** momor.contact@gmail.com
-- **Grievance Officer (India IT Rules 2021):** Evin John — momor.contact@gmail.com — we acknowledge complaints within 72 hours on weekdays and aim to resolve them within 30 days.
+- **Grievance Officer (India IT Rules 2021):** ompo-dev — momor.contact@gmail.com — we acknowledge complaints within 72 hours on weekdays and aim to resolve them within 30 days.
 
 If you're using momor on behalf of an organisation (under a bulk or team licence), that organisation is a separate data controller for the data of its own users, and you should also consult its own privacy policy.
 
@@ -177,7 +177,7 @@ We follow industry-standard practices for the limited data we do hold:
 - **Secrets in code:** API keys and secrets are never embedded in shipped builds.
 - **Access:** as a single-developer project, server-side data is accessible only to the developer, and only for legitimate operational purposes (handling support requests, debugging billing issues, fraud prevention).
 
-For information on how to report a security vulnerability, see our [Security Policy](https://github.com/evinjohnn/momor-cluely-ai-assistant/blob/main/SECURITY.md).
+For information on how to report a security vulnerability, see our [Security Policy](https://github.com/ompo-dev/momor-cluely-ai-assistant/blob/main/SECURITY.md).
 
 ---
 
@@ -215,7 +215,7 @@ By using paid products you'll receive **operational emails** related to your pur
 
 ## 12. Open-source transparency
 
-The desktop application is open source. The full source is available on GitHub at <https://github.com/evinjohnn/momor-cluely-ai-assistant>. You are welcome to audit the code to verify the claims in this policy.
+The desktop application is open source. The full source is available on GitHub at <https://github.com/ompo-dev/momor-cluely-ai-assistant>. You are welcome to audit the code to verify the claims in this policy.
 
 A small caveat: open-source code does **not** by itself guarantee that the binaries we distribute are byte-for-byte produced from that source — reproducible builds are a separate effort we don't currently provide. If you require reproducible binaries, build from source.
 
@@ -235,6 +235,6 @@ For privacy questions, data-rights requests, complaints, or anything else covere
 
 **Email:** momor.contact@gmail.com
 
-**Grievance Officer:** Evin John — momor.contact@gmail.com — acknowledgements within 72 hours on weekdays, resolution targets of 30 days.
+**Grievance Officer:** ompo-dev — momor.contact@gmail.com — acknowledgements within 72 hours on weekdays, resolution targets of 30 days.
 
 We may not respond on weekends or Indian public holidays — if you write in over a weekend, please expect a reply early the following week.

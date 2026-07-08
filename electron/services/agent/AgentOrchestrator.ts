@@ -42,6 +42,45 @@ import { MeetingMCPServer, MEETING_MCP_PORT } from "../MeetingMCPServer";
 import { AcpAgentConnection, AcpPermissionRequest } from "./acp/AcpAgentConnection";
 import { AgentRegistry, ExternalAgentSpec } from "./AgentRegistry";
 
+function isPathLikeExecutable(candidate: string): boolean {
+  return (
+    path.isAbsolute(candidate) ||
+    candidate.includes(path.sep) ||
+    /[\\/]/.test(candidate)
+  );
+}
+
+function isRunnableBareCommand(candidate: string): boolean {
+  return (
+    candidate.length > 0 &&
+    candidate.length <= 240 &&
+    !/[\r\n]/.test(candidate) &&
+    !/\s/.test(candidate) &&
+    !isPathLikeExecutable(candidate)
+  );
+}
+
+function resolveConfiguredExecutableCandidate(
+  configured?: string,
+): string | null {
+  const trimmed = configured?.trim() ?? "";
+  if (!trimmed) return null;
+  if (isPathLikeExecutable(trimmed)) {
+    return fs.existsSync(trimmed) ? trimmed : null;
+  }
+  return isRunnableBareCommand(trimmed) ? trimmed : null;
+}
+
+function resolveSavedOpenClaudeExecutableCandidate(): string | null {
+  try {
+    const { CredentialsManager } = require("../CredentialsManager");
+    const saved = CredentialsManager.getInstance().getOpenClaudeCliPath?.();
+    return resolveConfiguredExecutableCandidate(saved);
+  } catch {
+    return null;
+  }
+}
+
 export interface OrchestratorRunInput {
   prompt: string;
   systemPrompt?: string;
@@ -103,13 +142,32 @@ class EventQueue {
   }
 }
 
+export interface StoredCliSession {
+  sessionId: string;
+  workspaceDir: string;
+}
+
+export function resolveCliResumeSessionId(
+  stored: StoredCliSession | undefined,
+  workspaceDir: string,
+): string | undefined {
+  if (!stored?.sessionId) return undefined;
+  if (!stored.workspaceDir) return stored.sessionId;
+  return path.resolve(stored.workspaceDir) === path.resolve(workspaceDir)
+    ? stored.sessionId
+    : undefined;
+}
+
 export class AgentOrchestrator {
   private static instance: AgentOrchestrator | null = null;
 
   private currentProcess: ChildProcess | null = null;
   private tempMcpConfig: string | null = null;
-  /** meetingId → CLI session id, for multi-turn continuity (legacy transports). */
-  private readonly sessionByMeeting = new Map<string, string>();
+  /**
+   * meetingId → CLI session metadata, for multi-turn continuity.
+   * Resume only when the next turn stays in the same resolved workspace.
+   */
+  private readonly sessionByMeeting = new Map<string, StoredCliSession>();
   /** Persistent ACP connections, keyed by `${agentId}::${workspaceDir}`. */
   private readonly acpConnections = new Map<
     string,
@@ -145,24 +203,26 @@ export class AgentOrchestrator {
     provider: AgentProvider,
     configured?: string,
   ): string | null {
-    if (configured && configured.trim()) {
-      // Explicit absolute/relative path that exists wins outright.
-      if (fs.existsSync(configured)) return configured;
-      // Bare command (relies on PATH) — accept as-is; spawn will validate.
-      if (!configured.includes(path.sep)) return configured;
+    const configuredCandidate = resolveConfiguredExecutableCandidate(configured);
+    if (configuredCandidate) return configuredCandidate;
+
+    if (provider === "openclaude") {
+      const savedOpenClaudeCandidate = resolveSavedOpenClaudeExecutableCandidate();
+      if (savedOpenClaudeCandidate) return savedOpenClaudeCandidate;
     }
+
     const adapter = buildAdapter(provider);
     for (const candidate of adapter.defaultPaths()) {
-      if (candidate.includes(path.sep)) {
-        if (fs.existsSync(candidate)) return candidate;
-      } else {
-        // Bare fallback (e.g. "claude") — only used if nothing concrete found.
-        // Defer to PATH resolution at spawn time; keep as last resort.
+      if (isPathLikeExecutable(candidate) && fs.existsSync(candidate)) {
+        return candidate;
       }
     }
-    // No concrete file; fall back to the last bare candidate so PATH can work.
-    const bare = adapter.defaultPaths().find((c) => !c.includes(path.sep));
-    return configured?.trim() || bare || null;
+    // No concrete file; fall back only to a sane bare command so stale/garbled
+    // configured strings cannot bubble into spawn() and trigger ENAMETOOLONG.
+    const bare = adapter
+      .defaultPaths()
+      .find((candidate) => isRunnableBareCommand(candidate.trim()));
+    return bare || null;
   }
 
   cancel(): void {
@@ -189,6 +249,14 @@ export class AgentOrchestrator {
     if (this.tempMcpConfig) {
       try { fs.unlinkSync(this.tempMcpConfig); } catch {}
       this.tempMcpConfig = null;
+    }
+  }
+
+  private cleanupSpawnArtifacts(paths?: string[]): void {
+    for (const filePath of paths ?? []) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
     }
   }
 
@@ -258,11 +326,19 @@ export class AgentOrchestrator {
     const audit = AgentAuditLog.getInstance();
 
     let workspaceDir: string;
+    let workspaceSource: "configured" | "referenced-path" = "configured";
     try {
-      workspaceDir = WorkspaceManager.getInstance().resolveWorkspace(settings, {
-        id: input.meetingId,
-        title: input.meetingTitle,
-      });
+      const resolvedWorkspace = WorkspaceManager.getInstance().resolveTurnWorkspace(
+        settings,
+        {
+          id: input.meetingId,
+          title: input.meetingTitle,
+        },
+        input.prompt,
+        input.toolMode ?? "agentic",
+      );
+      workspaceDir = resolvedWorkspace.dir;
+      workspaceSource = resolvedWorkspace.source;
     } catch (err: any) {
       yield { type: "error", error: err?.message ?? "Workspace error" };
       return;
@@ -352,15 +428,21 @@ export class AgentOrchestrator {
           : undefined,
     };
 
+    const storedSession = input.meetingId
+      ? this.sessionByMeeting.get(input.meetingId)
+      : undefined;
+    const resumableSessionId = resolveCliResumeSessionId(
+      storedSession,
+      workspaceDir,
+    );
+
     const runOptions: AgentRunOptions = {
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
       model,
       meetingId: input.meetingId,
       imagePaths: input.imagePaths,
-      cliSessionId: input.meetingId
-        ? this.sessionByMeeting.get(input.meetingId)
-        : undefined,
+      cliSessionId: resumableSessionId,
       signal: input.signal,
     };
 
@@ -371,9 +453,12 @@ export class AgentOrchestrator {
       provider,
       kind: "run_start",
       detail: {
+        executablePath,
         workspaceDir,
+        workspaceSource,
         permissionMode,
         model,
+        toolMode: input.toolMode ?? "agentic",
         fullAccess: requiresExplicitConfirmation(permissionMode),
         resume: Boolean(runOptions.cliSessionId),
       },
@@ -458,7 +543,10 @@ export class AgentOrchestrator {
 
         for (const event of adapter.parseLine(parsed, state)) {
           if (event.type === "session" && event.sessionId && input.meetingId) {
-            this.sessionByMeeting.set(input.meetingId, event.sessionId);
+            this.sessionByMeeting.set(input.meetingId, {
+              sessionId: event.sessionId,
+              workspaceDir: path.resolve(workspaceDir),
+            });
           }
           if (event.type === "tool_call") {
             audit.record({
@@ -469,6 +557,22 @@ export class AgentOrchestrator {
               detail: { name: event.toolName, args: event.toolArgs },
             });
           }
+          if (event.type === "tool_result") {
+            audit.record({
+              ts: Date.now(),
+              meetingId: input.meetingId,
+              provider,
+              kind: "tool_result",
+              detail: {
+                toolId: event.toolId,
+                isError: event.toolIsError === true,
+                result:
+                  typeof event.toolResult === "string"
+                    ? event.toolResult.slice(0, 1200)
+                    : undefined,
+              },
+            });
+          }
           if (event.type === "done") emittedDone = true;
           if (event.type === "token" && event.text) state.fullText += event.text;
           yield event;
@@ -477,6 +581,7 @@ export class AgentOrchestrator {
     } finally {
       input.signal?.removeEventListener("abort", onAbort);
       this.currentProcess = null;
+      this.cleanupSpawnArtifacts(spec.cleanupPaths);
       this.cleanupTempMcp();
       if (!proc.killed) {
         try { proc.kill("SIGTERM"); } catch {}
@@ -651,6 +756,22 @@ export class AgentOrchestrator {
             provider: spec.id,
             kind: "tool_call",
             detail: { name: event.toolName, args: event.toolArgs },
+          });
+        }
+        if (event.type === "tool_result") {
+          audit.record({
+            ts: Date.now(),
+            meetingId: input.meetingId,
+            provider: spec.id,
+            kind: "tool_result",
+            detail: {
+              toolId: event.toolId,
+              isError: event.toolIsError === true,
+              result:
+                typeof event.toolResult === "string"
+                  ? event.toolResult.slice(0, 1200)
+                  : undefined,
+            },
           });
         }
         yield event;

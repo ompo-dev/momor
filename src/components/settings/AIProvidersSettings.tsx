@@ -37,7 +37,6 @@ import {
   SettingsToolbar,
   SETTINGS_CONTROL_CLASS,
 } from "./layout/SettingsToolbar";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -104,7 +103,7 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
     <div className="relative" ref={containerRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-40 bg-bg-input border border-border-subtle rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary flex items-center justify-between hover:bg-bg-elevated transition-colors"
+        className="flex w-40 items-center justify-between rounded-sm border border-border-subtle/80 bg-background/22 px-3 py-1.5 text-[11px] text-text-primary transition-colors hover:bg-background/34 focus:outline-none focus:border-accent-primary"
         type="button"
       >
         <span className="truncate pr-2">
@@ -117,8 +116,8 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-1 w-full bg-bg-elevated border border-border-subtle rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto animated fadeIn">
-          <div className="p-1 space-y-0.5">
+        <div className="absolute top-full right-0 z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-sm border border-border-subtle/80 bg-card/96 shadow-[0_24px_64px_-42px_rgba(0,0,0,0.85)] animated fadeIn">
+          <div className="space-y-0.5 p-1.5">
             {options.map((option) => (
               <button
                 key={option.id}
@@ -126,7 +125,7 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
                   onChange(option.id);
                   setIsOpen(false);
                 }}
-                className={`w-full text-left px-3 py-2 text-xs rounded-md flex items-center justify-between group transition-colors ${value === option.id ? "bg-bg-input hover:bg-bg-elevated text-text-primary" : "text-text-secondary hover:bg-bg-input hover:text-text-primary"}`}
+                className={`group flex w-full items-center justify-between rounded-sm border px-3 py-2 text-[11px] text-left transition-colors ${value === option.id ? "border-accent-primary/30 bg-accent-primary/[0.07] text-text-primary" : "border-transparent text-text-secondary hover:border-border-subtle/80 hover:bg-background/24 hover:text-text-primary"}`}
                 type="button"
               >
                 <span className="truncate">{option.name}</span>
@@ -139,7 +138,7 @@ const ModelSelect: React.FC<ModelSelectProps> = ({
               </button>
             ))}
             {options.length === 0 && (
-              <div className="px-3 py-2 text-xs text-muted-foreground italic">
+              <div className="border-l border-border-subtle/80 px-3 py-3 text-[11px] italic text-muted-foreground">
                 No models available
               </div>
             )}
@@ -167,7 +166,7 @@ const CodexCliModelField: React.FC<{
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onSave}
-        className="min-w-0 flex-1 bg-bg-input border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary font-mono focus:outline-none focus:border-accent-primary"
+        className="min-w-0 flex-1 rounded-sm border border-border-subtle/80 bg-background/22 px-3 py-2 text-[11px] text-text-primary font-mono focus:outline-none focus:border-accent-primary"
         placeholder={placeholder}
       />
       <ModelSelect
@@ -401,9 +400,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       const visionResult = await window.electronAPI?.getVisionDefaultModel?.();
       if (visionResult?.model) setVisionDefaultModel(visionResult.model);
 
-      const fastMode = await window.electronAPI?.getGroqFastTextMode?.();
-      if (fastMode) setFastResponseMode(fastMode.enabled);
-
       await refreshOpenClaudeRuntime();
       checkOllama();
     } catch (e) {
@@ -421,13 +417,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       void loadCredentials();
     });
 
-    const unsubFast = window.electronAPI?.onGroqFastTextChanged?.(
-      (enabled: boolean) => {
-        setFastResponseMode(enabled);
-        localStorage.setItem("momor_groq_fast_text", String(enabled));
-      },
-    );
-
     const unsubOpenClaudeInstall =
       window.electronAPI?.onOpenClaudeInstallProgress?.((line: string) => {
         setOpenClaudeInstallMessage(line);
@@ -435,7 +424,6 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
 
     return () => {
       unsubCred?.();
-      unsubFast?.();
       unsubOpenClaudeInstall?.();
     };
   }, [isOpen, loadCredentials]);
@@ -643,17 +631,19 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
   ) => {
     const next = { ...openClaudeConfigRef.current, ...patch };
     setOpenClaudeConfig(next);
-    await window.electronAPI?.setOpenClaudeConfig?.(next);
+    const result = await window.electronAPI?.setOpenClaudeConfig?.(next);
+    const resolved = result?.config ?? next;
+    setOpenClaudeConfig(resolved);
     // Bridge into the agent layer so the orchestrator (agent-cli:openclaude
     // model + meeting Agent mode) launches the exact CLI the user configured.
     try {
       await window.electronAPI?.agentSetConfig?.({
-        executablePaths: { openclaude: next.path },
+        executablePaths: { openclaude: resolved.path },
       });
     } catch {
       /* agent settings unavailable — default paths still resolve */
     }
-    return next;
+    return resolved;
   };
 
   const refreshOpenClaudeModels = async () => {
@@ -695,7 +685,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
   const handleInstallOpenClaude = async () => {
     setOpenClaudeInstallStatus("testing");
     setOpenClaudeInstallError("");
-    setOpenClaudeInstallMessage("Installing Claude runtime...");
+    setOpenClaudeInstallMessage("Installing local agent runtime...");
     try {
       const status = await window.electronAPI?.installOpenClaude?.();
       await refreshOpenClaudeRuntime();
@@ -708,17 +698,17 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         setOpenClaudeInstallStatus("success");
         setOpenClaudeInstallMessage(
           status.path
-            ? `Claude runtime ready at ${status.path}${status.version ? ` (v${status.version})` : ""}.`
-            : "Claude runtime installed successfully.",
+            ? `Local agent runtime ready at ${status.path}${status.version ? ` (v${status.version})` : ""}.`
+            : "Local agent runtime installed successfully.",
         );
       } else {
         setOpenClaudeInstallStatus("error");
-        setOpenClaudeInstallError("Claude runtime installation failed.");
+        setOpenClaudeInstallError("Local agent runtime installation failed.");
       }
     } catch (e: unknown) {
       setOpenClaudeInstallStatus("error");
       setOpenClaudeInstallError(
-        e instanceof Error ? e.message : "Claude runtime installation failed.",
+        e instanceof Error ? e.message : "Local agent runtime installation failed.",
       );
     } finally {
       setTimeout(() => setOpenClaudeInstallStatus("idle"), 5000);
@@ -1051,7 +1041,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         title={t("providers.activeModels")}
         description={t("providers.activeModelsDesc")}
       >
-        <div className="rounded-lg border border-border/60 bg-muted/10 p-4">
+        <div className="rounded-sm border border-border-subtle/75 bg-background/18 px-3 py-3">
           {modelOptions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {t("providers.configureProviderFirst")}
@@ -1059,7 +1049,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t("providers.defaultChatModel")}
                 </p>
                 <SettingsToolbar>
@@ -1090,7 +1080,9 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                       )}
                       {modelOptions.some((o) => o.kind === "agent") && (
                         <SelectGroup>
-                          <SelectLabel>{t("providers.localConnectionsSelectLabel")}</SelectLabel>
+                          <SelectLabel>
+                            {t("providers.localConnectionsSelectLabelCompact")}
+                          </SelectLabel>
                           {modelOptions
                             .filter((o) => o.kind === "agent")
                             .map((o) => (
@@ -1106,7 +1098,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t("providers.defaultVisionModel")}
                 </p>
                 <SettingsToolbar>
@@ -1155,36 +1147,36 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
       >
 
         {visibleIntegrations.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-              <p className="text-sm text-muted-foreground">
-                {t("providers.noIntegrationsYet")}
-              </p>
-              <Button type="button" onClick={() => setAddDialogOpen(true)}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                {t("providers.addIntegration")}
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center gap-3 rounded-sm border border-dashed border-border-subtle/80 bg-background/10 px-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              {t("providers.noIntegrationsYet")}
+            </p>
+            <Button type="button" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              {t("providers.addIntegration")}
+            </Button>
+          </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
           {(isVisible("gemini") || isVisible("groq") || isVisible("openai") || isVisible("claude") || isVisible("deepseek")) && (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 {t("providers.providersSectionLabel")}
               </span>
-              <span className="h-px flex-1 bg-border/60" />
+              <span className="h-px flex-1 bg-border-subtle/80" />
             </div>
           )}
           {(isVisible("gemini") || isVisible("groq") || isVisible("openai") || isVisible("claude") || isVisible("deepseek")) && (
-            <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              {t("providers.providersUnifiedNote")}
+            <p className="rounded-sm border border-border-subtle/75 bg-background/16 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              {t("providers.providersUnifiedNoteCompact")}
             </p>
           )}
           {isVisible("gemini") && (
           <ProviderCard
             providerId="gemini"
             providerName="Gemini"
+            eyebrow={t("providers.categoryCloud")}
+            description={t("providers.cloudProviderDesc")}
             storedKeys={apiKeysStored.gemini ?? []}
             preferredModel={preferredModels.gemini}
             onSaveKeys={(keys) => saveProviderKeys("gemini", keys)}
@@ -1208,6 +1200,8 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="groq"
             providerName="Groq"
+            eyebrow={t("providers.categoryCloud")}
+            description={t("providers.cloudProviderDesc")}
             storedKeys={apiKeysStored.groq ?? []}
             preferredModel={preferredModels.groq}
             onSaveKeys={(keys) => saveProviderKeys("groq", keys)}
@@ -1231,6 +1225,8 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="openai"
             providerName="OpenAI"
+            eyebrow={t("providers.categoryCloud")}
+            description={t("providers.cloudProviderDesc")}
             storedKeys={apiKeysStored.openai ?? []}
             preferredModel={preferredModels.openai}
             onSaveKeys={(keys) => saveProviderKeys("openai", keys)}
@@ -1254,6 +1250,8 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
           <ProviderCard
             providerId="claude"
             providerName="Claude"
+            eyebrow={t("providers.categoryCloud")}
+            description={t("providers.cloudProviderDesc")}
             storedKeys={apiKeysStored.claude ?? []}
             preferredModel={preferredModels.claude}
             onSaveKeys={(keys) => saveProviderKeys("claude", keys)}
@@ -1310,10 +1308,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
 
           {(isVisible("openclaude") || isVisible("codex-cli")) && (
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("providers.localConnectionsSectionLabel")}
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {t("providers.localConnectionsSectionLabelCompact")}
               </span>
-              <span className="h-px flex-1 bg-border/60" />
+              <span className="h-px flex-1 bg-border-subtle/80" />
             </div>
           )}
 
@@ -1333,12 +1331,12 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             pathPlaceholder="auto-detect or C:\\path\\to\\dist\\cli.mjs"
             buildHint={
               openClaudeConfig.path?.endsWith(".mjs")
-                ? "Build the local runtime and point this field to its dist cli."
+                ? "Build the local agent runtime and point this field to its dist cli."
                 : undefined
             }
             statusPanel={
-              <div className="rounded-lg border border-border/60 bg-muted/40 px-3 py-3 text-[11px] text-muted-foreground">
-                <p className="font-medium text-foreground">
+              <div className="rounded-sm border border-border-subtle/75 bg-background/14 px-3 py-2.5 text-[11px] text-muted-foreground">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground">
                   Runtime:{" "}
                   {openClaudeRuntime.installed
                     ? `Installed${openClaudeRuntime.version ? ` · v${openClaudeRuntime.version}` : ""}`
@@ -1541,13 +1539,13 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         description={t("providers.customProvidersDesc")}
       >
         <div className="flex items-center justify-between mb-2">
-          <span className="rounded-full border border-yellow-500/20 bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-600">
+          <span className="rounded-sm border border-yellow-500/20 bg-yellow-500/[0.08] px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] text-yellow-600">
             {t("common.experimental")}
           </span>
           {!isEditingCustom && (
             <button
               onClick={handleNewProvider}
-              className="flex items-center gap-2 px-3 py-1.5 bg-bg-input hover:bg-bg-elevated border border-border-subtle rounded-lg text-xs font-medium text-text-primary transition-colors"
+              className="flex items-center gap-2 rounded-sm border border-border-subtle/75 bg-background/16 px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-accent/50"
             >
               <Plus size={14} /> {t('providers.addProvider')}
             </button>
@@ -1555,14 +1553,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         </div>
 
         {isEditingCustom ? (
-          <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle animated fadeIn">
+          <div className="rounded-sm border border-border-subtle/75 bg-background/12 p-4 animated fadeIn">
             <h4 className="text-sm font-bold text-text-primary mb-4">
               {editingProvider ? t('providers.editProvider') : t('providers.newProvider')}
             </h4>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">
+                <label className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t('providers.providerName')}
                 </label>
                 <input
@@ -1570,12 +1568,12 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder="My Custom LLM"
-                  className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
+                  className="w-full rounded-sm border border-border-subtle/75 bg-background/18 px-4 py-2.5 text-xs text-text-primary transition-colors focus:border-accent-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">
+                <label className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t('providers.curlCommand')}
                 </label>
                 <div className="relative">
@@ -1583,13 +1581,13 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                     value={customCurl}
                     onChange={(e) => setCustomCurl(e.target.value)}
                     placeholder={`curl https://api.openai.com/v1/chat/completions ... "content": "{{TEXT}}"`}
-                    className="w-full h-32 bg-bg-input border border-border-subtle rounded-lg p-4 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary transition-colors resize-none leading-relaxed"
+                    className="h-32 w-full resize-none rounded-sm border border-border-subtle/75 bg-background/18 p-4 font-mono text-xs leading-relaxed text-text-primary transition-colors focus:border-accent-primary focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">
+                <label className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t('providers.responseJsonPath')}{" "}
                   <span className="text-text-tertiary normal-case font-normal">
                     ({t('providers.optional')})
@@ -1600,16 +1598,16 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                   value={customResponsePath}
                   onChange={(e) => setCustomResponsePath(e.target.value)}
                   placeholder="e.g. choices[0].message.content"
-                  className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors font-mono"
+                  className="w-full rounded-sm border border-border-subtle/75 bg-background/18 px-4 py-2.5 font-mono text-xs text-text-primary transition-colors focus:border-accent-primary focus:outline-none"
                 />
                 <p className="text-[10px] text-text-secondary mt-1">
                   {t('providers.responsePathDesc')}
                 </p>
               </div>
 
-              <div className="bg-bg-elevated/30 rounded-lg overflow-hidden border border-border-subtle mt-4">
-                <div className="px-4 py-3 bg-bg-elevated/50 border-b border-border-subtle flex items-center justify-between">
-                  <h5 className="block text-xs font-medium text-text-primary uppercase tracking-wide">
+              <div className="mt-4 overflow-hidden rounded-sm border border-border-subtle/75 bg-background/12">
+                <div className="flex items-center justify-between border-b border-border-subtle/75 bg-background/18 px-4 py-3">
+                  <h5 className="block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     {t('providers.configGuide')}
                   </h5>
                 </div>
@@ -1649,7 +1647,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                         <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">
                           {t('providers.localOllama')}
                         </div>
-                        <div className="bg-bg-input p-2.5 rounded-lg border border-border-subtle overflow-x-auto group relative">
+                        <div className="group relative overflow-x-auto rounded-sm border border-border-subtle/75 bg-background/18 p-2.5">
                           <code className="font-mono text-[10px] text-text-primary whitespace-pre block">
                             curl http://localhost:11434/api/generate -d '{"{"}
                             "model": "llama3", "prompt": "{`{{TEXT}}`}"{"}"}'
@@ -1662,7 +1660,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                         <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">
                           {t('providers.openAiCompatible')}
                         </div>
-                        <div className="bg-bg-input p-2.5 rounded-lg border border-border-subtle overflow-x-auto">
+                        <div className="overflow-x-auto rounded-sm border border-border-subtle/75 bg-background/18 p-2.5">
                           <code className="font-mono text-[10px] text-text-primary whitespace-pre block">
                             {`curl https://api.openai.com/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -1684,7 +1682,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               </div>
 
               {curlError && (
-                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                <div className="flex items-start gap-2 rounded-sm border border-red-500/20 bg-red-500/[0.08] p-3 text-xs text-red-400">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <span>{curlError}</span>
                 </div>
@@ -1693,13 +1691,13 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   onClick={() => setIsEditingCustom(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors"
+                  className="rounded-sm px-4 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-background/18 hover:text-text-primary"
                 >
                   {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleSaveCustom}
-                  className="px-4 py-2 rounded-lg text-xs font-medium bg-accent-primary text-white hover:bg-accent-secondary transition-colors flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-sm bg-accent-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-secondary"
                 >
                   <Save size={14} /> {t('providers.saveProvider')}
                 </button>
@@ -1709,7 +1707,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
         ) : (
           <div className="space-y-3">
             {customProviders.length === 0 ? (
-              <div className="text-center py-8 bg-bg-item-surface rounded-xl border border-border-subtle border-dashed">
+              <div className="rounded-sm border border-dashed border-border-subtle/80 bg-background/10 py-8 text-center">
                 <p className="text-xs text-text-tertiary">
                   {t('providers.noCustomProviders')}
                 </p>

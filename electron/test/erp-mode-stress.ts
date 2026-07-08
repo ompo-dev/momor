@@ -5,7 +5,7 @@
  * using a real ERP discovery interview transcript.
  *
  * Run with:
- *   cd /Users/evin/momor-cluely-ai-assistant/electron
+ *   cd /Users/ompo-dev/momor-cluely-ai-assistant/electron
  *   npx tsx test/erp-mode-stress.ts
  *
  * Prerequisites:

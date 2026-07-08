@@ -1,5 +1,6 @@
 import React from "react";
-import { Check, X, RefreshCw } from "lucide-react";
+import { Check, RefreshCw, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export interface AgentToolChip {
   toolId: string;
@@ -16,27 +17,34 @@ type Props = {
   toneClass: (tone: "ok" | "warn" | "error") => string;
 };
 
-/** Chips showing which agent tools/skills ran this turn (spinner → ✓ / ✗). */
-export default function AgentToolChips({ tools, pillBaseClass, toneClass }: Props) {
+/** Chips showing which agent tools or skills ran this turn. */
+export default function AgentToolChips({
+  tools,
+  pillBaseClass,
+  toneClass,
+}: Props) {
+  const { t } = useTranslation();
+  void pillBaseClass;
   if (tools.length === 0) return null;
+
   return (
-    <div className="no-drag flex flex-wrap items-center justify-center gap-1.5 px-4 pt-2.5">
+    <div className="no-drag mx-auto flex w-full max-w-[680px] flex-wrap items-center gap-1 px-5 pt-2">
       {tools.map((tool) => (
         <div
           key={tool.toolId}
-          className={`${pillBaseClass} ${
+          className={`inline-flex h-5 items-center gap-1 rounded-[8px] border border-border-subtle/80 bg-background/18 px-1.5 ${
             tool.isError
               ? toneClass("error")
               : tool.done
                 ? toneClass("ok")
-                : "overlay-text-primary"
+                : "overlay-text-secondary"
           }`}
           title={
             tool.done
               ? tool.isError
                 ? `${tool.name} failed`
                 : `${tool.name} done`
-              : `Running ${tool.name}…`
+              : t("overlay.toolActivity")
           }
         >
           {tool.done ? (
@@ -46,9 +54,11 @@ export default function AgentToolChips({ tools, pillBaseClass, toneClass }: Prop
               <Check className="h-3 w-3 opacity-70" />
             )
           ) : (
-            <RefreshCw className="h-3 w-3 opacity-70 animate-spin" />
+            <RefreshCw className="h-3 w-3 animate-spin opacity-70" />
           )}
-          <span className="font-mono text-[10px]">{tool.name}</span>
+          <span className="max-w-[180px] truncate font-mono text-[9.5px] uppercase tracking-[0.08em]">
+            {tool.name}
+          </span>
         </div>
       ))}
     </div>

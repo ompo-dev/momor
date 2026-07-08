@@ -794,6 +794,7 @@ interface ElectronAPI {
     provider?: string;
     model?: string;
     systemPrompt?: string;
+    imagePaths?: string[];
   }) => Promise<void>;
   agentCancel: () => Promise<{ cancelled: boolean }>;
   agentGetProviders: () => Promise<{ providers: { provider: string; path: string }[]; error?: string }>;
@@ -2193,6 +2194,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     provider?: string;
     model?: string;
     systemPrompt?: string;
+    imagePaths?: string[];
   }) => ipcRenderer.invoke("agent-chat-stream", payload),
 
   agentCancel: () => ipcRenderer.invoke("agent-cancel"),

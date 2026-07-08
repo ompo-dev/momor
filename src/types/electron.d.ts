@@ -1074,6 +1074,7 @@ export interface ElectronAPI {
     provider?: string;
     model?: string;
     systemPrompt?: string;
+    imagePaths?: string[];
   }) => Promise<void>;
   agentCancel?: () => Promise<{ cancelled: boolean }>;
   agentGetProviders?: () => Promise<{ providers: { provider: string; path: string }[]; error?: string }>;

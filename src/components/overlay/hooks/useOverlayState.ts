@@ -44,7 +44,7 @@ export function useOverlayState() {
   const rollingLiveRef = useRef("");
   const userRollingLiveRef = useRef("");
   const voiceInputRef = useRef<string>("");
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const isStealthRef = useRef<boolean>(false);
   const stealthTapActiveRef = useRef<boolean>(false);
   const stealthTapAvailableRef = useRef<boolean>(false);

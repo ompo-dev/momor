@@ -1,4 +1,5 @@
 import React, { useCallback } from "react";
+import { shouldUseAgentSession } from "../../../lib/localPathDetection";
 
 type ArraySetter = { (updater: (prev: any[]) => any): void; (value: any): void };
 type Setter = { (updater: (prev: any) => any): void; (value: any): void };
@@ -41,6 +42,7 @@ interface Deps {
   mergeConversationContextWithUserSession: Fn;
   analytics: any;
   conversationContext: any;
+  currentModel: string;
   inputValue: any;
   isCallMode: any;
   isConnected: any;
@@ -49,6 +51,48 @@ interface Deps {
   sttUserError: any;
   sttUserStatus: any;
   attachedContext: any[];
+}
+
+function buildAgentOverlaySystemPrompt(
+  fullContext: string,
+  hasImages: boolean,
+  explicitLocalPath = false,
+): string {
+  const parts = [
+    "You are momor, a helpful AI assistant developed by ompo-dev.",
+    "Answer directly. Use markdown when it helps readability.",
+    "This overlay composer is a real agentic session with filesystem, MCP, skill, and shell tools available.",
+    "Use the available filesystem, MCP, skill, and shell tools whenever the request is about local files, folders, code, paths, or project state.",
+    "If the user asks what a specific local file or folder contains, inspect the real target before answering.",
+    "Do not answer file-content questions from memory, prior context, or guesswork. Read the target first.",
+    "When the user references an absolute local path, treat that path as intentionally shared for this turn and inspect it before answering.",
+    "If a referenced file was already read successfully, answer from that real file content instead of asking the user to paste it again.",
+    "When the user asks to create, edit, rename, move, or delete local files, perform the action directly with tools when allowed.",
+    "Do not claim you lack access unless a tool call actually fails.",
+    explicitLocalPath
+      ? "This turn is specifically about an explicit local path. Prioritize the referenced file or folder over unrelated meeting or profile context."
+      : "",
+    hasImages
+      ? "If images are attached, inspect them before answering."
+      : "",
+    !explicitLocalPath && fullContext?.trim()
+      ? `<conversation-context>\n${fullContext}\n</conversation-context>`
+      : "",
+  ].filter(Boolean);
+
+  return parts.join("\n\n");
+}
+
+function resolveOverlayAgentModel(currentModel: string): string | undefined {
+  const model = String(currentModel ?? "").trim();
+  if (!model) return undefined;
+  if (model === "agent-cli" || model.startsWith("agent-cli:")) return undefined;
+  if (model === "codex-cli") return undefined;
+  if (model.startsWith("codex-cli:")) {
+    const mapped = model.slice("codex-cli:".length).trim();
+    return mapped || undefined;
+  }
+  return model;
 }
 
 /** Answer-call + brainstorm + manual-submit subsystem. Verbatim bodies relocated from MomorInterface; returns the 3 externally-used handlers (rest wired via refs). */
@@ -88,6 +132,7 @@ export function useAnswerCall({
   mergeConversationContextWithUserSession,
   analytics,
   conversationContext,
+  currentModel,
   inputValue,
   isCallMode,
   isConnected,
@@ -521,8 +566,11 @@ Provide only the answer, nothing else.`;
     setIsProcessing(true);
 
     try {
-      // JIT RAG pre-flight: try to use indexed meeting context first
-      if (currentAttachments.length === 0) {
+      // JIT RAG pre-flight: try to use indexed meeting context first, but
+      // never swallow turns that clearly need the real agent session.
+      const shouldUseAgentDirectly = shouldUseAgentSession(userText || "");
+
+      if (currentAttachments.length === 0 && !shouldUseAgentDirectly) {
         const ragResult = await window.electronAPI.ragQueryLive?.(
           userText || "",
         );
@@ -541,13 +589,30 @@ Provide only the answer, nothing else.`;
         sessionData,
         activeProfileId,
       );
-      await window.electronAPI.streamGeminiChat(
-        userText || "Analyze this screenshot",
+      const imagePaths =
         currentAttachments.length > 0
           ? currentAttachments.map((s) => s.path)
-          : undefined,
-        fullContext,
-      );
+          : undefined;
+
+      if (window.electronAPI.agentChatStream) {
+        await window.electronAPI.agentChatStream({
+          message: userText || "Analyze this screenshot",
+          provider: "openclaude",
+          model: resolveOverlayAgentModel(currentModel),
+          imagePaths,
+          systemPrompt: buildAgentOverlaySystemPrompt(
+            fullContext,
+            currentAttachments.length > 0,
+            shouldUseAgentDirectly,
+          ),
+        });
+      } else {
+        await window.electronAPI.streamGeminiChat(
+          userText || "Analyze this screenshot",
+          imagePaths,
+          fullContext,
+        );
+      }
     } catch (err) {
       setIsProcessing(false);
       setMessages((prev) => {

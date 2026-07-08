@@ -416,6 +416,60 @@ export class LLMHelper {
     );
   }
 
+  public prepareOpenClaudeAgentTurn(
+    modelId: string | undefined,
+    message: string,
+    imagePaths?: string[],
+  ): OpenClaudeInvocation {
+    const invocation =
+      typeof modelId === "string" && modelId.trim()
+        ? this.resolveOpenClaudeInvocationForModelId(modelId)
+        : this.resolveOpenClaudeInvocation();
+
+    this.assertOutboundScopes(
+      invocation.scopeProvider,
+      message,
+      imagePaths,
+    );
+
+    return invocation;
+  }
+
+  public async recoverExplicitLocalPathReply(
+    message: string,
+    preloadedFileContext: string,
+    invocationOverride: OpenClaudeInvocation,
+    imagePaths?: string[],
+  ): Promise<string> {
+    const groundedSystemPrompt = this.injectLanguageInstruction(
+      [
+        CORE_IDENTITY,
+        "You are momor, a helpful AI assistant developed by ompo-dev.",
+        "The host already verified and read the local file references for this turn.",
+        "The verified local evidence block below is authoritative.",
+        "Answer directly from that grounded local context.",
+        "Do not say you lack access, do not ask the user to paste the file, and do not mention generic permission limits unless the evidence itself says the read failed.",
+      ].join("\n\n"),
+    );
+
+    const groundedPrompt = [
+      "<verified-local-evidence>",
+      preloadedFileContext,
+      "</verified-local-evidence>",
+      "",
+      "USER QUESTION:",
+      message,
+    ].join("\n");
+
+    return this.runOpenClaudeTurn(
+      groundedPrompt,
+      groundedSystemPrompt,
+      imagePaths,
+      "plain",
+      invocationOverride,
+    );
+  }
+
   private async runOpenClaudeTurn(
     message: string,
     systemPrompt?: string,
@@ -948,7 +1002,7 @@ export class LLMHelper {
         else if (ev.type === "error" && ev.error) throw new Error(ev.error);
       }
     } catch (err: any) {
-      throw new Error(`OpenClaude failed: ${err?.message ?? "unknown error"}`);
+      throw new Error(`Local agent failed: ${err?.message ?? "unknown error"}`);
     }
   }
 

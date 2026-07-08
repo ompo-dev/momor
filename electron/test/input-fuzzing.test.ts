@@ -6,7 +6,7 @@
  * Electron app or LLM initialization.
  *
  * Run with:
- *   cd /Users/evin/momor-cluely-ai-assistant/electron
+ *   cd /Users/ompo-dev/momor-cluely-ai-assistant/electron
  *   NODE_ENV=test npx tsx test/input-fuzzing.test.ts
  */
 

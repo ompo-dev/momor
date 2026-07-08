@@ -70,8 +70,62 @@ test("resolveWorkspace (custom) accepts a normal project folder", () => {
   assert.ok(fs.existsSync(out));
 });
 
+test("prepareExplicitWorkspace accepts an explicitly shared project folder", () => {
+  const target = path.join(os.tmpdir(), "momor-explicit-project");
+  const out = wm.prepareExplicitWorkspace(target);
+  assert.equal(path.resolve(out), path.resolve(target));
+  assert.ok(fs.existsSync(out));
+});
+
+test("prepareExplicitWorkspace rejects broad roots", () => {
+  const denied = process.platform === "win32" ? "C:\\" : "/";
+  assert.throws(
+    () => wm.prepareExplicitWorkspace(denied),
+    /protected system directory/,
+  );
+});
+
+test("resolveTurnWorkspace promotes an explicitly referenced local project folder", () => {
+  const target = path.join(os.tmpdir(), "momor-turn-workspace");
+  const file = path.join(target, "README.md");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(file, "# hello\n", "utf8");
+
+  const resolved = wm.resolveTurnWorkspace(
+    { workspaceStrategy: "per-meeting" },
+    { id: "mtg-explicit", title: "Explicit path" },
+    `Summarize "${file}"`,
+    "agentic",
+  );
+
+  assert.equal(resolved.source, "referenced-path");
+  assert.equal(path.resolve(resolved.dir), path.resolve(target));
+});
+
+test("resolveTurnWorkspace keeps the configured workspace in plain mode", () => {
+  const target = path.join(os.tmpdir(), "momor-turn-plain");
+  const file = path.join(target, "README.md");
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(file, "# hello\n", "utf8");
+
+  const resolved = wm.resolveTurnWorkspace(
+    { workspaceStrategy: "per-meeting" },
+    { id: "mtg-plain-mode", title: "Plain mode" },
+    `Summarize "${file}"`,
+    "plain",
+  );
+
+  assert.equal(resolved.source, "configured");
+  assert.match(path.basename(resolved.dir), /plain-mode/i);
+});
+
 after(() => {
-  for (const p of ["momor-custom-ws"]) {
+  for (const p of [
+    "momor-custom-ws",
+    "momor-explicit-project",
+    "momor-turn-workspace",
+    "momor-turn-plain",
+  ]) {
     try { fs.rmSync(path.join(os.tmpdir(), p), { recursive: true, force: true }); } catch {}
   }
 });

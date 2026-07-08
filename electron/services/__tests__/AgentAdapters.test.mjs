@@ -27,6 +27,14 @@ function ctx(overrides = {}) {
   };
 }
 
+function readNativeSystemPrompt(spec) {
+  const index = spec.args.indexOf("--append-system-prompt-file");
+  assert.notEqual(index, -1, "expected --append-system-prompt-file");
+  const filePath = spec.args[index + 1];
+  assert.ok(filePath, "expected runtime system prompt file path");
+  return fs.readFileSync(filePath, "utf8");
+}
+
 // ─────────────────────────── ClaudeCodeAdapter ───────────────────────────
 
 test("claude buildSpawn: node script routes through process.execPath + stream-json", () => {
@@ -35,6 +43,7 @@ test("claude buildSpawn: node script routes through process.execPath + stream-js
     { prompt: "make a file" },
     ctx({ executablePath: "C:\\x\\cli.mjs", mcpConfigPath: "/tmp/mcp.json", model: "m1" }),
   );
+  const runtimePrompt = readNativeSystemPrompt(spec);
   assert.equal(spec.cmd, process.execPath);
   assert.equal(spec.args[0], "C:\\x\\cli.mjs");
   assert.ok(spec.args.includes("--print"));
@@ -42,7 +51,8 @@ test("claude buildSpawn: node script routes through process.execPath + stream-js
   assert.ok(spec.args.includes("--include-partial-messages"));
   assert.equal(spec.args[spec.args.indexOf("--mcp-config") + 1], "/tmp/mcp.json");
   assert.equal(spec.args[spec.args.indexOf("--model") + 1], "m1");
-  assert.equal(spec.stdinPrompt, "make a file");
+  assert.match(runtimePrompt, /<runtime-capabilities>/);
+  assert.match(spec.stdinPrompt, /make a file/);
   assert.equal(spec.cwd, ctx().workspaceDir);
   // The deprecated --bare flag must be gone.
   assert.ok(!spec.args.includes("--bare"));
@@ -54,11 +64,12 @@ test("claude buildSpawn: resume kept in args and system prompt moves to stdin", 
     { prompt: "hi", systemPrompt: "ctx", cliSessionId: "sess-123" },
     ctx(),
   );
+  const runtimePrompt = readNativeSystemPrompt(spec);
   assert.equal(spec.args[spec.args.indexOf("--resume") + 1], "sess-123");
-  assert.ok(!spec.args.includes("--append-system-prompt"));
   assert.match(spec.stdinPrompt, /<system-context>/);
   assert.match(spec.stdinPrompt, /ctx/);
   assert.match(spec.stdinPrompt, /hi/);
+  assert.match(runtimePrompt, /Primary workspace root:/);
 });
 
 test("claude buildSpawn: structured stdin also carries system context", () => {
@@ -67,11 +78,152 @@ test("claude buildSpawn: structured stdin also carries system context", () => {
     { prompt: "look at this", systemPrompt: "ctx", imagePaths: ["missing.png"] },
     ctx(),
   );
+  const runtimePrompt = readNativeSystemPrompt(spec);
   assert.ok(spec.args.includes("--input-format=stream-json"));
-  assert.ok(!spec.args.includes("--append-system-prompt"));
   assert.match(spec.stdinPrompt, /<system-context>/);
   assert.match(spec.stdinPrompt, /ctx/);
   assert.match(spec.stdinPrompt, /look at this/);
+  assert.match(runtimePrompt, /filesystem, shell, MCP, and skill tools enabled/);
+});
+
+test("claude buildSpawn: explicit absolute file paths become add-dir + runtime access context", () => {
+  const adapter = new ClaudeCodeAdapter("openclaude");
+  const externalDir = path.join(os.tmpdir(), "momor-external-read");
+  const externalFile = path.join(externalDir, "README.md");
+  fs.mkdirSync(externalDir, { recursive: true });
+  fs.writeFileSync(
+    externalFile,
+    "# test\nThis README explains the local project context.\n",
+    "utf8",
+  );
+
+  const spec = adapter.buildSpawn(
+    { prompt: `summarize "${externalFile}"`, systemPrompt: "ctx" },
+    ctx({ executablePath: "C:\\x\\cli.mjs" }),
+  );
+  const runtimePrompt = readNativeSystemPrompt(spec);
+  const addDirValues = spec.args.filter(
+    (value, index) => spec.args[index - 1] === "--add-dir",
+  );
+
+  assert.deepEqual(addDirValues, [ctx().workspaceDir, externalDir]);
+  assert.match(runtimePrompt, /<runtime-capabilities>/);
+  assert.match(runtimePrompt, /Current permission mode: auto-edit/);
+  assert.match(runtimePrompt, /The user's latest request explicitly references these local paths:/);
+  assert.match(runtimePrompt, new RegExp(externalFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(runtimePrompt, new RegExp(ctx().workspaceDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(runtimePrompt, new RegExp(externalDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(runtimePrompt, /<preloaded-local-references>/);
+  assert.match(runtimePrompt, /Host verification: read succeeded before the agent turn\./);
+  assert.match(runtimePrompt, /The host already granted access to these roots before your reply\./);
+  assert.match(runtimePrompt, /answer from that file instead of asking the user to paste it again/i);
+  assert.match(runtimePrompt, /If a Read tool succeeds or the host already preloaded file content, treat access to that path as proven/i);
+  assert.match(runtimePrompt, /create, edit, move, rename, or delete files inside the workspace or granted roots/i);
+  assert.match(runtimePrompt, /Before replying to an explicit local-path request, your first action should be a filesystem inspection on that target/i);
+  assert.match(runtimePrompt, /Do not answer an explicit local-path request from memory, prior context, or a generic permission disclaimer\./);
+  assert.match(runtimePrompt, /A generic 'I do not have access' reply is incorrect unless the tool itself returned that failure\./);
+  assert.match(runtimePrompt, /Do not claim you lack access to these files unless a fresh tool call fails/);
+  assert.match(runtimePrompt, /This README explains the local project context\./);
+  assert.match(runtimePrompt, /If a tool fails, describe the exact failure you saw instead of speculating about generic permissions\./);
+  assert.match(spec.stdinPrompt, /ctx/);
+  assert.match(spec.stdinPrompt, /<turn-local-path-guidance>/);
+  assert.match(spec.stdinPrompt, /This turn explicitly references local paths the user intentionally shared:/);
+  assert.match(spec.stdinPrompt, new RegExp(externalFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(spec.stdinPrompt, /Start by using Read on a referenced file, or Glob\/Grep on a referenced folder, before drafting your answer\./);
+  assert.match(spec.stdinPrompt, /The host already preloaded readable excerpts from the referenced local files below\./);
+  assert.match(spec.stdinPrompt, /These excerpts are grounded local evidence for this turn\./);
+  assert.match(spec.stdinPrompt, /A reply that says you lack access would be factually wrong unless a fresh Read, Glob, or Grep call fails afterwards\./);
+  assert.match(spec.stdinPrompt, /<preloaded-local-references>/);
+  assert.match(spec.stdinPrompt, /This README explains the local project context\./);
+  assert.match(spec.stdinPrompt, /Do not say you lack access unless Read, Glob, or Grep actually fails during this turn\./);
+});
+
+test("claude buildSpawn: agentic turns get runtime tool context even without extra dirs", () => {
+  const adapter = new ClaudeCodeAdapter("openclaude");
+  const spec = adapter.buildSpawn(
+    { prompt: "inspect the workspace and fix the bug" },
+    ctx({ executablePath: "C:\\x\\cli.mjs" }),
+  );
+  const runtimePrompt = readNativeSystemPrompt(spec);
+  const addDirValues = spec.args.filter(
+    (value, index) => spec.args[index - 1] === "--add-dir",
+  );
+
+  assert.deepEqual(addDirValues, [ctx().workspaceDir]);
+  assert.match(runtimePrompt, /<runtime-capabilities>/);
+  assert.match(runtimePrompt, /filesystem, shell, MCP, and skill tools enabled/);
+  assert.match(runtimePrompt, /Primary workspace root:/);
+  assert.match(runtimePrompt, /Use Read, Glob, or Grep/);
+});
+
+test("claude buildSpawn: add-dir extraction ignores historical CONTEXT paths and only grants the latest user request", () => {
+  const adapter = new ClaudeCodeAdapter("openclaude");
+  const oldDir = path.join(os.tmpdir(), "momor-old-context");
+  const oldFile = path.join(oldDir, "OLD.md");
+  const currentDir = path.join(os.tmpdir(), "momor-current-request");
+  const currentFile = path.join(currentDir, "README.md");
+
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.mkdirSync(currentDir, { recursive: true });
+  fs.writeFileSync(oldFile, "# old", "utf8");
+  fs.writeFileSync(currentFile, "# current", "utf8");
+
+  const spec = adapter.buildSpawn(
+    {
+      prompt: `CONTEXT:\nPreviously discussed file: "${oldFile}"\n\nUSER QUESTION:\nSummarize "${currentFile}"`,
+    },
+    ctx({ executablePath: "C:\\x\\cli.mjs" }),
+  );
+  const runtimePrompt = readNativeSystemPrompt(spec);
+
+  const addDirValues = spec.args.filter((value, index) => spec.args[index - 1] === "--add-dir");
+  const runtimeBlock = runtimePrompt.match(
+    /<runtime-capabilities>[\s\S]*?<\/runtime-capabilities>/,
+  )?.[0];
+
+  assert.deepEqual(addDirValues, [ctx().workspaceDir, currentDir]);
+  assert.ok(runtimeBlock, "runtime capabilities block should exist");
+  assert.match(runtimeBlock, new RegExp(currentFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(runtimeBlock, new RegExp(oldFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("claude buildSpawn: promoted explicit workspace still gets an add-dir grant for the active root", () => {
+  const adapter = new ClaudeCodeAdapter("openclaude");
+  const explicitDir = path.join(os.tmpdir(), "momor-promoted-workspace");
+  const explicitFile = path.join(explicitDir, "README.md");
+  fs.mkdirSync(explicitDir, { recursive: true });
+  fs.writeFileSync(explicitFile, "# promoted\n", "utf8");
+
+  const spec = adapter.buildSpawn(
+    { prompt: `summarize "${explicitFile}"` },
+    ctx({
+      executablePath: "C:\\x\\cli.mjs",
+      workspaceDir: explicitDir,
+    }),
+  );
+
+  const addDirValues = spec.args.filter(
+    (value, index) => spec.args[index - 1] === "--add-dir",
+  );
+
+  assert.deepEqual(addDirValues, [explicitDir]);
+});
+
+test("claude buildSpawn: plain mode skips agent runtime context and add-dir grants", () => {
+  const adapter = new ClaudeCodeAdapter("openclaude");
+  const externalDir = path.join(os.tmpdir(), "momor-plain-mode");
+  const externalFile = path.join(externalDir, "README.md");
+  fs.mkdirSync(externalDir, { recursive: true });
+  fs.writeFileSync(externalFile, "# plain", "utf8");
+
+  const spec = adapter.buildSpawn(
+    { prompt: `summarize "${externalFile}"` },
+    ctx({ executablePath: "C:\\x\\cli.mjs", toolMode: "plain" }),
+  );
+
+  assert.ok(!spec.args.includes("--add-dir"));
+  assert.ok(!spec.args.includes("--append-system-prompt-file"));
+  assert.doesNotMatch(spec.stdinPrompt, /<runtime-capabilities>/);
 });
 
 test("claude parseLine: init→session, delta→token, tool_use→tool_call, result→done", () => {

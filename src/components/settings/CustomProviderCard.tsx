@@ -40,10 +40,11 @@ export function CustomProviderCard({
 
   return (
     <IntegrationCardShell
+      eyebrow={t("providers.categoryCli")}
       title={provider.name}
       subtitle={t("providers.customProvidersDesc")}
       category="cli"
-      icon={<ProviderBrandIconBadge providerId="custom" />}
+      icon={<ProviderBrandIconBadge providerId="custom" chrome={false} />}
       defaultExpanded={false}
       badges={<IntegrationStatusBadge variant="configured" />}
       footer={
@@ -88,7 +89,7 @@ export function CustomProviderCard({
       }
     >
       <IntegrationCardSection>
-        <pre className="max-h-24 overflow-auto rounded-lg bg-muted/30 p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
+        <pre className="max-h-24 overflow-auto rounded-sm border border-border-subtle/70 bg-background/14 p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
           {provider.curlCommand}
         </pre>
         {provider.responsePath ? (

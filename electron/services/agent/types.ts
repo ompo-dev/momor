@@ -102,6 +102,8 @@ export interface AgentSpawnSpec {
   env: NodeJS.ProcessEnv;
   /** Spawn through a shell (needed for .cmd shims / bare commands on Windows). */
   useShell: boolean;
+  /** Adapter-owned temp files that must be removed after the run finishes. */
+  cleanupPaths?: string[];
 }
 
 /** Mutable per-run parse state so adapters can dedupe partials etc. */

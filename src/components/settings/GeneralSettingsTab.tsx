@@ -29,10 +29,8 @@ import {
 } from "../../lib/overlayAppearance";
 import { useResolvedTheme } from "../../hooks/useResolvedTheme";
 import { SettingsToggleRow } from "../ui/settings-toggle-row";
-import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { Slider } from "../ui/slider";
-import { Card } from "../ui/card";
 import {
   Select,
   SelectContent,
@@ -289,16 +287,12 @@ export function GeneralSettingsTab({
       <SettingsSection>
         <SettingsToggleRow
           icon={<Ghost size={18} />}
-          title={
+          title={t("settings.general.screenSharingProtection")}
+          description={
             isUndetectable
-              ? t("settings.general.undetectable")
-              : t("settings.general.detectable")
+              ? t("settings.general.screenSharingProtectedDesc")
+              : t("settings.general.screenSharingVisibleDesc")
           }
-          description={t("settings.general.screenSharing", {
-            mode: isUndetectable
-              ? t("settings.general.undetectable")
-              : t("settings.general.detectable"),
-          })}
           checked={isUndetectable}
           highlighted={isUndetectable}
           onCheckedChange={(v) => {
@@ -386,7 +380,7 @@ export function GeneralSettingsTab({
             description={t("settings.general.themeDesc")}
             control={
               <Select value={themeMode} onValueChange={(v) => handleSetTheme(v as any)}>
-                <SelectTrigger className="h-8 w-[130px]">
+                <SelectTrigger className="h-8 w-[130px] rounded-sm border-border-subtle/80 bg-background/20 text-[12px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -415,7 +409,7 @@ export function GeneralSettingsTab({
             description={t("settings.general.aiLanguageDesc")}
             control={
               <Select value={aiResponseLanguage} onValueChange={handleAiLanguageChange}>
-                <SelectTrigger className="h-8 w-[140px]">
+                <SelectTrigger className="h-8 w-[140px] rounded-sm border-border-subtle/80 bg-background/20 text-[12px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
@@ -478,14 +472,14 @@ export function GeneralSettingsTab({
                 window.electronAPI?.setScreenUnderstandingMode?.(value);
               }}
               className={cn(
-                "rounded-lg border px-3 py-2.5 text-left transition-colors",
+                "rounded-sm border px-3 py-3 text-left transition-colors",
                 screenUnderstandingMode === value
-                  ? "border-primary bg-primary/10"
-                  : "border-border hover:bg-muted/50",
+                  ? "border-primary/40 bg-primary/[0.06]"
+                  : "border-border-subtle/80 bg-background/14 hover:bg-background/24",
               )}
             >
-              <p className="text-sm font-medium">{label}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+              <p className="text-[12.5px] font-medium text-foreground">{label}</p>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{desc}</p>
             </button>
           ))}
         </div>
@@ -532,29 +526,36 @@ export function GeneralSettingsTab({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <Card className="mt-2 border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200/90">
+              <div className="mt-2 border-l border-amber-500/40 pl-3 text-[11px] leading-5 text-amber-300/90">
                 Logs → ~/Documents/momor_debug.log
-              </Card>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </SettingsSection>
 
-      <Card
+      <div
         id="opacity-slider-card"
-        className="p-5"
+        className="rounded-sm border border-border-subtle/80 bg-background/14 px-4 py-4"
         style={
           isPreviewingOpacity
             ? { visibility: "visible", position: "relative", zIndex: 9999 }
             : undefined
         }
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Eye className="h-4 w-4 text-muted-foreground" />
-            {t("settings.general.overlayOpacity")}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-tertiary">
+              <Eye className="h-3.5 w-3.5" />
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {t("settings.general.overlayOpacity")}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              {t("settings.general.opacityDesc")}
+            </p>
           </div>
-          <span className="opacity-percent-label text-sm font-semibold tabular-nums">
+          <span className="opacity-percent-label font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground tabular-nums">
             {Math.round(overlayOpacity * 100)}%
           </span>
         </div>
@@ -572,13 +573,12 @@ export function GeneralSettingsTab({
           <span>{t("settings.general.moreStealth")}</span>
           <span>{t("settings.general.fullyVisible")}</span>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {t("settings.general.opacityDesc")}{" "}
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
           <span className="text-foreground/80">
             {t("settings.general.opacityPreview")}
           </span>
         </p>
-      </Card>
+      </div>
 
       <SettingsSection
         title={t("settings.general.disguise")}
@@ -586,7 +586,7 @@ export function GeneralSettingsTab({
       >
         {isUndetectable && (
           <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
-            {t("settings.general.disguiseUndetectableHint")}
+            {t("settings.general.disguiseProtectedHint")}
           </p>
         )}
         <div
@@ -596,23 +596,29 @@ export function GeneralSettingsTab({
           )}
         >
           {disguiseOptions.map(({ id, labelKey, icon: Icon }) => (
-            <Button
+            <button
               key={id}
               type="button"
-              variant={disguiseMode === id ? "default" : "outline"}
-              className="h-auto justify-start gap-2 px-3 py-2.5"
               disabled={isUndetectable}
               onClick={() => {
                 setDisguiseMode(id);
                 window.electronAPI?.setDisguise(id);
                 analytics.trackModeSelected(`disguise_${id}`);
               }}
+              className={cn(
+                "flex items-center gap-2 rounded-sm border px-3 py-2.5 text-left transition-colors",
+                disguiseMode === id
+                  ? "border-primary/40 bg-primary/[0.06]"
+                  : "border-border-subtle/80 bg-background/14 hover:bg-background/24",
+              )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="text-xs font-medium">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-border-subtle/80 bg-background/25 text-text-tertiary">
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+              <span className="text-[12px] font-medium text-foreground">
                 {t(`settings.general.disguiseOptions.${labelKey}`)}
               </span>
-            </Button>
+            </button>
           ))}
         </div>
       </SettingsSection>

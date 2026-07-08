@@ -33,7 +33,7 @@ export function ZedThreadMessage({
       {(label || actions) && (
         <div className="mb-1 flex items-center justify-between gap-2">
           {label ? (
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {label}
             </span>
           ) : (
@@ -48,11 +48,11 @@ export function ZedThreadMessage({
       )}
 
       {isUser ? (
-        <div className="rounded-md border border-border bg-secondary px-3 py-2 text-[13px] leading-relaxed text-foreground">
+        <div className="rounded-sm border border-border-subtle/80 bg-background/45 px-3 py-2.5 text-[12.5px] leading-6 text-foreground">
           {children}
         </div>
       ) : (
-        <div className="text-[13px] leading-relaxed text-foreground [&_a]:text-primary [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[12px]">
+        <div className="px-0.5 text-[12.5px] leading-6 text-foreground [&_a]:text-primary [&_code]:rounded-sm [&_code]:bg-secondary/75 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[11.5px]">
           {children}
         </div>
       )}

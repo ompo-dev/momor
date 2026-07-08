@@ -164,21 +164,29 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
       />
 
       {!hasProfiles && !loading ? (
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border bg-muted/10 px-6 py-10 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Mic className="h-6 w-6 text-muted-foreground" />
+        <div className="border-l border-border-subtle/80 pl-4">
+          <div className="flex items-center gap-2 text-text-tertiary">
+            <Mic className="h-3.5 w-3.5" />
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              {t("settings.audio.speechProvider")}
+            </span>
           </div>
-          <p className="max-w-md text-sm text-muted-foreground">
+          <p className="mt-2 max-w-md text-[12px] leading-5 text-muted-foreground">
             {t("settings.audio.sttEmptyHint")}
           </p>
-          <Button type="button" onClick={() => setAddOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 h-8 rounded-sm border-border-subtle/80 bg-background/20 px-3 text-[11px]"
+            onClick={() => setAddOpen(true)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             {t("settings.audio.sttAdd")}
           </Button>
         </div>
       ) : (
         <>
-          <div className="rounded-lg border border-border/60 bg-muted/10 p-4">
+          <div className="rounded-sm border border-border-subtle/80 bg-background/14 px-4 py-3.5">
             <SettingsToolbar
               label={t("settings.audio.sttDefaultProfile")}
               trailing={
@@ -186,25 +194,25 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  className={SETTINGS_CONTROL_CLASS}
+                  className={`${SETTINGS_CONTROL_CLASS} rounded-sm border-border-subtle/80 bg-background/20 px-3 text-[11px]`}
                   onClick={() => setAddOpen(true)}
                 >
                   <Plus className="mr-1.5 h-4 w-4" />
                   {t("settings.audio.sttAdd")}
                 </Button>
               }
-            >
-              <Select
-                value={defaultProfileId ?? ""}
-                onValueChange={(id) => void handleSetDefault(id)}
-                disabled={!hasProfiles}
               >
-                <SelectTrigger
-                  className={`w-full ${SETTINGS_CONTROL_CLASS} text-sm`}
+                <Select
+                  value={defaultProfileId ?? ""}
+                  onValueChange={(id) => void handleSetDefault(id)}
+                  disabled={!hasProfiles}
                 >
-                  <SelectValue placeholder={t("settings.audio.sttPickDefault")} />
-                </SelectTrigger>
-                <SelectContent>
+                  <SelectTrigger
+                    className={`w-full ${SETTINGS_CONTROL_CLASS} rounded-sm border-border-subtle/80 bg-background/20 text-[12px]`}
+                  >
+                    <SelectValue placeholder={t("settings.audio.sttPickDefault")} />
+                  </SelectTrigger>
+                  <SelectContent>
                   {profiles.map((p) => (
                     <SelectItem key={p.id} value={p.id} className="text-sm">
                       {p.name}
@@ -219,7 +227,7 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
           {feedback && (
             <div
               className={cn(
-                "rounded-lg border px-3 py-2 text-xs",
+                "rounded-sm border px-3 py-2 text-[11px] leading-5",
                 feedback.type === "success" &&
                   "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
                 feedback.type === "info" &&
@@ -240,7 +248,7 @@ export function SpeechSettingsSection({ isOpen }: SpeechSettingsSectionProps) {
                 className={cn(
                   "transition-all duration-300",
                   highlightId === profile.id &&
-                    "rounded-xl ring-2 ring-primary ring-offset-2 ring-offset-background",
+                    "border-l border-primary/70 pl-3",
                 )}
               >
                 <SttProfileCard

@@ -19,7 +19,6 @@ const {
   opencodePermissionConfig,
   sandboxForCodex,
   APPROVAL_TOOL_NAME,
-  MEETING_MCP_ALLOW_RULE,
 } = await import(pathToFileURL(compiled).href);
 
 test("normalizePermissionMode is fail-closed", () => {
@@ -39,8 +38,7 @@ test("only full-access requires explicit confirmation", () => {
 
 test("claude read-only disallows write tools and never skips permissions", () => {
   const args = permissionArgsForClaude("read-only");
-  assert.ok(args.includes("--allowed-tools"));
-  assert.ok(args.includes(MEETING_MCP_ALLOW_RULE));
+  assert.ok(!args.includes("--allowed-tools"));
   assert.ok(args.includes("--disallowed-tools"));
   const disallowed = args[args.indexOf("--disallowed-tools") + 1];
   assert.match(disallowed, /Write/);
@@ -50,6 +48,7 @@ test("claude read-only disallows write tools and never skips permissions", () =>
 
 test("claude auto-edit uses acceptEdits and routes approvals to the MCP tool", () => {
   const args = permissionArgsForClaude("auto-edit", APPROVAL_TOOL_NAME);
+  assert.ok(!args.includes("--allowed-tools"));
   assert.ok(args.includes("--permission-mode"));
   assert.equal(args[args.indexOf("--permission-mode") + 1], "acceptEdits");
   assert.ok(args.includes("--permission-prompt-tool"));
